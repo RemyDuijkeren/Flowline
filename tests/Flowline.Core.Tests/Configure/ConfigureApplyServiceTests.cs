@@ -252,6 +252,71 @@ public class ConfigureApplyServiceTests
             Arg.Is<Entity>(e => e.LogicalName == "environmentvariablevalue"), Arg.Any<CancellationToken>());
     }
 
+    // R6/AE1 end to end. Idempotence was only ever proved one writer at a time, against hand-built
+    // "already matches" inventories — which is how a caller that turned every connection reference into a
+    // write got through the suite. This runs the real service over all four classes, then re-runs it against
+    // the environment the first run produced, and demands that the second run touch nothing at all.
+    [Fact]
+    public async Task Apply_RunTwiceAcrossEveryClass_SecondRunWritesNothing()
+    {
+        const string connectionId = "shared-commondataser-863397d0";
+        var document = DocumentWith($$"""
+            {
+              "EnvironmentVariables": [ { "SchemaName": "cr123_Url", "Value": "https://api.contoso.com" } ],
+              "ConnectionReferences": [ { "LogicalName": "cr123_dataverse", "ConnectionId": "{{connectionId}}" } ],
+              "Flows": [ { "Name": "Nightly reconciliation", "Enabled": false } ],
+              "PluginSteps": [ { "Name": "Contoso.Plugins.OnCreate: Create of account", "Enabled": false } ]
+            }
+            """);
+
+        // First run: nothing is in its declared state yet.
+        var first = Service();
+        var before = new SolutionInventory(
+        [
+            Variable("cr123_Url"),
+            Reference("cr123_dataverse"),
+            Flow("Nightly reconciliation", true),
+            new InventoryComponent(ConfigurableComponentKind.PluginStep,
+                "Contoso.Plugins.OnCreate: Create of account", Guid.NewGuid(), true),
+        ]);
+
+        var firstOutcome = await new ConfigureApplyService()
+            .ApplyAsync(first, document, before, RunMode.Normal, CancellationToken.None);
+
+        firstOutcome.Applied.Should().Be(4);
+        firstOutcome.Unchanged.Should().Be(0);
+
+        // Second run against the environment the first one produced: the value row now exists and holds the
+        // declared value, the reference is bound, and both state components are off.
+        var second = Service();
+        var valueRow = new EntityCollection();
+        valueRow.Entities.Add(new Entity("environmentvariablevalue", Guid.NewGuid())
+        {
+            ["value"] = "https://api.contoso.com",
+        });
+        second.RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(valueRow));
+
+        var after = new SolutionInventory(
+        [
+            Variable("cr123_Url"),
+            new InventoryComponent(ConfigurableComponentKind.ConnectionReference,
+                "cr123_dataverse", Guid.NewGuid(), null, CurrentValue: connectionId),
+            Flow("Nightly reconciliation", false),
+            new InventoryComponent(ConfigurableComponentKind.PluginStep,
+                "Contoso.Plugins.OnCreate: Create of account", Guid.NewGuid(), false),
+        ]);
+
+        var secondOutcome = await new ConfigureApplyService()
+            .ApplyAsync(second, document, after, RunMode.Normal, CancellationToken.None);
+
+        secondOutcome.Applied.Should().Be(0, "applying the same file twice must change nothing the second time");
+        secondOutcome.Unchanged.Should().Be(4);
+        secondOutcome.ExitCode.Should().Be(ExitCode.Success);
+        await second.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await second.DidNotReceive().CreateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
     // The writer has always handled Suspended; nothing supplied it. The flag has to survive the whole way
     // from the inventory read to the writer, or a suspended flow declared off silently stays suspended.
     [Fact]
@@ -335,5 +400,26 @@ public class ConfigureApplyServiceTests
         outcome.Applied.Should().Be(1, "the first flow was written before the interruption");
         outcome.Components.Should().ContainSingle().Which.Name.Should().Be("First");
         outcome.ExitCode.Should().Be(ExitCode.Cancelled);
+    }
+
+    // Only a Dataverse fault is isolated to its own component, matching OrphanCleanupService. Anything else
+    // is a bug or a broken client, and swallowing it would report a clean run over a broken one — so it
+    // travels, and this pins that the cancellation handling above did not quietly widen into a catch-all.
+    [Fact]
+    public async Task Apply_NonDataverseException_IsNotSwallowed()
+    {
+        var service = Service();
+        service.UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("client is broken"));
+
+        var document = DocumentWith("""
+            { "Flows": [ { "Name": "Nightly reconciliation", "Enabled": true } ] }
+            """);
+
+        var act = async () => await new ConfigureApplyService().ApplyAsync(
+            service, document, new SolutionInventory([Flow("Nightly reconciliation", false)]),
+            RunMode.Normal, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
     }
 }

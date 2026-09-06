@@ -615,6 +615,30 @@ public class ProjectConfigTests : IDisposable
         reloaded!.SchemaVersion.Should().Be(1);
         reloaded.Solution.Should().BeNull();
     }
+    // R5c: resolving a role must not write .flowline, which is what lets `configure <role> --dry-run` be a
+    // genuine preflight. `configure` reads a role URL by passing no input, exactly as below. If that read
+    // ever started persisting — an easy thing to add to GetOrUpdateUrl — a dry run would quietly begin
+    // writing project config, so the guarantee is pinned on the file itself, not on the in-memory object.
+    [Fact]
+    public void GetOrUpdateUrl_ReadingARoleWithNoInput_LeavesTheConfigFileByteIdentical()
+    {
+        WriteConfigFile("""
+            {
+              "SchemaVersion": 1,
+              "TestUrl": "https://contoso-test.crm4.dynamics.com/",
+              "ProdUrl": "https://contoso.crm4.dynamics.com/"
+            }
+            """);
+        var path = Path.Combine(_tempDir, ".flowline");
+        var before = File.ReadAllBytes(path);
+
+        var config = ProjectConfig.Load(_tempDir)!;
+        var url = config.GetOrUpdateTestUrl(null);
+
+        url.Should().Be("https://contoso-test.crm4.dynamics.com/");
+        config.TestUrl.Should().Be("https://contoso-test.crm4.dynamics.com/");
+        File.ReadAllBytes(path).Should().Equal(before, "reading a role URL is not a reason to rewrite .flowline");
+    }
 }
 
 public class GeneratorTypeSerializationTests

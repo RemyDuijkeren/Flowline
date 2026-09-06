@@ -19,6 +19,71 @@ public class ConfigureCommandTests : IDisposable
 
     void WithProject() => File.WriteAllText(Path.Combine(_dir, ProjectConfig.s_configFileName), "{}");
 
+    // ── The --pull artifact seam ─────────────────────────────────────────────
+
+    // This is what decides whether a pull hands `pac` --solution-zip or --solution-folder, and getting it
+    // wrong fails inside the subprocess, where the cause is hard to read. It is a pure function, so the
+    // branch that needs a real `pac` is the only part these cannot reach.
+
+    [Fact]
+    public void ResolveSolutionInput_Folder_IsNotAZip()
+    {
+        var folder = Path.Combine(_dir, "Solution", "src");
+        Directory.CreateDirectory(folder);
+
+        var (path, isZip) = ConfigureCommand.ResolveSolutionInput(folder);
+
+        isZip.Should().BeFalse();
+        path.Should().Be(Path.GetFullPath(folder));
+    }
+
+    [Fact]
+    public void ResolveSolutionInput_File_IsAZip()
+    {
+        var zip = Path.Combine(_dir, "ContosoCustomizations.zip");
+        File.WriteAllText(zip, "not really a zip, but it exists");
+
+        var (path, isZip) = ConfigureCommand.ResolveSolutionInput(zip);
+
+        isZip.Should().BeTrue();
+        path.Should().Be(Path.GetFullPath(zip));
+    }
+
+    // pac is given the resolved path, so a relative argument has to survive the temp-directory switch a pull
+    // runs inside — resolving it late would look for the artifact in the wrong place.
+    [Fact]
+    public void ResolveSolutionInput_RelativePath_IsMadeAbsolute()
+    {
+        var folder = Path.Combine(_dir, "Solution");
+        Directory.CreateDirectory(folder);
+        var previous = Directory.GetCurrentDirectory();
+
+        try
+        {
+            Directory.SetCurrentDirectory(_dir);
+
+            var (path, _) = ConfigureCommand.ResolveSolutionInput("Solution");
+
+            Path.IsPathRooted(path).Should().BeTrue();
+            path.Should().Be(Path.GetFullPath(folder));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previous);
+        }
+    }
+
+    [Fact]
+    public void ResolveSolutionInput_NothingAtThePath_ThrowsNotFoundNamingIt()
+    {
+        var missing = Path.Combine(_dir, "no-such-solution.zip");
+
+        var act = () => ConfigureCommand.ResolveSolutionInput(missing);
+
+        act.Should().Throw<FlowlineException>()
+            .Which.ExitCode.Should().Be(ExitCode.NotFound);
+    }
+
     // ── Stand-alone resolution (KTD3) ────────────────────────────────────────
 
     [Fact]
