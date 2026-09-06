@@ -60,9 +60,9 @@ public class SyncCommandTests
 }
 
 /// <summary>
-/// U4 moved the provenance line, the no-changes line and the file location out of the writer and onto the
-/// caller, so `diff` could supply its own. These lock sync's half of that: the observable output has to be
-/// what it was before the writer was generalized.
+/// Sync's output shape — where CHANGES.md lands, its provenance line, and the terminal no-changes line —
+/// is composed here and passed to a writer shared with `diff`. The call site that uses it needs a live
+/// environment to reach, so these lock the values directly.
 /// </summary>
 public class SyncCommandOutputShapeTests
 {

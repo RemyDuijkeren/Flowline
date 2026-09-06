@@ -62,8 +62,11 @@ public class SolutionChangeSummary
 
         var srcRelPath = Path.GetRelativePath(workingDirectory, srcFolder).Replace('\\', '/');
 
-        static Task<CliWrap.Buffered.BufferedCommandResult> Run(Command cmd, SubprocessCapture? cap, CancellationToken ct, bool suppressErrors = false) =>
-            (cap?.Apply(cmd, suppressErrors: suppressErrors) ?? cmd).ExecuteBufferedAsync(ct);
+        // Closes over the three path values every fetch needs, so a call site states only which side and
+        // which file. They are fixed for the whole comparison, and three same-typed strings in a parameter
+        // list is a transposition waiting to happen.
+        Task<string?> SideXml(ComparisonSide side, string relPath) =>
+            GetSideXmlAsync(side, relPath, srcFolder, srcRelPath, workingDirectory, ct);
 
         Command Porcelain() => Cli.Wrap("git")
             .WithWorkingDirectory(workingDirectory)
@@ -198,10 +201,25 @@ public class SolutionChangeSummary
             var items = new List<ChangeItem>();
             foreach (var c in g)
             {
-                var name = c.Parsed.StaticName ?? await ResolveXmlNameAsync(
-                    c.Paths[0], srcFolder, workingDirectory, srcRelPath, from, to, c.Parsed, ct);
                 var status = AggregateStatus(c.FileStatuses);
-                var subChanges = await ResolveSubChangesAsync(c.Parsed, c.Paths[0], srcFolder, workingDirectory, srcRelPath, from, to, status, ct);
+                var relPath = c.Paths[0];
+
+                // Both the display name and the sub-change diff read the same component XML, so each side is
+                // fetched at most once here and handed to both. A fetch is a `git show` per component, so
+                // resolving them independently cost a Form or View up to three subprocesses for two answers.
+                var needsName = c.Parsed.StaticName is null;
+                var needsSubChanges = HasSubChanges(c.Parsed) && status != ChangeStatus.Added;
+
+                string? newXml = null, oldXml = null;
+                if ((needsName || needsSubChanges) && status != ChangeStatus.Deleted)
+                    newXml = await SideXml(to, relPath);
+                if (needsSubChanges || (needsName && newXml is null))
+                    oldXml = await SideXml(from, relPath);
+
+                var name = c.Parsed.StaticName
+                           ?? ResolveXmlName(newXml ?? oldXml, c.Parsed.XmlRead, c.Parsed.NameSuffix)
+                           ?? c.Parsed.FallbackName ?? Path.GetFileNameWithoutExtension(relPath);
+                var subChanges = needsSubChanges ? ResolveSubChanges(c.Parsed, oldXml, newXml) : null;
                 items.Add(new ChangeItem(name, c.Paths, status, subChanges));
             }
             resolvedGroups.Add(new ChangeGroup(g.Key, items, g.First().Parsed.IsEntity));
@@ -210,8 +228,8 @@ public class SolutionChangeSummary
         if (customizationsChanged)
         {
             var connRefItems = DiffConnectionReferences(
-                await GetSideXmlAsync(from, CustomizationsRelPath, srcFolder, srcRelPath, workingDirectory, ct),
-                await GetSideXmlAsync(to, CustomizationsRelPath, srcFolder, srcRelPath, workingDirectory, ct));
+                await SideXml(from, CustomizationsRelPath),
+                await SideXml(to, CustomizationsRelPath));
             if (connRefItems is { Count: > 0 })
                 resolvedGroups.Add(new ChangeGroup("Connection References", connRefItems));
         }
@@ -219,8 +237,8 @@ public class SolutionChangeSummary
         VersionTransition? version = null;
         if (solutionChanged)
             version = DiffSolutionVersion(
-                await GetSideXmlAsync(from, SolutionRelPath, srcFolder, srcRelPath, workingDirectory, ct),
-                await GetSideXmlAsync(to, SolutionRelPath, srcFolder, srcRelPath, workingDirectory, ct));
+                await SideXml(from, SolutionRelPath),
+                await SideXml(to, SolutionRelPath));
 
         return new SolutionChangeSummary(fileCount, totalAdded, totalRemoved, resolvedGroups, version);
     }
@@ -606,6 +624,9 @@ public class SolutionChangeSummary
         }
     }
 
+    static Task<CliWrap.Buffered.BufferedCommandResult> Run(Command cmd, SubprocessCapture? cap, CancellationToken ct, bool suppressErrors = false) =>
+        (cap?.Apply(cmd, suppressErrors: suppressErrors) ?? cmd).ExecuteBufferedAsync(ct);
+
     /// <summary>A file listed by either vocabulary, already normalized: git status porcelain (two-character
     /// codes, "??" for untracked) and git diff --name-status (single letters, renames disabled).</summary>
     record struct ChangedFile(ChangeStatus Status, bool Untracked, string Path);
@@ -635,7 +656,7 @@ public class SolutionChangeSummary
             .WithWorkingDirectory(workingDirectory)
             .WithArguments(args => args.Add("rev-parse").Add("--verify").Add("--quiet").Add(gitRef + "^{commit}"))
             .WithValidation(CommandResultValidation.None);
-        var result = await (capture?.Apply(cmd, suppressErrors: true) ?? cmd).ExecuteBufferedAsync(ct);
+        var result = await Run(cmd, capture, ct, suppressErrors: true);
         if (result.ExitCode != 0)
             throw new FlowlineException(ExitCode.NotFound,
                 $"No git ref named '{gitRef}'. List the refs you can compare with: git log --oneline");
@@ -669,19 +690,6 @@ public class SolutionChangeSummary
         catch { return 0; }
     }
 
-    static async Task<string> ResolveXmlNameAsync(
-        string relPath, string srcFolder, string workingDirectory, string srcRelPath,
-        ComparisonSide from, ComparisonSide to, ParsedPath parsed, CancellationToken ct)
-    {
-        // Right side first, left side for a component the right side no longer has. Both resolve against
-        // the compared sides only, never against whatever happens to be on disk.
-        var xml = await GetSideXmlAsync(to, relPath, srcFolder, srcRelPath, workingDirectory, ct)
-                  ?? await GetSideXmlAsync(from, relPath, srcFolder, srcRelPath, workingDirectory, ct);
-
-        var fallback = parsed.FallbackName ?? Path.GetFileNameWithoutExtension(relPath);
-        return ResolveXmlName(xml, parsed.XmlRead, parsed.NameSuffix) ?? fallback;
-    }
-
     static string? ResolveXmlName(string? xml, XmlRead xmlRead, string? nameSuffix)
     {
         if (xml == null || xmlRead == XmlRead.None) return null;
@@ -699,22 +707,17 @@ public class SolutionChangeSummary
         catch (XmlException) { return null; }
     }
 
-    static async Task<IReadOnlyList<SubChange>?> ResolveSubChangesAsync(
-        ParsedPath parsed, string relPath, string srcFolder, string workingDirectory,
-        string srcRelPath, ComparisonSide from, ComparisonSide to, ChangeStatus status, CancellationToken ct)
+    /// <summary>Whether this component type has a sub-change diff at all. Everything else reports only its own status.</summary>
+    static bool HasSubChanges(ParsedPath parsed) =>
+        parsed.ComponentKey.EndsWith("/entity", StringComparison.OrdinalIgnoreCase)
+        || parsed.XmlRead is XmlRead.ViewTitle or XmlRead.FormTitle
+        || string.Equals(parsed.Group, "OptionSets", StringComparison.OrdinalIgnoreCase);
+
+    static IReadOnlyList<SubChange>? ResolveSubChanges(ParsedPath parsed, string? oldXml, string? newXml)
     {
         bool isEntityMeta = parsed.ComponentKey.EndsWith("/entity", StringComparison.OrdinalIgnoreCase);
         bool isView       = parsed.XmlRead == XmlRead.ViewTitle;
         bool isForm       = parsed.XmlRead == XmlRead.FormTitle;
-        bool isOptionSet  = string.Equals(parsed.Group, "OptionSets", StringComparison.OrdinalIgnoreCase);
-
-        if (!isEntityMeta && !isView && !isForm && !isOptionSet) return null;
-        if (status == ChangeStatus.Added) return null;
-
-        var oldXml = await GetSideXmlAsync(from, relPath, srcFolder, srcRelPath, workingDirectory, ct);
-        var newXml = status == ChangeStatus.Deleted
-            ? null
-            : await GetSideXmlAsync(to, relPath, srcFolder, srcRelPath, workingDirectory, ct);
 
         if (oldXml == null && newXml == null) return null;
 
