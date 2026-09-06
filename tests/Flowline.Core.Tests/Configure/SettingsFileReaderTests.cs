@@ -38,6 +38,39 @@ public class SettingsFileReaderTests
         written.Should().Be(json.ReplaceLineEndings("\n"));
     }
 
+    // R12c, verified against a real `pac solution create-settings` run: PAC writes CRLF and no trailing
+    // newline on Windows. Pinning LF rewrote every line of the file PAC had just produced, so the first
+    // pull was a whole-file diff burying the one entry that actually changed. The ending is inherited for
+    // the same reason property order is.
+    [Fact]
+    public void ReadThenWrite_CrlfSourceFile_KeepsCrlf()
+    {
+        var json = "{\r\n  \"EnvironmentVariables\": [],\r\n  \"CopilotAgents\": []\r\n}";
+
+        var written = SettingsFileReader.Write(SettingsFileReader.Parse(json));
+
+        written.Should().Be(json);
+        written.Should().NotEndWith("\n\n", "PAC writes no trailing newline and neither does Flowline");
+    }
+
+    [Fact]
+    public void ReadThenWrite_LfSourceFile_KeepsLf()
+    {
+        var json = "{\n  \"EnvironmentVariables\": [],\n  \"CopilotAgents\": []\n}";
+
+        SettingsFileReader.Write(SettingsFileReader.Parse(json)).Should().Be(json);
+    }
+
+    // A document Flowline builds rather than reads gets LF, so a settings file born on a Windows machine
+    // and one born in Linux CI are byte-identical.
+    [Fact]
+    public void Write_DocumentWithNoSourceFile_UsesLf()
+    {
+        var document = new SettingsDocument { Flows = { new ComponentStateEntry("order_processing", false) } };
+
+        SettingsFileReader.Write(document).Should().NotContain("\r");
+    }
+
     [Fact]
     public void ReadThenWrite_UnknownTopLevelSection_IsRetained()
     {

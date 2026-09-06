@@ -41,17 +41,30 @@ public sealed class SettingsDocument
     public IList<ComponentStateEntry> PluginSteps { get; init; } = [];
 
     /// <summary>
-    /// Serialization options shared by read and write so a round-trip is byte-stable (R12c).
+    /// The line ending the source file used, inherited on write (R12c).
     /// </summary>
     /// <remarks>
-    /// Indented output matches what `pac solution create-settings` writes, so a Flowline write does not
-    /// reformat the whole file and produce a diff that hides the one line that actually changed.
+    /// Verified, not assumed: `pac solution create-settings` writes CRLF (and no trailing newline) on
+    /// Windows. Pinning either ending would rewrite every line of the file PAC just produced, turning the
+    /// first pull into a whole-file diff that buries the one entry that actually changed — the exact churn
+    /// R12c exists to prevent. Inherited for the same reason property order is.
+    ///
+    /// A file Flowline creates from nothing gets LF, so a settings file born on a Windows developer's
+    /// machine and one born in Linux CI are byte-identical.
     /// </remarks>
-    internal static readonly JsonSerializerOptions SerializerOptions = new()
+    public string NewLine { get; init; } = "\n";
+
+    /// <summary>
+    /// Serialization options for one document's line ending, so a round-trip is byte-stable (R12c).
+    /// </summary>
+    /// <remarks>
+    /// Two-space indented output matches what `pac solution create-settings` writes (verified against a
+    /// real solution folder), so a Flowline write does not reformat the whole file and produce a diff that
+    /// hides the one line that actually changed.
+    /// </remarks>
+    internal static JsonSerializerOptions OptionsFor(string newLine) => new()
     {
         WriteIndented = true,
-        // Pinned rather than inherited from the platform: this file is committed, so writing
-        // Environment.NewLine would churn it between a Windows developer and Linux CI on every pull.
-        NewLine = "\n",
+        NewLine = newLine,
     };
 }

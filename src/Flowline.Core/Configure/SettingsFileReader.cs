@@ -32,7 +32,12 @@ public static class SettingsFileReader
             throw new FlowlineException(ExitCode.ConfigInvalid,
                 "The settings file must contain a JSON object at its root.");
 
-        var document = new SettingsDocument();
+        // Inherited from the source, like property order below. PAC writes CRLF; a file with no line
+        // ending of its own (a single-line file, or one Flowline is creating) gets LF.
+        var document = new SettingsDocument
+        {
+            NewLine = json.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
+        };
 
         foreach (var property in obj.ToList())
         {
@@ -65,6 +70,9 @@ public static class SettingsFileReader
     /// exact churn R12c exists to prevent. What R12c actually requires is that a second pull against an
     /// unchanged environment produce identical bytes, and preserving order gives that: same file in, same
     /// file out. New entries append rather than sorting themselves into the middle.
+    ///
+    /// Line endings are inherited for the same reason, and no trailing newline is written — both match what
+    /// PAC produces.
     /// </remarks>
     public static string Write(SettingsDocument document)
     {
@@ -79,7 +87,7 @@ public static class SettingsFileReader
         if (document.PluginSteps.Count > 0)
             obj[SettingsDocument.PluginStepsProperty] = WriteStateEntries(document.PluginSteps);
 
-        return obj.ToJsonString(SettingsDocument.SerializerOptions);
+        return obj.ToJsonString(SettingsDocument.OptionsFor(document.NewLine));
     }
 
     /// <summary>Reads a settings file from disk.</summary>
