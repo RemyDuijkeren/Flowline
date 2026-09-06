@@ -233,6 +233,16 @@ app.Configure(config =>
           .WithExample("diff", "--from", "v1.2.0")
           .WithExample("diff", "--from", "v1.2.0", "--to", "v1.3.0");
 
+    // configure = apply a per-environment settings file. Sits beside deploy rather than inside it: the
+    // values and component states a settings file carries change on their own schedule, and re-running a
+    // whole import to flip one flow back on is the wrong unit of work.
+    config.AddCommand<ConfigureCommand>("configure")
+          .WithDescription("Apply a settings file to an environment (dev, test, uat, prod, or a URL): environment variable values, connection references, and flow and plugin step state. Only components the file names are touched. Re-running the same file changes nothing, so it is safe in a pipeline. Use --dry-run to see what would change first.")
+          .WithExample("configure", "test")
+          .WithExample("configure", "prod", "--dry-run")
+          .WithExample("configure", "test", "--settings-file", "settings.test.json")
+          .WithExample("configure", "https://contoso-test.crm4.dynamics.com/", "--solution-name", "ContosoCustomizations");
+
     // scaffold = write a project template locally; needs no Dataverse connection
     config.AddCommand<ScaffoldCommand>("scaffold")
           .WithAlias("new")
