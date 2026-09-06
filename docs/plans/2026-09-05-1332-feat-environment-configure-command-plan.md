@@ -166,9 +166,13 @@ Outside this work:
 
 **Deferred to Planning** — none.
 
-**Deferred to Implementation**
+**Deferred to Implementation** — none.
 
-- Whether `pac solution clone` or `sync` cleans `Solution/` as well as writing into it. R4a puts a hand-authored file there, and a clean would destroy it on every sync. Not answerable statically — `PacUtils.SyncSolutionFromDataverseAsync` (`src/Flowline/Utils/PacUtils.cs:207-235`) simply passes `--solution-folder` through. U1's verification runs a real sync against a scratch project with a settings file present.
+Answered 2026-09-06: `pac` does not delete files it does not own in the solution folder. `pac solution unpack`
+defaults `--allowDelete` to false, `pac solution sync` exposes no such flag, and a re-unpack over a folder
+holding a hand-authored `deploymentSettings.prod.json` printed "Not deleting files" and left it byte-intact.
+R4a's location is safe. Proven for the unpack half, which is the destructive one; a full `flowline sync`
+against a live environment would confirm the export half leaves the folder alone too.
 
 ### Sources / Research
 
@@ -278,7 +282,7 @@ flowchart TD
 - Locator prefers `deploymentSettings.prod.json` over `deploymentSettings.json` and returns the latter when the former is absent.
 - Malformed JSON produces the typed error, not an unhandled parse exception.
 
-**Verification:** The reader, merger and locator are exercised without a Dataverse connection or a live `pac`. Separately, run a real `flowline sync` against a scratch project with a settings file present in `Solution/` and confirm the file survives — this is the plan's one Deferred to Implementation question.
+**Verification:** The reader, merger and locator are exercised without a Dataverse connection or a live `pac`. The settings-file-survives-sync question is answered in Outstanding Questions.
 
 ### U2. Solution component enumeration by name
 
@@ -500,7 +504,6 @@ flowchart TD
 - `dotnet build Flowline.slnx` and `dotnet test Flowline.slnx` pass. Prefer `--filter` on `Configure` while iterating.
 - User-facing wording and exit codes are checked with a **Release** build. A Debug build propagates exceptions and prints a stack trace instead of the rendered message (`src/Flowline/Program.cs`, `#if DEBUG`), so correct error handling looks broken.
 - Live proof against the TEST environment, which `docs/end-to-end-test-goal.md` sanctions for real writes: `configure test --pull` produces a file, `configure test` applies it, and a re-run reports everything unchanged and exits Success.
-- The one Deferred to Implementation question is answered before U1 is called done: run a real `flowline sync` with a settings file present in `Solution/` and confirm it survives.
 - PROD is never a real write. `--dry-run` only, per the end-to-end test constraints.
 
 ## Definition of Done
