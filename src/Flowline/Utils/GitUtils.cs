@@ -233,15 +233,42 @@ public static class GitUtils
         return null;
     }
 
+    // Asks git rather than looking for a .git entry: a worktree or submodule .git FILE whose gitdir pointer
+    // is stale, or a .git directory that's corrupt, exists on disk but isn't a usable repository — every
+    // later git call would then fail as some confusing downstream symptom instead of as the missing
+    // prerequisite it is. rev-parse discovers upward the same way FindRepositoryRoot walks up, so a project
+    // in a repo subfolder still passes.
+    static async Task<bool> IsUsableRepositoryAsync(string rootFolder, SubprocessCapture capture, CancellationToken cancellationToken)
+    {
+        // Guarded first: CliWrap throws Win32Exception for a missing working directory too, and that would
+        // otherwise be reported as a missing git binary.
+        if (!Directory.Exists(rootFolder)) return false;
+
+        var cmd = Cli.Wrap("git")
+                     .WithWorkingDirectory(rootFolder)
+                     .WithArguments(args => args.Add("rev-parse").Add("--git-dir"))
+                     .WithValidation(CommandResultValidation.None);
+        try
+        {
+            var result = await capture.Apply(cmd, suppressErrors: true).ExecuteBufferedAsync(cancellationToken);
+            return result.ExitCode == 0;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // Same failure and same exit code AssertGitInstalledAsync gives for a missing git binary.
+            throw new FlowlineException(ExitCode.GeneralError, "Git isn't available. Install it from https://git-scm.com/.");
+        }
+    }
+
     public static async Task AssertGitRepoAsync(string rootFolder, SubprocessCapture capture, bool verbose = true, CancellationToken cancellationToken = default)
     {
-        if (FindRepositoryRoot(rootFolder) is null)
+        if (!await IsUsableRepositoryAsync(rootFolder, capture, cancellationToken))
             // Names the project so the demand for a repository is self-explaining. Reaching here means a
             // .flowline was found at rootFolder (or above it) and selected project mode, which can be a
             // surprise when the caller expected standalone from a bare artifact folder — a Flowline
             // project is not valid outside a repository, so this is the accurate failure either way.
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"No Git repo found for the Flowline project at '{rootFolder}'. Run 'git init' or 'git clone' first, or run from outside that project to work standalone.");
+                $"No usable Git repo for the Flowline project at '{rootFolder}'. Run 'git init' or 'git clone' first, or run from outside that project to work standalone. A .git that's there but unreadable — a worktree or submodule pointer to a gitdir that moved — fails the same way.");
 
         AnsiConsole.Console.Info("You're in a Git repo");
 

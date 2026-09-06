@@ -1,6 +1,8 @@
 using FluentAssertions;
 using Flowline.Commands;
+using Flowline.Core;
 using Flowline.Core.Services;
+using Flowline.Diagnostics;
 
 namespace Flowline.Tests;
 
@@ -406,5 +408,76 @@ public class GitUtilsTests : IDisposable
 
         afterDocsSha.Should().Be(initialSha); // docs-only commit must not invalidate the cache key
         afterSolutionChangeSha.Should().NotBe(initialSha); // a Solution/ change must invalidate it
+    }
+
+    // ── AssertGitRepoAsync: the repository has to be usable, not just present on disk ──────────
+
+    static SubprocessCapture Capture() => new(Spectre.Console.AnsiConsole.Console);
+
+    [Fact]
+    public async Task AssertGitRepoAsync_InRealRepo_ShouldPass()
+    {
+        var act = () => GitUtils.AssertGitRepoAsync(_root, Capture(), verbose: false);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task AssertGitRepoAsync_OutsideAnyGitRepo_ShouldThrowConfigInvalid()
+    {
+        var nonRepoDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(nonRepoDir);
+        try
+        {
+            var act = () => GitUtils.AssertGitRepoAsync(nonRepoDir, Capture(), verbose: false);
+
+            (await act.Should().ThrowAsync<FlowlineException>())
+                .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
+        }
+        finally
+        {
+            Directory.Delete(nonRepoDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AssertGitRepoAsync_OutsideAnyGitRepo_ShouldNameTheCorrectiveAction()
+    {
+        var nonRepoDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(nonRepoDir);
+        try
+        {
+            var act = () => GitUtils.AssertGitRepoAsync(nonRepoDir, Capture(), verbose: false);
+
+            (await act.Should().ThrowAsync<FlowlineException>())
+                .Which.Message.Should().Contain("git init").And.Contain(nonRepoDir);
+        }
+        finally
+        {
+            Directory.Delete(nonRepoDir, recursive: true);
+        }
+    }
+
+    // The case a filesystem check can't see: a worktree/submodule .git FILE whose gitdir target is gone.
+    // Present on disk, unusable to git.
+    [Fact]
+    public async Task AssertGitRepoAsync_WithGitFilePointingAtMissingGitDir_ShouldThrowConfigInvalid()
+    {
+        var strayDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(strayDir);
+        try
+        {
+            var missingGitDir = Path.Combine(strayDir, "gone", ".git", "worktrees", "wt").Replace('\\', '/');
+            File.WriteAllText(Path.Combine(strayDir, ".git"), $"gitdir: {missingGitDir}\n");
+
+            var act = () => GitUtils.AssertGitRepoAsync(strayDir, Capture(), verbose: false);
+
+            (await act.Should().ThrowAsync<FlowlineException>())
+                .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
+        }
+        finally
+        {
+            Directory.Delete(strayDir, recursive: true);
+        }
     }
 }

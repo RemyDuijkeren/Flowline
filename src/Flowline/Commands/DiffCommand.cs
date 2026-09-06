@@ -101,17 +101,17 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     /// </remarks>
     internal async Task<int> DiffAsync(string rootFolder, string? from, string? to, string? writeTo, bool verbose, bool exitCodeOnChanges, CancellationToken cancellationToken, bool bareWrite = false)
     {
-        var (fromSide, toSide) = ResolveSides(from, to);
+        var (fromRef, toSide) = ResolveSides(from, to);
         await EnsureGitRepositoryAsync(rootFolder, _capture, cancellationToken);
 
         var (srcFolder, solutionName) = await ResolveSourceFolderAsync(rootFolder, cancellationToken);
         if (writeTo is not null) EnsureWriteTargetOutsideSource(writeTo, srcFolder, rootFolder);
 
-        var summary = await SolutionChangeSummary.ComputeAsync(srcFolder, rootFolder, fromSide, toSide, _capture, cancellationToken);
-        Logger.LogInformation("Diff: from={From} to={To} files={TotalFiles}", fromSide.GitRef, toSide.GitRef ?? "<working tree>", summary.TotalFiles);
+        var summary = await SolutionChangeSummary.ComputeAsync(srcFolder, rootFolder, fromRef, toSide, _capture, cancellationToken);
+        Logger.LogInformation("Diff: from={From} to={To} files={TotalFiles}", fromRef, toSide.GitRef ?? "<working tree>", summary.TotalFiles);
 
         // Both lines name the two compared points and no environment: this command contacts none.
-        var (fromName, toName) = (Name(fromSide), Name(toSide));
+        var (fromName, toName) = (fromRef, Name(toSide));
         summary.WriteTree(Console, $"No changes between {Markup.Escape(fromName)} and {Markup.Escape(toName)}.", verbose,
             OverflowHint(writeTo));
 
@@ -137,7 +137,7 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         return (int)(exitCodeOnChanges && summary.TotalFiles > 0 ? ExitCode.ChangesFound : ExitCode.Success);
     }
 
-    /// <summary>How a side reads in a message — the ref itself, or the files on disk.</summary>
+    /// <summary>How the right side reads in a message — the ref itself, or the files on disk.</summary>
     static string Name(SolutionChangeSummary.ComparisonSide side) => side.GitRef ?? "working tree";
 
     /// <summary>Turns the two options into the two sides of the comparison.</summary>
@@ -147,7 +147,7 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     /// a bare run already does, and silently ignoring half the invocation is worse than refusing it.
     /// </remarks>
     /// <exception cref="FlowlineException"><see cref="ExitCode.ValidationFailed"/> for <c>--to</c> without <c>--from</c>.</exception>
-    internal static (SolutionChangeSummary.ComparisonSide From, SolutionChangeSummary.ComparisonSide To) ResolveSides(string? from, string? to)
+    internal static (string From, SolutionChangeSummary.ComparisonSide To) ResolveSides(string? from, string? to)
     {
         var fromRef = string.IsNullOrWhiteSpace(from) ? null : from.Trim();
         var toRef = string.IsNullOrWhiteSpace(to) ? null : to.Trim();
@@ -156,7 +156,7 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             throw new FlowlineException(ExitCode.ValidationFailed,
                 "--to sets the right side of the comparison, so it needs a left side too. Add --from <ref>.");
 
-        return (fromRef is null ? SolutionChangeSummary.ComparisonSide.Head : new SolutionChangeSummary.ComparisonSide(fromRef),
+        return (fromRef ?? "HEAD",
                 toRef is null ? SolutionChangeSummary.ComparisonSide.WorkingTree : new SolutionChangeSummary.ComparisonSide(toRef));
     }
 
@@ -179,8 +179,17 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
                          .WithWorkingDirectory(rootFolder)
                          .WithArguments(args => args.Add("rev-parse").Add("--git-dir"))
                          .WithValidation(CommandResultValidation.None);
-            var result = await (capture?.Apply(cmd, suppressErrors: true) ?? cmd).ExecuteBufferedAsync(cancellationToken);
-            usable = result.ExitCode == 0;
+            try
+            {
+                var result = await (capture?.Apply(cmd, suppressErrors: true) ?? cmd).ExecuteBufferedAsync(cancellationToken);
+                usable = result.ExitCode == 0;
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // Same failure and exit code GitUtils gives for a missing git binary. This command skips the
+                // setup probe that would otherwise have caught it, so it has to answer for itself.
+                throw new FlowlineException(ExitCode.GeneralError, "Git isn't available. Install it from https://git-scm.com/.");
+            }
         }
         if (usable) return;
 
