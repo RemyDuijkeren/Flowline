@@ -26,7 +26,7 @@ public enum ExitCode
     /// <summary>Dataverse environment unreachable. Check environment URL in .flowline.</summary>
     ConnectionFailed = 10,
 
-    /// <summary>A file the command reads or writes is missing or malformed: .flowline, or an MSBuild solution file (.sln/.slnx). Check the file named in the error output is present and valid.</summary>
+    /// <summary>A file the command reads or writes is missing or malformed: .flowline, an MSBuild solution file (.sln/.slnx), or a settings file. Also returned when a role keyword can't be resolved because there is no project to resolve it from. Check the file named in the error output is present and valid.</summary>
     ConfigInvalid = 11,
 
     /// <summary>Uncommitted git changes block the operation. Commit or stash changes first.</summary>
@@ -42,7 +42,7 @@ public enum ExitCode
     /// </summary>
     VersionConflict = 14,
 
-    /// <summary>Validation failed: drift detected, missing dependencies, or schema mismatch. Check error output.</summary>
+    /// <summary>Validation failed: drift detected, missing dependencies, schema mismatch, or flags that contradict each other. Check error output.</summary>
     ValidationFailed = 15,
 
     /// <summary>An operation timed out: a Dataverse request got no response, or the PAC CLI 60-minute operation limit was exceeded. The write may still have landed — re-run the command to check and finish, or check environment health.</summary>
@@ -51,10 +51,10 @@ public enum ExitCode
     /// <summary>Destructive or overwriting operation requires --force in non-interactive mode.</summary>
     ForceRequired = 17,
 
-    /// <summary>Deploy completed but orphan cleanup failed for some components. Check output for items to remove manually via maker portal.</summary>
+    /// <summary>The run finished but part of it failed: deploy's orphan cleanup couldn't remove some components, or configure couldn't apply some of them. Covers one failure and every failure alike — the printed counts tell those apart, and the recovery is the same either way. Check output for what to fix, then re-run.</summary>
     PartialSuccess = 18,
 
-    /// <summary>Check could not run to completion — an empty-input guard skipped the comparison (e.g. no local or no live components), or a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault). Not a pass/fail signal; investigate the printed reason before trusting the result.</summary>
+    /// <summary>Check could not run to completion — an empty-input guard skipped the comparison (e.g. no local or no live components), a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault), or every component a settings file declared was absent from the target, which usually means the wrong file or the wrong environment. Not a pass/fail signal; investigate the printed reason before trusting the result.</summary>
     Inconclusive = 19,
 
     /// <summary>A file already occupies a path the command would write to, and the command will not overwrite it. Distinct from <see cref="ConfigInvalid"/>: nothing is missing or malformed — something valid is in the way. Move or remove the file named in the error output, or run the command somewhere else.</summary>

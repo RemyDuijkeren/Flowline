@@ -71,6 +71,13 @@ routine post-deploy step.
    runs every pre-flight (DTAP gate, git-clean, drift, pack, solution checker, orphan report) plus a
    labeled backup, then stops before importing; it ends with `Dry run complete`.
 
+6. `flowline configure <env>` after a deploy, when the environment needs values or component state a
+   deploy can't carry: environment variable values, connection reference bindings, and flows or plugin
+   steps that must be off. It reads `Solution/deploymentSettings.<env>.json` and touches only what that
+   file names. Re-running it changes nothing, so it is safe on every pipeline run; `--dry-run` reports
+   the change set and writes nothing. `flowline configure <env> --pull` writes the file from the
+   environment instead — use it to create the first one, then commit it.
+
 `flowline drift <env>` is the read-only preview of what a deploy would flag — safe against prod at any
 time. `flowline diff` is the same question on the git axis: which components changed between two points
 in history, with no connection, no auth and no network. `flowline status` reports environments, auth and
@@ -175,7 +182,7 @@ command fails with the valid list.
 | `push` | `delete-orphans`, `recreate-assembly`, `delete-form-handlers`, `config`, `all` |
 | `deploy` | `drift`, `first-import`, `delete-orphans`, `all` |
 | `sync` | `dirty`, `config`, `all` |
-| `clone`, `init`, `drift`, `generate`, `provision` | `config`, `all` |
+| `clone`, `init`, `configure`, `drift`, `generate`, `provision` | `config`, `all` |
 
 `deploy`'s `delete-orphans` is narrower than `push`'s: it gates exactly one unattributable case (a
 Custom API with no plugin type) plus web-resource orphans. Everything else follows the table above.
@@ -191,15 +198,15 @@ Exit codes are a stable public API — they don't change meaning across Flowline
 | 3 | NotFound | A Dataverse solution, or a local file the command needs, wasn't found | Verify the name or path named in the error |
 | 4 | NotAuthenticated | No usable PAC auth profile | Run: `pac auth create --environment <url>` |
 | 10 | ConnectionFailed | Dataverse environment unreachable | Check the environment URL in `.flowline` |
-| 11 | ConfigInvalid | `.flowline` or the `.sln`/`.slnx` is missing or malformed | Check the file named in the error |
+| 11 | ConfigInvalid | `.flowline`, the `.sln`/`.slnx`, or a settings file is missing or malformed; or a role keyword was used with no project to resolve it from | Check the file named in the error. For a role outside a project, pass the environment URL |
 | 12 | DirtyWorkingDirectory | Uncommitted git changes block the operation | `git commit` or `git stash` first (`sync` also accepts `--force dirty`; `deploy` does not) |
 | 13 | BuildFailed | `dotnet build` or PAC pack failed | Fix the build errors and retry |
 | 14 | VersionConflict | Target has a newer solution version | Add the `--force` specifier the error names |
-| 15 | ValidationFailed | Drift detected, missing dependencies, invalid `--force` value, or schema mismatch | For `drift`, **15 means drift was found — that's success, not an error.** Otherwise read the error |
+| 15 | ValidationFailed | Drift detected, missing dependencies, invalid `--force` value, schema mismatch, or contradictory flags | For `drift`, **15 means drift was found — that's success, not an error.** Otherwise read the error; a flag conflict names both flags |
 | 16 | Timeout | PAC CLI 60-minute limit exceeded | Retry; check environment health |
 | 17 | ForceRequired | Destructive operation needs explicit confirmation | Add the `--force <specifier>` the message names |
-| 18 | PartialSuccess | Deploy imported, but some orphan cleanup failed | Check output for components to remove manually |
-| 19 | Inconclusive | A check couldn't run to completion — `drift`'s empty-input guard skipped the comparison, or a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault) | Not a pass/fail signal — read the printed reason before trusting the result |
+| 18 | PartialSuccess | `deploy` imported but some orphan cleanup failed, or `configure` couldn't apply some components | One failure and every failure share this code — read the printed counts. Fix what the output names and re-run; both commands are safe to repeat |
+| 19 | Inconclusive | A check couldn't run to completion — `drift`'s empty-input guard skipped the comparison, a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault), or every component a `configure` settings file declared was missing from the target | Not a pass/fail signal — read the printed reason. For `configure` it usually means the wrong settings file or the wrong environment |
 | 20 | WriteTargetOccupied | A file already occupies a path the command would write to (e.g. `scaffold` meeting an existing template file) | Nothing is broken — something valid is in the way. Move the named file aside, or run the command somewhere else |
 | 21 | AssemblyNotRegistered | Deploy imported, but a plug-in package holds an assembly with no registration in the target, or one registered with no plugin types | Create the `pluginassembly` record under that package (sandbox isolation, matching version/culture/public key token), then deploy again so the content write populates its plugin types — repeats every deploy until that record exists |
 | 22 | ChangesFound | `diff --exit-code` found changes | **Not a failure**: the comparison ran and something differs. Only returned when `--exit-code` is passed; without it a run with changes still exits 0. Branch on it instead of parsing output |

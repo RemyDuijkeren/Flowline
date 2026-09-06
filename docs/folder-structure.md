@@ -15,7 +15,7 @@ ProjectRoot/
 ├── Solution/                          <-- The Dataverse solution and what belongs with it
 │   ├── <SolutionName>.cdsproj         <-- Dataverse solution project — PAC-managed, do not edit manually
 │   ├── src/                           <-- Unpacked solution XML (pac clone / sync) — PAC-managed
-│   └── deploymentSettings.<env>.json  <-- Per-environment settings (planned; see note below)
+│   └── deploymentSettings.<env>.json  <-- Per-environment settings (see note below)
 ├── Plugins/                           <-- .csproj (Plugins, Workflows, Custom APIs)
 │   ├── <SolutionName>.Plugins.csproj
 │   └── Models/                        <-- Early-bound C# types (from flowline generate)
@@ -44,7 +44,7 @@ Other Flowline commands don't require this exact layout — they find each proje
     - **`src/`**: Source files (TypeScript, SCSS, etc.).
     - **`public/`**: Static assets that don't need processing.
     - **`dist/`**: Build output, synced to Dataverse. Gitignored — regenerated on every build.
-- **`Solution/deploymentSettings.<env>.json`** *(planned, not yet scaffolded)*: Per-environment settings — environment variable values, connection references, and the flow, workflow and plugin step state that must be off. One file per environment role, falling back to `deploymentSettings.json` when no role-specific file exists. Committed to source control; the scaffolded `.gitignore` does not exclude it. Keeps PAC's filename stem so a copied file is still recognisable as a deployment settings file. Introduced by the planned `configure` command — see [`plans/2026-09-05-1332-feat-environment-configure-command-plan.md`](plans/2026-09-05-1332-feat-environment-configure-command-plan.md). No Microsoft convention exists for this location in a `.cdsproj` repo; this is Flowline's.
+- **`Solution/deploymentSettings.<env>.json`** *(not scaffolded; created by `configure --pull`)*: Per-environment settings — environment variable values, connection references, and the flow, workflow and plugin step state that must be off. One file per environment role, falling back to `deploymentSettings.json` when no role-specific file exists. Committed to source control; the scaffolded `.gitignore` does not exclude it. Keeps PAC's filename stem so a copied file is still recognisable as a deployment settings file. Read and written by the `configure` command. No Microsoft convention exists for this location in a `.cdsproj` repo; this is Flowline's.
 - **`artifacts/`**: Packed solution `.zip` files from `clone`, `sync`, and `deploy`. Gitignored — fully reproducible from `Solution/src/`.
 - **`CHANGES.md`**: Version history at the project root.
 - **`docs/`**: Not scaffolded with placeholder content — `clone`/`sync` create it only to write `DATAVERSE_CONTEXT.md` (domain/schema reference notes).
