@@ -41,6 +41,11 @@ public enum ConfigurableComponentKind
 /// Vault-backed Secret stores a reference rather than the secret itself, which is the whole reason R13 can
 /// pull one verbatim and must not pull any other.
 /// </param>
+/// <param name="Suspended">
+/// Whether a flow was Suspended rather than Draft. <see cref="Enabled"/> flattens both to not-active, so this
+/// is the only way an apply can tell a flow that stopped itself from one that was never started (KTD8).
+/// Always <c>false</c> for a plugin step, whose table has no third state.
+/// </param>
 public sealed record InventoryComponent(
     ConfigurableComponentKind Kind,
     string Name,
@@ -48,7 +53,8 @@ public sealed record InventoryComponent(
     bool? Enabled,
     string? CurrentValue = null,
     int? Type = null,
-    int? SecretStore = null);
+    int? SecretStore = null,
+    bool Suspended = false);
 
 /// <summary>Everything the target holds for one solution, in the classes a settings file can declare.</summary>
 public sealed record SolutionInventory(IReadOnlyList<InventoryComponent> Components)
@@ -178,7 +184,8 @@ public static class SolutionComponentInventory
                 // renameable display label and is only a fallback for a row that has no unique name.
                 e.GetAttributeValue<string>("uniquename") ?? e.GetAttributeValue<string>("name") ?? string.Empty,
                 e.Id,
-                IsWorkflowActive(e)))
+                IsWorkflowActive(e),
+                Suspended: IsWorkflowSuspended(e)))
             .Where(c => c.Name.Length > 0)
             .ToList();
     }
@@ -193,6 +200,17 @@ public static class SolutionComponentInventory
     /// </remarks>
     internal static bool IsWorkflowActive(Entity workflow) =>
         workflow.GetAttributeValue<OptionSetValue>("statecode")?.Value == 1;
+
+    /// <summary>
+    /// Whether a workflow stopped itself rather than never having been started.
+    /// </summary>
+    /// <remarks>
+    /// Suspended and Draft both read as not-active, so an apply that only saw <see cref="IsWorkflowActive"/>
+    /// would leave a suspended flow suspended when the file declares it off. Carrying the distinction is what
+    /// lets a declared-off suspended flow reach Draft, and what lets the run say the flow had been suspended.
+    /// </remarks>
+    internal static bool IsWorkflowSuspended(Entity workflow) =>
+        workflow.GetAttributeValue<OptionSetValue>("statecode")?.Value == ComponentStateWriter.WorkflowStateSuspended;
 
     static async Task<List<InventoryComponent>> ReadPluginStepsAsync(
         IOrganizationServiceAsync2 service, List<Guid> ids, CancellationToken ct)

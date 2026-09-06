@@ -89,7 +89,7 @@ public sealed class ConfigurePullService
         CarryVanishedEntries(document, existing, EnvironmentVariablesSection, "SchemaName", vanished);
         CarryVanishedEntries(document, existing, ConnectionReferencesSection, "LogicalName", vanished);
 
-        WriteStateSections(document, existing, inventory, added);
+        WriteStateSections(document, existing, inventory, added, vanished);
 
         return new PullResult(document, added, vanished, placeholders);
     }
@@ -227,35 +227,51 @@ public sealed class ConfigurePullService
         SettingsDocument document,
         SettingsDocument? existing,
         SolutionInventory inventory,
-        List<string> added)
+        List<string> added,
+        List<string> vanished)
     {
-        AppendState(document.Flows, existing?.Flows, inventory, ConfigurableComponentKind.Flow, added);
-        AppendState(document.PluginSteps, existing?.PluginSteps, inventory, ConfigurableComponentKind.PluginStep, added);
+        AppendState(document.Flows, existing?.Flows, inventory,
+            ConfigurableComponentKind.Flow, added, vanished);
+        AppendState(document.PluginSteps, existing?.PluginSteps, inventory,
+            ConfigurableComponentKind.PluginStep, added, vanished);
     }
 
+    /// <summary>
+    /// Merges one state section: adds the components that are off, reports the entries that no longer resolve.
+    /// </summary>
+    /// <remarks>
+    /// The merge rule lives in <see cref="SettingsFileMerger"/> so all four classes share one, rather than the
+    /// state classes keeping a second copy that can drift from it.
+    ///
+    /// The two sets it is given differ on purpose. The candidates to add are the components that are off; the
+    /// presence set is every component of the class, so a flow someone switched back on is not mistaken for
+    /// one that left the solution.
+    /// </remarks>
     static void AppendState(
         IList<ComponentStateEntry> into,
         IList<ComponentStateEntry>? existing,
         SolutionInventory inventory,
         ConfigurableComponentKind kind,
-        List<string> added)
+        List<string> added,
+        List<string> vanished)
     {
-        var declared = existing ?? [];
+        var present = inventory.OfKind(kind).ToList();
 
-        // Declared entries first, in the order the file had them, so a pull does not reshuffle a section
-        // someone reads in a diff (R12c).
-        foreach (var entry in declared)
+        var result = SettingsFileMerger.MergeStates(
+            existing ?? [],
+            present.Where(c => c.Enabled == false).Select(c => new ComponentStateEntry(c.Name, false)),
+            present.Select(c => c.Name));
+
+        // Declared entries keep their position, so a pull does not reshuffle a section someone reads in a
+        // diff (R12c); MergeStates preserves that order and appends the rest.
+        foreach (var entry in result.Merged)
             into.Add(entry);
 
-        var declaredNames = declared.Select(e => e.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in result.Added)
+            added.Add($"{kind}: {name}");
 
-        foreach (var component in inventory.OfKind(kind))
-        {
-            if (component.Enabled != false || declaredNames.Contains(component.Name)) continue;
-
-            into.Add(new ComponentStateEntry(component.Name, false));
-            added.Add($"{kind}: {component.Name}");
-        }
+        foreach (var name in result.Vanished)
+            vanished.Add($"{kind}: {name}");
     }
 
     static IEnumerable<JsonObject> EntriesIn(SettingsDocument document, string section) =>

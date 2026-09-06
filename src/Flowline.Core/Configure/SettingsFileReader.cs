@@ -102,13 +102,29 @@ public static class SettingsFileReader
     }
 
     /// <summary>Writes a settings file to disk, creating its folder when needed.</summary>
+    /// <remarks>
+    /// Written to a sibling temp file and moved into place, following
+    /// <c>MsBuildSolutionWriter.ReplaceFileAsync</c>. A pull overwrites a file the team has committed and
+    /// filled in by hand, so a write that failed halfway would destroy work no re-run can reconstruct.
+    /// The move leaves the previous file intact until the replacement is complete on disk.
+    /// </remarks>
     public static void Save(SettingsDocument document, string path)
     {
         var folder = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(folder))
             Directory.CreateDirectory(folder);
 
-        File.WriteAllText(path, Write(document));
+        var temp = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(temp, Write(document));
+            File.Move(temp, path, overwrite: true);
+        }
+        catch
+        {
+            if (File.Exists(temp)) File.Delete(temp);
+            throw;
+        }
     }
 
     static void ReadStateEntries(JsonNode? node, string section, IList<ComponentStateEntry> into)

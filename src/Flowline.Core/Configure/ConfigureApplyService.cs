@@ -34,6 +34,31 @@ public sealed class ConfigureApplyService
         var outcomes = new List<ComponentOutcome>();
         var declaredNames = new List<(ConfigurableComponentKind Kind, string Name)>();
 
+        try
+        {
+            await ApplyTiersAsync(service, document, inventory, mode, outcomes, declaredNames, ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // An interrupted run has already written to a live environment. Returning what happened so far
+            // is the only way the operator learns which components those were; throwing here would leave
+            // them to find out by re-reading the environment.
+            return new ApplyOutcome(outcomes, Undeclared(inventory, declaredNames), Cancelled: true);
+        }
+
+        return new ApplyOutcome(outcomes, Undeclared(inventory, declaredNames));
+    }
+
+    async Task ApplyTiersAsync(
+        IOrganizationServiceAsync2 service,
+        SettingsDocument document,
+        SolutionInventory inventory,
+        RunMode mode,
+        List<ComponentOutcome> outcomes,
+        List<(ConfigurableComponentKind Kind, string Name)> declaredNames,
+        CancellationToken ct)
+    {
         // Tier 1 — values and connection references.
         foreach (var declared in ReadValues(document, EnvironmentVariablesSection, "SchemaName", "Value"))
         {
@@ -72,7 +97,10 @@ public sealed class ConfigureApplyService
         {
             declaredNames.Add((ConfigurableComponentKind.Flow, entry.Name));
             outcomes.Add(await ApplyOneAsync(inventory, ConfigurableComponentKind.Flow, entry.Name,
-                component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct))
+                // Suspended is neither on nor off, so the writer needs to be told: a suspended flow the file
+                // declares off is not already off, and has to reach Draft (KTD8).
+                component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct,
+                    currentlySuspended: component.Suspended))
                 .ConfigureAwait(false));
         }
 
@@ -84,8 +112,6 @@ public sealed class ConfigureApplyService
                 component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct))
                 .ConfigureAwait(false));
         }
-
-        return new ApplyOutcome(outcomes, Undeclared(inventory, declaredNames));
     }
 
     /// <summary>
@@ -132,7 +158,9 @@ public sealed class ConfigureApplyService
 
         if (match.Ambiguous.Count > 0)
             return new ComponentOutcome(kind, name, ComponentOutcomeKind.Skipped,
-                $"'{name}' matches {match.Ambiguous.Count} components in this solution — rename one, or address it more precisely.");
+                // Only one remedy exists, so only one is offered: names are the whole addressing scheme
+                // (KTD9) and the file has no qualifier to disambiguate with.
+                $"'{name}' matches {match.Ambiguous.Count} components in this solution — rename one in Dataverse, then re-run.");
 
         if (match.NotFound)
             return new ComponentOutcome(kind, name, ComponentOutcomeKind.Skipped,

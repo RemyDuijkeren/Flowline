@@ -21,7 +21,13 @@ public static class SettingsFileMerger
     /// Merges a live component set into the entries a settings file already declares.
     /// </summary>
     /// <param name="existing">Entries the file already carries, in file order.</param>
-    /// <param name="live">Components found in the target environment.</param>
+    /// <param name="live">Components to add when the file does not already name them.</param>
+    /// <param name="presentNames">
+    /// Every component of this class the solution holds, which is what decides whether an existing entry has
+    /// vanished. Wider than <paramref name="live"/> on purpose: a state section lists only the components
+    /// that are off, so judging by that set alone would report every flow someone switched back on as gone.
+    /// Omit it only when the two sets really are the same.
+    /// </param>
     /// <remarks>
     /// Existing entries keep their position and their declared value; components the file does not name are
     /// appended in the order the live set supplied them. An entry whose component is no longer in the
@@ -30,16 +36,19 @@ public static class SettingsFileMerger
     /// </remarks>
     public static StateMergeResult MergeStates(
         IEnumerable<ComponentStateEntry> existing,
-        IEnumerable<ComponentStateEntry> live)
+        IEnumerable<ComponentStateEntry> live,
+        IEnumerable<string>? presentNames = null)
     {
         var existingList = existing.ToList();
-        var liveNames = live.Select(e => e.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var liveList = live.ToList();
+        var liveNames = (presentNames ?? liveList.Select(e => e.Name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var declaredNames = existingList.Select(e => e.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var merged = new List<ComponentStateEntry>(existingList);
         var added = new List<string>();
 
-        foreach (var candidate in live.Where(c => !declaredNames.Contains(c.Name)))
+        foreach (var candidate in liveList.Where(c => !declaredNames.Contains(c.Name)))
         {
             merged.Add(candidate);
             added.Add(candidate.Name);

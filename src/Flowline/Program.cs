@@ -237,9 +237,10 @@ app.Configure(config =>
     // values and component states a settings file carries change on their own schedule, and re-running a
     // whole import to flip one flow back on is the wrong unit of work.
     config.AddCommand<ConfigureCommand>("configure")
-          .WithDescription("Apply a settings file to an environment (dev, test, uat, prod, or a URL): environment variable values, connection references, and flow and plugin step state. Only components the file names are touched. Re-running the same file changes nothing, so it is safe in a pipeline. Use --dry-run to see what would change first.")
+          .WithDescription("Apply a settings file to an environment (dev, test, uat, prod, or a URL): environment variable values, connection references, and flow and plugin step state. Only components the file names are touched. Re-running the same file changes nothing, so it is safe in a pipeline. Use --dry-run to see what would change first, or --pull to write the file from the environment instead of applying it.")
           .WithExample("configure", "test")
           .WithExample("configure", "prod", "--dry-run")
+          .WithExample("configure", "test", "--pull")
           .WithExample("configure", "test", "--settings-file", "settings.test.json")
           .WithExample("configure", "https://contoso-test.crm4.dynamics.com/", "--solution-name", "ContosoCustomizations");
 

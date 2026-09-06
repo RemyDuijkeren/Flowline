@@ -198,7 +198,7 @@ Exit codes are a stable public API — they don't change meaning across Flowline
 | 3 | NotFound | A Dataverse solution, or a local file the command needs, wasn't found | Verify the name or path named in the error |
 | 4 | NotAuthenticated | No usable PAC auth profile | Run: `pac auth create --environment <url>` |
 | 10 | ConnectionFailed | Dataverse environment unreachable | Check the environment URL in `.flowline` |
-| 11 | ConfigInvalid | `.flowline`, the `.sln`/`.slnx`, or a settings file is missing or malformed; or a role keyword was used with no project to resolve it from | Check the file named in the error. For a role outside a project, pass the environment URL |
+| 11 | ConfigInvalid | `.flowline`, the `.sln`/`.slnx`, or a settings file is missing or malformed; a role keyword was used with no project to resolve it from; or the solution couldn't be identified outside a project | Check the file named in the error. For a role outside a project, pass the environment URL. When the error asks for a flag, pass it — `--solution-name` outside a project |
 | 12 | DirtyWorkingDirectory | Uncommitted git changes block the operation | `git commit` or `git stash` first (`sync` also accepts `--force dirty`; `deploy` does not) |
 | 13 | BuildFailed | `dotnet build` or PAC pack failed | Fix the build errors and retry |
 | 14 | VersionConflict | Target has a newer solution version | Add the `--force` specifier the error names |
@@ -210,7 +210,7 @@ Exit codes are a stable public API — they don't change meaning across Flowline
 | 20 | WriteTargetOccupied | A file already occupies a path the command would write to (e.g. `scaffold` meeting an existing template file) | Nothing is broken — something valid is in the way. Move the named file aside, or run the command somewhere else |
 | 21 | AssemblyNotRegistered | Deploy imported, but a plug-in package holds an assembly with no registration in the target, or one registered with no plugin types | Create the `pluginassembly` record under that package (sandbox isolation, matching version/culture/public key token), then deploy again so the content write populates its plugin types — repeats every deploy until that record exists |
 | 22 | ChangesFound | `diff --exit-code` found changes | **Not a failure**: the comparison ran and something differs. Only returned when `--exit-code` is passed; without it a run with changes still exits 0. Branch on it instead of parsing output |
-| 130 | Cancelled | Ctrl+C / SIGINT, or `deploy`'s first-import confirmation declined | For the confirmation case: re-run with `--force first-import` |
+| 130 | Cancelled | Ctrl+C / SIGINT, or `deploy`'s first-import confirmation declined | For the confirmation case: re-run with `--force first-import`. An interrupted `configure` still prints the components it applied before stopping; re-run to finish |
 
 Codes 2 and 5 are intentionally unused.
 

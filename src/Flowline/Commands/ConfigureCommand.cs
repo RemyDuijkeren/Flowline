@@ -127,6 +127,15 @@ public class ConfigureCommand(
     internal static string BuildAppliedMessage(string environment) =>
         $"{Markup.Escape(environment)} is configured. Re-run any time — the same file changes nothing twice.";
 
+    /// <summary>The finish line for a run that was interrupted partway through the file.</summary>
+    /// <remarks>
+    /// It has to say two things an operator acts on: the components listed above are the ones that were
+    /// written, and the rest of the file was never reached. Re-running is the fix, and R6 makes that safe.
+    /// </remarks>
+    internal static string BuildCancelledMessage(string environment) =>
+        $"Stopped early — the components above were applied to {Markup.Escape(environment)}, the rest weren't. " +
+        "Re-run to finish.";
+
     /// <summary>How many solution components this file says nothing about.</summary>
     internal static string BuildUndeclaredWarning(int count) =>
         count == 1
@@ -397,8 +406,11 @@ public class ConfigureCommand(
                     Console.Info($"Would change [bold]{name}[/]");
                     break;
                 case ComponentOutcomeKind.Applied:
+                    // The wording holds in both directions: a suspended flow is either activated again or
+                    // moved to draft, and either way what the reader needs to know is that it had stopped
+                    // itself, so a re-suspension after this run is not a surprise.
                     Console.Ok(component.WasSuspended
-                        ? $"[bold]{name}[/] activated — it was suspended, and may be again"
+                        ? $"[bold]{name}[/] updated — it was suspended before this run"
                         : $"[bold]{name}[/] updated");
                     break;
                 case ComponentOutcomeKind.Unchanged:
@@ -420,6 +432,14 @@ public class ConfigureCommand(
             Console.Warning(BuildUndeclaredWarning(outcome.Undeclared.Count));
 
         Console.Info(outcome.SummaryLine());
+
+        // An interrupted run must not sign off as if it finished the file. The components above are what it
+        // reached, and re-running is safe, so that is the whole message.
+        if (outcome.Cancelled)
+        {
+            Console.Warning(BuildCancelledMessage(environment));
+            return;
+        }
 
         // One finish line, always last. A real apply used to end on the summary and never reach one.
         Console.Done(mode.IsReportOnly()

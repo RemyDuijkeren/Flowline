@@ -184,4 +184,58 @@ public class SettingsFileReaderTests
         act.Should().Throw<FlowlineException>()
             .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
     }
+
+    // A pull overwrites a file the team committed and filled in by hand. A write that failed halfway used to
+    // leave that file truncated, destroying work no re-run can reconstruct.
+    [Fact]
+    public void Save_WhenTheWriteFails_LeavesTheExistingFileIntact()
+    {
+        var folder = Directory.CreateTempSubdirectory("flowline-save-").FullName;
+        var path = Path.Combine(folder, "deploymentSettings.prod.json");
+        const string original = """{ "EnvironmentVariables": [ { "SchemaName": "cr123_Url", "Value": "keep-me" } ] }""";
+        File.WriteAllText(path, original);
+
+        try
+        {
+            // Read-only is the cheapest real failure: the move into place is refused after the replacement
+            // has already been written to the temp file, which is exactly the window that used to truncate.
+            File.SetAttributes(path, FileAttributes.ReadOnly);
+
+            var act = () => SettingsFileReader.Save(new SettingsDocument(), path);
+
+            act.Should().Throw<UnauthorizedAccessException>();
+
+            File.SetAttributes(path, FileAttributes.Normal);
+            File.ReadAllText(path).Should().Be(original);
+            Directory.GetFiles(folder, "*.tmp").Should().BeEmpty("a failed write cleans up after itself");
+        }
+        finally
+        {
+            if (File.Exists(path)) File.SetAttributes(path, FileAttributes.Normal);
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_OverAnExistingFile_ReplacesItAndLeavesNoTempBehind()
+    {
+        var folder = Directory.CreateTempSubdirectory("flowline-save-").FullName;
+        var path = Path.Combine(folder, "deploymentSettings.prod.json");
+        File.WriteAllText(path, """{ "EnvironmentVariables": [] }""");
+
+        try
+        {
+            var document = SettingsFileReader.Parse(
+                """{ "EnvironmentVariables": [ { "SchemaName": "cr123_New", "Value": "" } ] }""");
+
+            SettingsFileReader.Save(document, path);
+
+            File.ReadAllText(path).Should().Contain("cr123_New");
+            Directory.GetFiles(folder, "*.tmp").Should().BeEmpty();
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
 }

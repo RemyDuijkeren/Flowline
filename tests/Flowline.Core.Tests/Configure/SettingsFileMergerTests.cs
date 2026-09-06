@@ -82,4 +82,35 @@ public class SettingsFileMergerTests
         result.Added.Should().ContainSingle();
         result.Vanished.Should().BeEmpty();
     }
+
+    // A state section lists only the components that are off, so the candidates to add are a subset of what
+    // the solution holds. Judging vanished by that subset alone would report every flow someone switched back
+    // on as gone, which is why the presence set is a separate argument.
+    [Fact]
+    public void Merge_DeclaredEntryWhoseComponentIsOn_IsNotReportedAsVanished()
+    {
+        var existing = Existing(("Order Processing", true));
+
+        var result = SettingsFileMerger.MergeStates(
+            existing.Flows,
+            live: [],
+            presentNames: ["Order Processing"]);
+
+        result.Vanished.Should().BeEmpty();
+        result.Merged.Should().ContainSingle().Which.Enabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Merge_DeclaredEntryTheSolutionNoLongerHolds_IsKeptAndReported()
+    {
+        var existing = Existing(("Deleted flow", false));
+
+        var result = SettingsFileMerger.MergeStates(
+            existing.Flows,
+            live: [],
+            presentNames: ["Something else"]);
+
+        result.Vanished.Should().ContainSingle().Which.Should().Be("Deleted flow");
+        result.Merged.Should().ContainSingle("a line someone wrote is reported, never dropped");
+    }
 }

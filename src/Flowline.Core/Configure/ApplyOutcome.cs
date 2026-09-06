@@ -6,9 +6,14 @@ namespace Flowline.Core.Configure;
 /// Solution components in the covered classes the file does not name (R9). A warning only — the file is a
 /// partial declaration, so not naming a component is a legitimate choice, not an error.
 /// </param>
+/// <param name="Cancelled">
+/// Whether the run was interrupted before it worked through the file. The components it did reach are still
+/// reported, because those were already written to a live environment.
+/// </param>
 public sealed record ApplyOutcome(
     IReadOnlyList<ComponentOutcome> Components,
-    IReadOnlyList<string> Undeclared)
+    IReadOnlyList<string> Undeclared,
+    bool Cancelled = false)
 {
     /// <summary>Components whose declared state was written.</summary>
     public int Applied => Components.Count(c => c.Outcome == ComponentOutcomeKind.Applied);
@@ -42,6 +47,9 @@ public sealed record ApplyOutcome(
     {
         get
         {
+            // An interrupted run outranks everything below it: whatever the components it reached did, the
+            // file was not worked through, so neither success nor a component-level verdict describes it.
+            if (Cancelled) return ExitCode.Cancelled;
             if (Failed > 0) return ExitCode.PartialSuccess;
             if (Components.Count > 0 && Skipped == Components.Count) return ExitCode.Inconclusive;
             return ExitCode.Success;

@@ -266,9 +266,14 @@ public static class PacUtils
                       .ExecuteAsync(cancellationToken)
                       .Task);
 
+        // ConnectionFailed rather than GeneralError: the realistic causes are a stale PAC login or an
+        // unreachable network, which is how the solution-check wrapper above already reports the same
+        // failure. An unattended caller branches on the code, and exit 1 leaves it unable to tell an expired
+        // login from any other crash.
         if (!result.IsSuccess)
-            throw new FlowlineException(ExitCode.GeneralError,
-                $"Couldn't read the solution's configurable components from '{solutionPath}'. Use --verbose for more details.");
+            throw new FlowlineException(ExitCode.ConnectionFailed,
+                $"Couldn't read the solution's configurable components from '{solutionPath}' — " +
+                "check your PAC login and network connection. Use --verbose for more details.");
     }
 
     // `pac solution unpack` defaults --packagetype to Unmanaged and fails outright ("Solution package type

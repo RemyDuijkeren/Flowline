@@ -26,7 +26,7 @@ public enum ExitCode
     /// <summary>Dataverse environment unreachable. Check environment URL in .flowline.</summary>
     ConnectionFailed = 10,
 
-    /// <summary>A file the command reads or writes is missing or malformed: .flowline, an MSBuild solution file (.sln/.slnx), or a settings file. Also returned when a role keyword can't be resolved because there is no project to resolve it from. Check the file named in the error output is present and valid.</summary>
+    /// <summary>The command could not establish what to work on from its inputs: a file it reads or writes is missing or malformed (.flowline, an MSBuild solution file (.sln/.slnx), or a settings file), a role keyword can't be resolved because there is no project to resolve it from, or the solution can't be identified outside a project. The error names what was missing: check the file it names, or supply the flag it asks for.</summary>
     ConfigInvalid = 11,
 
     /// <summary>Uncommitted git changes block the operation. Commit or stash changes first.</summary>

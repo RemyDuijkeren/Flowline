@@ -23,6 +23,9 @@ public class ConfigureApplyServiceTests
     static InventoryComponent Flow(string name, bool enabled) =>
         new(ConfigurableComponentKind.Flow, name, Guid.NewGuid(), enabled);
 
+    static InventoryComponent SuspendedFlow(string name) =>
+        new(ConfigurableComponentKind.Flow, name, Guid.NewGuid(), false, Suspended: true);
+
     static InventoryComponent Variable(string name) =>
         new(ConfigurableComponentKind.EnvironmentVariable, name, Guid.NewGuid(), null);
 
@@ -247,5 +250,90 @@ public class ConfigureApplyServiceTests
         outcome.Applied.Should().Be(1);
         await service.Received(1).CreateAsync(
             Arg.Is<Entity>(e => e.LogicalName == "environmentvariablevalue"), Arg.Any<CancellationToken>());
+    }
+
+    // The writer has always handled Suspended; nothing supplied it. The flag has to survive the whole way
+    // from the inventory read to the writer, or a suspended flow declared off silently stays suspended.
+    [Fact]
+    public async Task Apply_SuspendedFlowDeclaredOff_IsMovedToDraft()
+    {
+        var service = Service();
+        var document = DocumentWith("""
+            { "Flows": [ { "Name": "Nightly reconciliation", "Enabled": false } ] }
+            """);
+
+        var outcome = await new ConfigureApplyService().ApplyAsync(
+            service, document, new SolutionInventory([SuspendedFlow("Nightly reconciliation")]),
+            RunMode.Normal, CancellationToken.None);
+
+        outcome.Applied.Should().Be(1, "Suspended is not the same as off, so this is a real change");
+        await service.Received(1).UpdateAsync(
+            Arg.Is<Entity>(e => e.LogicalName == "workflow"
+                                && ((OptionSetValue)e["statecode"]).Value == 0),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Apply_SuspendedFlowDeclaredOn_ActivatesAndReportsThePriorState()
+    {
+        var service = Service();
+        var document = DocumentWith("""
+            { "Flows": [ { "Name": "Nightly reconciliation", "Enabled": true } ] }
+            """);
+
+        var outcome = await new ConfigureApplyService().ApplyAsync(
+            service, document, new SolutionInventory([SuspendedFlow("Nightly reconciliation")]),
+            RunMode.Normal, CancellationToken.None);
+
+        outcome.Components.Should().ContainSingle().Which.WasSuspended.Should().BeTrue(
+            "the run has to say the flow had stopped itself, or a re-suspension looks like a new fault");
+    }
+
+    // A flow that is simply off stays the ordinary case: nothing to do, and no suspended claim on the report.
+    [Fact]
+    public async Task Apply_DraftFlowDeclaredOff_IsUnchangedAndNotReportedAsSuspended()
+    {
+        var service = Service();
+        var document = DocumentWith("""
+            { "Flows": [ { "Name": "Nightly reconciliation", "Enabled": false } ] }
+            """);
+
+        var outcome = await new ConfigureApplyService().ApplyAsync(
+            service, document, new SolutionInventory([Flow("Nightly reconciliation", false)]),
+            RunMode.Normal, CancellationToken.None);
+
+        outcome.Unchanged.Should().Be(1);
+        outcome.Components.Single().WasSuspended.Should().BeFalse();
+        await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    // An interrupted run has already written to a live environment. What it managed to do is the one thing
+    // the operator cannot recover from the exit code, so it survives the cancellation.
+    [Fact]
+    public async Task Apply_CancelledMidRun_ReturnsWhatItAlreadyDidAndSaysItStopped()
+    {
+        var service = Service();
+        var calls = 0;
+        service.UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ++calls == 1 ? Task.CompletedTask : throw new OperationCanceledException());
+
+        var document = DocumentWith("""
+            {
+              "Flows": [
+                { "Name": "First", "Enabled": true },
+                { "Name": "Second", "Enabled": true }
+              ]
+            }
+            """);
+
+        var outcome = await new ConfigureApplyService().ApplyAsync(
+            service, document,
+            new SolutionInventory([Flow("First", false), Flow("Second", false)]),
+            RunMode.Normal, CancellationToken.None);
+
+        outcome.Cancelled.Should().BeTrue();
+        outcome.Applied.Should().Be(1, "the first flow was written before the interruption");
+        outcome.Components.Should().ContainSingle().Which.Name.Should().Be("First");
+        outcome.ExitCode.Should().Be(ExitCode.Cancelled);
     }
 }

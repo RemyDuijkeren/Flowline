@@ -184,6 +184,19 @@ public class ConfigureCommandTests : IDisposable
         message.Should().Contain("Re-run");
     }
 
+    // An interrupted run must not sign off with the success line. It has written to a live environment and
+    // stopped partway, so the finish line has to say both halves and point at the re-run.
+    [Fact]
+    public void BuildCancelledMessage_SaysWhatLandedAndWhatDidnt()
+    {
+        var message = ConfigureCommand.BuildCancelledMessage("Contoso TEST");
+
+        message.Should().Contain("Contoso TEST");
+        message.Should().Contain("the rest weren't");
+        message.Should().Contain("Re-run");
+        message.Should().NotBe(ConfigureCommand.BuildAppliedMessage("Contoso TEST"));
+    }
+
     [Fact]
     public void BuildPullDryRunMessage_SaysTheFileWasntWritten()
     {

@@ -156,6 +156,39 @@ public class ConfigurePullServiceTests
         SettingsFileReader.Write(result.Document).Should().Contain("cr123_Retired");
     }
 
+    // The state classes used to carry a vanished entry forward without saying so, which left a settings file
+    // quietly naming a flow nobody could find any more.
+    [Fact]
+    public async Task Build_FlowEntryWhoseComponentLeftTheSolution_IsKeptAndReported()
+    {
+        var existing = Doc("""
+            { "Flows": [ { "Name": "Deleted flow", "Enabled": false } ] }
+            """);
+
+        var result = await new ConfigurePullService().BuildAsync(
+            Service(), Doc(PacSkeleton), existing, new SolutionInventory([]), CancellationToken.None);
+
+        result.Vanished.Should().Contain(v => v.Contains("Deleted flow"));
+        result.Document.Flows.Should().ContainSingle().Which.Name.Should().Be("Deleted flow");
+    }
+
+    // The counterpart: a flow the file declares that is simply switched on is still in the solution, and
+    // reporting it as gone would send someone deleting a line they need.
+    [Fact]
+    public async Task Build_FlowEntryWhoseComponentIsOn_IsNotReportedAsVanished()
+    {
+        var existing = Doc("""
+            { "Flows": [ { "Name": "Order Processing", "Enabled": true } ] }
+            """);
+
+        var result = await new ConfigurePullService().BuildAsync(
+            Service(), Doc(PacSkeleton), existing,
+            new SolutionInventory([Flow("Order Processing", true)]), CancellationToken.None);
+
+        result.Vanished.Should().BeEmpty();
+        result.Document.Flows.Should().ContainSingle().Which.Enabled.Should().BeTrue();
+    }
+
     // ── Determinism (R12c) ───────────────────────────────────────────────────
 
     [Fact]

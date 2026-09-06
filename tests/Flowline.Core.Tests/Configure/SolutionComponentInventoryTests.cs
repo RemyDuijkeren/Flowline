@@ -33,6 +33,17 @@ public class SolutionComponentInventoryTests
         SolutionComponentInventory.IsWorkflowActive(Workflow(statecode)).Should().Be(expected);
     }
 
+    // Draft and Suspended both read as not-active above, which is why the apply needs this second question:
+    // a flow that stopped itself is not the same as one that was never started.
+    [Theory]
+    [InlineData(0, false)] // Draft
+    [InlineData(1, false)] // Activated
+    [InlineData(2, true)]  // Suspended
+    public void IsWorkflowSuspended_SeparatesSuspendedFromDraft(int statecode, bool expected)
+    {
+        SolutionComponentInventory.IsWorkflowSuspended(Workflow(statecode)).Should().Be(expected);
+    }
+
     [Theory]
     [InlineData(0, true)]  // Enabled
     [InlineData(1, false)] // Disabled
