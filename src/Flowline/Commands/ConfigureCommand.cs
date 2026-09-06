@@ -102,14 +102,15 @@ public class ConfigureCommand(
         $"'{target}' is a role name, and roles resolve from .flowline — there's no Flowline project here. " +
         "Pass the environment URL instead.";
 
-    /// <summary>Names the environment and file a run resolved, before anything is written.</summary>
+    /// <summary>Names the file a run resolved, before anything is written.</summary>
     /// <remarks>
-    /// The only wrong-file-wrong-environment guard on an unattended run: there is no confirmation (KTD10),
-    /// and the all-skipped Inconclusive exit only fires when nothing matched at all.
+    /// An input verdict in the same shape as the environment and solution lines above it, not an
+    /// announcement of the work — the tone guide's one-line-per-resolved-input act. With no confirmation
+    /// prompt (KTD10), this line plus the environment line is what an operator has to catch a run pointed
+    /// at the wrong file or the wrong environment before it writes.
     /// </remarks>
-    internal static string BuildResolutionNote(string environment, SettingsFileLocation location) =>
-        $"Applying [bold]{Markup.Escape(Path.GetFileName(location.Path))}[/] " +
-        $"({SourceLabel(location.Source)}) to [bold]{Markup.Escape(environment)}[/]";
+    internal static string BuildResolutionNote(SettingsFileLocation location) =>
+        $"Settings: [bold]{Markup.Escape(Path.GetFileName(location.Path))}[/] ({SourceLabel(location.Source)})";
 
     static string SourceLabel(SettingsFileSource source) => source switch
     {
@@ -121,6 +122,20 @@ public class ConfigureCommand(
     /// <summary>Dry-run completion wording, in the statement form the other commands use.</summary>
     internal static string BuildDryRunCompleteMessage(string environment) =>
         $"Dry run complete — {Markup.Escape(environment)} is untouched. Run without --dry-run to apply.";
+
+    /// <summary>The finish line for a real apply.</summary>
+    internal static string BuildAppliedMessage(string environment) =>
+        $"{Markup.Escape(environment)} is configured. Re-run any time — the same file changes nothing twice.";
+
+    /// <summary>How many solution components this file says nothing about.</summary>
+    internal static string BuildUndeclaredWarning(int count) =>
+        count == 1
+            ? "1 component in this solution isn't in the file — run with --verbose to see it."
+            : $"{count} components in this solution aren't in the file — run with --verbose to list them.";
+
+    /// <summary>A pull's dry run leaves a file unwritten, not an environment untouched.</summary>
+    internal static string BuildPullDryRunMessage(string path) =>
+        $"Dry run complete — {Markup.Escape(path)} wasn't written. Run without --dry-run to write it.";
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
@@ -173,7 +188,7 @@ public class ConfigureCommand(
             return await PullAsync(service, solutionPath, solutionIsZip, location, inventory, mode, env, cancellationToken);
         }
 
-        Console.Info(BuildResolutionNote(env.DisplayName ?? settings.Target, location));
+        Console.Info(BuildResolutionNote(location));
 
         var outcome = await new ConfigureApplyService()
             .ApplyAsync(service, SettingsFileReader.Read(location.Path), inventory, mode, cancellationToken);
@@ -226,7 +241,7 @@ public class ConfigureCommand(
 
             if (mode.IsReportOnly())
             {
-                Console.Done(BuildDryRunCompleteMessage(env.DisplayName ?? location.Path));
+                Console.Done(BuildPullDryRunMessage(ConsolePath.FormatRelativePath(location.Path, RootFolder)));
                 return (int)ExitCode.Success;
             }
 
@@ -260,10 +275,9 @@ public class ConfigureCommand(
     async Task<string> ResolveSolutionNameAsync(
         Settings settings, bool standalone, string? artifactPath, EnvironmentInfo env, CancellationToken ct)
     {
-        if (!standalone)
-            return (await GetAndCheckSolutionAsync(null, env.EnvironmentUrl!, includeManaged: null, settings, ct))
-                .projectSolution.UniqueName;
-
+        // Keyed off the flag's own value, not the mode. Resolving the project's name here while the PAC
+        // skeleton came from the artifact produced a file whose sections described two different solutions —
+        // the same shape of bug drift shipped and fixed (DriftCommand.cs:41-46).
         if (artifactPath is not null)
         {
             var (path, isZip) = ResolveSolutionInput(artifactPath);
@@ -273,10 +287,16 @@ public class ConfigureCommand(
 
             if (!string.IsNullOrWhiteSpace(uniqueName))
             {
-                Console.Info(DeployCommand.BuildStandaloneIdentityNote(Path.GetFileName(path)));
+                if (standalone)
+                    Console.Info(DeployCommand.BuildStandaloneIdentityNote(Path.GetFileName(path)));
+
                 return uniqueName;
             }
         }
+
+        if (!standalone)
+            return (await GetAndCheckSolutionAsync(null, env.EnvironmentUrl!, includeManaged: null, settings, ct))
+                .projectSolution.UniqueName;
 
         return settings.SolutionName
             ?? throw new FlowlineException(ExitCode.ConfigInvalid,
@@ -340,9 +360,10 @@ public class ConfigureCommand(
     async Task<SettingsFileLocation> ResolveSettingsFileAsync(
         Settings settings, EnvironmentRole? role, bool standalone, string? artifactPath, CancellationToken ct)
     {
-        // A stand-alone pull writes beside the artifact it was given (R12), not beside the working
-        // directory — the artifact is the only thing about that run with a location of its own.
-        if (standalone && artifactPath is not null)
+        // A pull writes beside the artifact it was given (R12). Anchoring on the project instead would put
+        // one solution's captured values in another solution's settings file, since the identity above comes
+        // from the artifact whenever there is one.
+        if (artifactPath is not null)
         {
             var (path, isZip) = ResolveSolutionInput(artifactPath);
             var anchor = isZip ? Path.GetDirectoryName(path)! : path;
@@ -375,8 +396,8 @@ public class ConfigureCommand(
                     break;
                 case ComponentOutcomeKind.Applied:
                     Console.Ok(component.WasSuspended
-                        ? $"[bold]{name}[/] activated — it was Suspended, and the platform may suspend it again"
-                        : $"[bold]{name}[/] set");
+                        ? $"[bold]{name}[/] activated — it was suspended, and may be again"
+                        : $"[bold]{name}[/] updated");
                     break;
                 case ComponentOutcomeKind.Unchanged:
                     Console.Verbose($"{name} already matches");
@@ -394,11 +415,13 @@ public class ConfigureCommand(
             Console.Verbose($"Not declared in the settings file: {Markup.Escape(undeclared)}");
 
         if (outcome.Undeclared.Count > 0)
-            Console.Warning($"{outcome.Undeclared.Count} solution component(s) aren't declared in this file — run with --verbose to list them.");
+            Console.Warning(BuildUndeclaredWarning(outcome.Undeclared.Count));
 
         Console.Info(outcome.SummaryLine());
 
-        if (mode.IsReportOnly())
-            Console.Done(BuildDryRunCompleteMessage(environment));
+        // One finish line, always last. A real apply used to end on the summary and never reach one.
+        Console.Done(mode.IsReportOnly()
+            ? BuildDryRunCompleteMessage(environment)
+            : BuildAppliedMessage(environment));
     }
 }

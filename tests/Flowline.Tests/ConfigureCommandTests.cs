@@ -147,10 +147,9 @@ public class ConfigureCommandTests : IDisposable
         var location = new SettingsFileLocation(
             Path.Combine("C:", "repo", "Solution", "settings.test.json"), SettingsFileSource.RoleConvention, Exists: true);
 
-        var note = ConfigureCommand.BuildResolutionNote("Contoso TEST", location);
+        var note = ConfigureCommand.BuildResolutionNote(location);
 
         note.Should().Contain("settings.test.json");
-        note.Should().Contain("Contoso TEST");
     }
 
     [Theory]
@@ -161,7 +160,7 @@ public class ConfigureCommandTests : IDisposable
     {
         var location = new SettingsFileLocation("settings.json", source, Exists: true);
 
-        ConfigureCommand.BuildResolutionNote("TEST", location).Should().Contain(expected);
+        ConfigureCommand.BuildResolutionNote(location).Should().Contain(expected);
     }
 
     [Fact]
@@ -172,6 +171,36 @@ public class ConfigureCommandTests : IDisposable
         message.Should().Contain("Contoso PROD");
         message.Should().Contain("untouched");
         message.Should().Contain("--dry-run");
+    }
+
+    // Rule 5 of the tone guide: one finish line, always last. A real apply used to end on the summary
+    // count and never print one, so a successful run just stopped.
+    [Fact]
+    public void BuildAppliedMessage_NamesTheEnvironmentAndSaysReRunningIsSafe()
+    {
+        var message = ConfigureCommand.BuildAppliedMessage("Contoso TEST");
+
+        message.Should().Contain("Contoso TEST");
+        message.Should().Contain("Re-run");
+    }
+
+    [Fact]
+    public void BuildPullDryRunMessage_SaysTheFileWasntWritten()
+    {
+        // A pull's dry run leaves a file unwritten; saying the environment is untouched would describe the
+        // wrong thing entirely, since a pull never writes to one.
+        var message = ConfigureCommand.BuildPullDryRunMessage("Solution/deploymentSettings.test.json");
+
+        message.Should().Contain("deploymentSettings.test.json");
+        message.Should().Contain("wasn't written");
+    }
+
+    [Theory]
+    [InlineData(1, "1 component in this solution isn't in the file")]
+    [InlineData(46, "46 components in this solution aren't in the file")]
+    public void BuildUndeclaredWarning_ReadsAsAColleagueWroteIt(int count, string expected)
+    {
+        ConfigureCommand.BuildUndeclaredWarning(count).Should().StartWith(expected);
     }
 
     // ── Force vocabulary (KTD10) ─────────────────────────────────────────────

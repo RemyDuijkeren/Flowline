@@ -281,6 +281,69 @@ public class ConfigurePullServiceTests
         ConfigurePullService.IsUnreadableSecret(Variable("cr123_ApiUrl")).Should().BeFalse();
     }
 
+    // The other half of R13, and the one that actually protects the environment. A fail-closed pull with a
+    // fail-open apply is the same as no protection: the placeholder is just a non-empty value, so a pull
+    // followed by an apply would overwrite the real secret with the literal text "<set-this-secret>".
+    [Fact]
+    public async Task Build_ThenApply_SecretPlaceholder_IsSkippedNotWritten()
+    {
+        var inventory = new SolutionInventory(
+            [Variable("cr123_ApiKey", ConfigurePullService.SecretType, secretStore: 1)]);
+
+        var skeleton = Doc("""{ "EnvironmentVariables": [ { "SchemaName": "cr123_ApiKey", "Value": "" } ] }""");
+
+        var pulled = await new ConfigurePullService()
+            .BuildAsync(Service("real-secret"), skeleton, null, inventory, CancellationToken.None);
+
+        var applyService = Service("real-secret");
+        var outcome = await new ConfigureApplyService().ApplyAsync(
+            applyService, pulled.Document, inventory, RunMode.Normal, CancellationToken.None);
+
+        outcome.Skipped.Should().Be(1);
+        outcome.Applied.Should().Be(0);
+        outcome.Components[0].Detail.Should().Contain("cr123_ApiKey");
+        await applyService.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await applyService.DidNotReceive().CreateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    // A value typed in by hand against a variable Flowline will not manage. No care with the file would
+    // catch this one, so the definition's own type and store are checked too.
+    [Fact]
+    public async Task Apply_HandWrittenValueForAnUnreadableSecret_IsSkipped()
+    {
+        var inventory = new SolutionInventory(
+            [Variable("cr123_ApiKey", ConfigurePullService.SecretType, secretStore: 1)]);
+
+        var document = Doc("""
+            { "EnvironmentVariables": [ { "SchemaName": "cr123_ApiKey", "Value": "typed-in-by-hand" } ] }
+            """);
+
+        var service = Service("real-secret");
+        var outcome = await new ConfigureApplyService()
+            .ApplyAsync(service, document, inventory, RunMode.Normal, CancellationToken.None);
+
+        outcome.Skipped.Should().Be(1);
+        await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().CreateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    // A Key Vault-backed secret is a reference, not a secret, so it stays writable.
+    [Fact]
+    public async Task Apply_KeyVaultBackedSecret_IsStillWritten()
+    {
+        var inventory = new SolutionInventory(
+            [Variable("cr123_ApiKey", ConfigurePullService.SecretType, ConfigurePullService.KeyVaultSecretStore)]);
+
+        var document = Doc("""
+            { "EnvironmentVariables": [ { "SchemaName": "cr123_ApiKey", "Value": "{\"vault\":\"contoso-kv\"}" } ] }
+            """);
+
+        var outcome = await new ConfigureApplyService()
+            .ApplyAsync(Service(), document, inventory, RunMode.Normal, CancellationToken.None);
+
+        outcome.Applied.Should().Be(1);
+    }
+
     // ── AE1: pulled, then applied back, changes nothing ──────────────────────
 
     // The discriminating round trip. A variable with no live value pulls as an empty string, and apply has to
