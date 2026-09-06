@@ -78,6 +78,7 @@ This plan owns **declared configuration**: a file that states what an environmen
 
 - R5. `flowline configure <env>` applies the settings file for that environment. `--settings-file <path>` overrides discovery; convention-based discovery applies only when the target is a role name, since `<env>` also accepts a URL.
 - R5a. `configure` runs in project mode or stand-alone. Stand-alone applies when the command is given what it needs explicitly and no Flowline project root is found, matching how `deploy` resolves the same distinction from `--path` (`src/Flowline/Commands/DeployCommand.cs:105`). Stand-alone requires the target as a URL, since role names resolve from `.flowline`.
+- R5c. A role target keeps the environment-type guard that every other role-taking command inherits: it refuses a non-Prod role pointing at a Production-type environment and the reverse (`src/Flowline/Commands/FlowlineCommand.cs:268-272`), which is what catches a stale URL in `.flowline`. Resolving a role must not write `.flowline`, so `--dry-run` leaves project config untouched.
 - R5b. Applying needs the solution's unique name, which project mode takes from the project and stand-alone takes from `--solution-name`. Neither needs a local artifact: components are enumerated from the target by name, the way orphan cleanup already does (`src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs:771-790`).
 - R6. Applying is idempotent and re-runnable at any time, including before the solution has ever been imported.
 - R7. Components apply in tier order — environment variable values and connection references, then flow and workflow state, then plugin step state — regardless of their order in the file. Ordering is by tier only: which flow consumes which connection reference is not knowable from what R9 enumerates, so a component whose prerequisite failed is still attempted and fails on its own, reported normally. Dataverse saves connection reference updates asynchronously. Flowline does not wait: a flow whose binding has not yet propagated fails activation and is reported with the retry remedy, which R6 makes safe to act on.
@@ -141,7 +142,7 @@ Deferred for later:
 
 Deferred to follow-up work:
 
-- A reusable wait-for-consistency primitive in `Flowline.Core`. U4 builds the bounded poll R7 needs locally; `deploy` has the same latent need and would be the second caller that justifies extracting it.
+- Waiting for a connection binding to propagate before activating a flow. KTD6 records why no such wait exists today: no observable signal distinguishes a saved binding from a propagated one. If one is found, `deploy` has the same latent need.
 - Paging the component enumeration beyond the 2000-value `ConditionOperator.In` ceiling (`src/Flowline.Core/OrphanCleanup/EntityNameLookup.cs:55-68`). U2 enforces the ceiling and fails loudly rather than silently truncating.
 
 Outside this work:
@@ -163,13 +164,11 @@ Outside this work:
 
 **Resolve Before Planning** — none.
 
-- What does `configure <role>` do about the DTAP type guard? `GetAndCheckEnvironmentInfoAsync` rejects a non-Prod role pointing at a Production-type environment and vice versa (`src/Flowline/Commands/FlowlineCommand.cs:268-272`), and it mutates `.flowline` through `GetOrUpdateUrl`, so a read-shaped `configure --dry-run` writes project config. Either resolve the role to a URL from `.flowline` and go through the untyped path, or accept and document that the role path can exit `ValidationFailed` before any component is read.
-
 **Deferred to Planning** — none.
 
 **Deferred to Implementation**
 
-- Whether `pac solution clone` or `sync` cleans `Solution/` as well as writing into it. R4a puts a hand-authored file there, and a clean would destroy it on every sync. Not answerable statically — `PacUtils.SyncSolutionAsync` (`src/Flowline/Utils/PacUtils.cs:215-234`) simply passes `--solution-folder` through. U1's verification runs a real sync against a scratch project with a settings file present.
+- Whether `pac solution clone` or `sync` cleans `Solution/` as well as writing into it. R4a puts a hand-authored file there, and a clean would destroy it on every sync. Not answerable statically — `PacUtils.SyncSolutionFromDataverseAsync` (`src/Flowline/Utils/PacUtils.cs:207-235`) simply passes `--solution-folder` through. U1's verification runs a real sync against a scratch project with a settings file present.
 
 ### Sources / Research
 
@@ -189,7 +188,7 @@ Outside this work:
 KTD4 was retired with the deploy integration. Numbering is stable, so the gap stays rather than renumbering the rest.
 
 - **KTD1. Exit codes resolve by phase and allocate nothing new.** A malformed or unparseable settings file is `ConfigInvalid` (11); validation that fails before any write is `ValidationFailed` (15); runtime component failures are `PartialSuccess` (18) whether some or all failed; a solution absent from the target on pull is `NotFound` (3). R6 makes the recovery for "some failed" and "all failed" identical — fix cause, rerun — so a distinct code would buy no distinct action while permanently widening a published enum. Counts live in R11a's summary line. Governs R8, R11.
-- **KTD2. Environment resolution avoids the base standalone helper.** `GetAndCheckStandaloneEnvironmentAsync` (`src/Flowline/Commands/FlowlineCommand.cs:320-335`) throws `ValidationFailed` on a Production environment and hardcodes "Dev" in its messages, which AE5b hits directly. Only the **URL** branch of `DriftCommand.ResolveEnvironmentAsync` (`src/Flowline/Commands/DriftCommand.cs:176-184`) is guard-free; its role branch calls `GetAndCheckEnvironmentInfoAsync`, which throws `ValidationFailed` when a non-Prod role resolves to a Production-type environment and when the Prod role resolves to a non-Production one (`src/Flowline/Commands/FlowlineCommand.cs:268-272`), and which mutates `.flowline` through `GetOrUpdateUrl`. What `configure <role>` does about that is an open blocking question. Governs R5, R5a.
+- **KTD2. Environment resolution avoids the base standalone helper.** `GetAndCheckStandaloneEnvironmentAsync` (`src/Flowline/Commands/FlowlineCommand.cs:320-335`) throws `ValidationFailed` on a Production environment and hardcodes "Dev" in its messages, which AE5b hits directly. Only the **URL** branch of `DriftCommand.ResolveEnvironmentAsync` (`src/Flowline/Commands/DriftCommand.cs:176-184`) is guard-free; its role branch calls `GetAndCheckEnvironmentInfoAsync`, which throws `ValidationFailed` when a non-Prod role resolves to a Production-type environment and when the Prod role resolves to a non-Production one (`src/Flowline/Commands/FlowlineCommand.cs:268-272`), and which mutates `.flowline` through `GetOrUpdateUrl`. `configure` keeps that guard — it is what catches a stale role URL — and takes the URL branch for a URL target. Resolution must not write `.flowline`, so a dry run stays read-shaped (R5c). Governs R5, R5a, R5c.
 - **KTD3. Stand-alone is `--solution-name` present and no project root found.** This mirrors deploy's shape (`src/Flowline/Commands/DeployCommand.cs:105`) rather than push's flag-only-plus-throw form, so the two precedents do not diverge further. Two neighbouring cases get explicit errors rather than silent behaviour: `--solution-name` passed inside a project, and a role name passed stand-alone. On a stand-alone pull both `--solution-name` and the artifact manifest supply a unique name; the manifest wins, and a disagreement is a `ValidationFailed` error naming both values rather than a silent pick. Governs R5a, R5b.
 - **KTD5. Component enumeration is `solutioncomponent` plus per-table intersection.** Connection references carry an environment-specific `componenttype` (`src/Flowline.Core/OrphanCleanup/Handlers/ConnectionReferenceHandler.cs:6-10`), so a single typed query cannot find them. The enumeration queries `solutioncomponent` for the stable types and the `connectionreference` table directly, intersecting on id. The 2000-value `ConditionOperator.In` ceiling (`src/Flowline.Core/OrphanCleanup/EntityNameLookup.cs:55-68`) is enforced and fails loudly. Governs R5b, R9.
 - **KTD6. There is no wait for connection-binding propagation.** Re-reading the row Flowline just wrote proves the write landed, not that the platform propagated the binding to the flow runtime, and no observable signal for the latter is known. A poll with no failing condition is a no-op, so the failure is handled instead: an activation that fails on an unpropagated binding is reported with the retry remedy. Governs R7.
@@ -408,7 +407,7 @@ flowchart TD
 
 **Goal:** A registered command that resolves the target and solution in both modes, drives the apply pipeline, and reports per R11a.
 
-**Requirements:** R5, R5a, R5b, R9, R10, R10a, R11a; KTD2, KTD3, KTD10, KTD12
+**Requirements:** R5, R5a, R5b, R5c, R9, R10, R10a, R11a; KTD2, KTD3, KTD10, KTD12
 
 **Dependencies:** U5
 
@@ -420,7 +419,7 @@ flowchart TD
 
 **Approach:**
 1. Model on `DriftCommand` (`src/Flowline/Commands/DriftCommand.cs`): one positional role-or-URL target, standalone support, pure helpers for every decision, no packing.
-2. Resolve the environment through drift's untyped path per KTD2, never `GetAndCheckStandaloneEnvironmentAsync`, which refuses Production.
+2. Resolve a role through the shared role path, keeping its environment-type guard (R5c), and a URL through the untyped branch. Never `GetAndCheckStandaloneEnvironmentAsync`, which refuses Production and hardcodes "Dev" in its messages. Role resolution must not write `.flowline`.
 3. Stand-alone predicate per KTD3, with explicit errors for a role name stand-alone and for `--solution-name` inside a project. Each missing stand-alone input errors naming its own flag, never one combined "invalid mode" message.
 4. `--pull` is a `FlagValue<string>` with an optional value, following `SyncCommand`'s `--managed [false]` shape (`src/Flowline/Commands/SyncCommand.cs:26-29`); `[DefaultValue]` and the value placeholder are load-bearing or `.IsSet` throws. Reject `--pull` together with `--settings-file`.
 5. `ValidForceSpecifiers` returns `FlowlineSettings.ConfigOnlyValidSpecifiers` per KTD10.
@@ -429,6 +428,7 @@ flowchart TD
 
 **Test scenarios:**
 - The stand-alone predicate returns true for `--solution-name` with no project root and false with a project root present.
+- A dry run against a role target leaves `.flowline` byte-identical. Covers R5c.
 - A role name with no project root produces the mode-specific error naming the URL requirement. Covers AE5b.
 - `--solution-name` inside a project produces an error rather than being ignored.
 - `--pull` with `--settings-file` produces an error naming both flags.
@@ -510,7 +510,7 @@ flowchart TD
 - Exit codes match KTD1 in every path, and the three broadened doc comments match the shipped behaviour.
 - `configure` help text answers what, when and preconditions, with an example per mode and a `[Description]` on every option.
 - No hand-rolled verbose guard and no hand-rolled confirm — output routes through the console helpers and the render-hook pipeline.
-- README, `CHANGES.md`, the wiki pages and the `flowline` skill text reflect the shipped command surface.
+- README, `CHANGELOG.md`, the wiki pages and the `flowline` skill text reflect the shipped command surface.
 - Abandoned approaches are removed. The environment variable value-record semantics in U4 are the likeliest source of dead experimental code; none of it ships.
 
 ---
