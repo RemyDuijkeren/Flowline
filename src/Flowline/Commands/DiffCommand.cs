@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using CliWrap;
+using CliWrap.Buffered;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Services;
@@ -42,15 +44,15 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         public bool ExitCodeOnChanges { get; set; }
 
         [CommandOption("--write [FILE]")]
-        [Description("Write the report to a file (default: CHANGES.md in the repo root)")]
+        [Description("Write the report to a file. Bare: CHANGES.md in the project root. With a value: a relative path resolves against the current folder")]
         public FlagValue<string> Write { get; set; } = null!;
     }
 
     /// <summary>The unpacked solution source lives in <c>src/</c> beside the <c>.cdsproj</c>.</summary>
     const string SrcFolderName = "src";
 
-    /// <summary>Default target of a bare <c>--write</c>, resolved against the repo root — never the source
-    /// root, which is the folder the file listing scans.</summary>
+    /// <summary>Default target of a bare <c>--write</c>, resolved against the project root — never the
+    /// source root, which is the folder the file listing scans.</summary>
     internal const string ChangesFileName = "CHANGES.md";
 
     // A repo cloned by Flowline has a .flowline, so project mode still resolves the root from any subfolder.
@@ -58,42 +60,77 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     // sees — the accurate problem for a folder that isn't a solution repo at all.
     protected override bool RequiresFlowlineProject => false;
 
-    /// <summary>Skips the git/dotnet/pac probe and the update check.</summary>
+    /// <summary>Skips the git/dotnet/pac probe.</summary>
     /// <remarks>
-    /// The base probe requires the PAC CLI and calls NuGet before the command body runs. This command reads
-    /// git and local files only, so both are false prerequisites. The one thing it does need — a git
-    /// repository — is checked in <see cref="EnsureGitRepository"/> with a message about comparing history
-    /// rather than about setup.
+    /// The base probe requires the PAC CLI, which this command never uses — it reads git and local files
+    /// only. The one thing it does need — a git repository — is checked in
+    /// <see cref="EnsureGitRepositoryAsync"/> with a message about comparing history rather than about
+    /// setup. The update notice is untouched: <c>FlowlineCommand.ExecuteAsync</c> prints it before this
+    /// runs, and it returns immediately on a non-interactive console anyway.
     /// </remarks>
     protected override Task CheckSetupAsync(Settings settings, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    protected override Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) =>
-        DiffAsync(RootFolder, settings.From, settings.To,
-            settings.Write.IsSet ? Path.GetFullPath(settings.Write.Value ?? ChangesFileName, RootFolder) : null,
-            settings.Verbose, settings.ExitCodeOnChanges, cancellationToken);
+    protected override Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    {
+        var write = ResolveWriteTarget(settings.Write.IsSet, settings.Write.Value, RootFolder);
+        return DiffAsync(RootFolder, settings.From, settings.To, write?.Path,
+            settings.Verbose, settings.ExitCodeOnChanges, cancellationToken, write?.Bare ?? false);
+    }
+
+    /// <summary>Turns <c>--write</c> into the file it names, or <c>null</c> when the flag wasn't passed.</summary>
+    /// <remarks>
+    /// A bare flag anchors <see cref="ChangesFileName"/> to the project root, so it lands next to the
+    /// solution wherever the command was run from. An explicit value resolves against the current folder
+    /// instead, which is what <c>generate</c>, <c>push</c> and <c>sln add</c> do with a relative path — a
+    /// path the user typed points where they typed it. A blank value carries no path, so it's the bare
+    /// flag.
+    /// </remarks>
+    internal static (string Path, bool Bare)? ResolveWriteTarget(bool isSet, string? value, string rootFolder)
+    {
+        if (!isSet) return null;
+
+        return string.IsNullOrWhiteSpace(value)
+            ? (Path.Combine(rootFolder, ChangesFileName), true)
+            : (Path.GetFullPath(value.Trim()), false);
+    }
 
     /// <summary>Runs the comparison against <paramref name="rootFolder"/> and renders it.</summary>
     /// <remarks>
     /// Takes the root and the two refs rather than reading <c>Settings</c>, and is <c>internal</c>, so every
     /// path is exercisable against a temp repository without running the base command pipeline.
     /// </remarks>
-    internal async Task<int> DiffAsync(string rootFolder, string? from, string? to, string? writeTo, bool verbose, bool exitCodeOnChanges, CancellationToken cancellationToken)
+    internal async Task<int> DiffAsync(string rootFolder, string? from, string? to, string? writeTo, bool verbose, bool exitCodeOnChanges, CancellationToken cancellationToken, bool bareWrite = false)
     {
         var (fromSide, toSide) = ResolveSides(from, to);
-        EnsureGitRepository(rootFolder);
+        await EnsureGitRepositoryAsync(rootFolder, _capture, cancellationToken);
 
         var (srcFolder, solutionName) = await ResolveSourceFolderAsync(rootFolder, cancellationToken);
+        if (writeTo is not null) EnsureWriteTargetOutsideSource(writeTo, srcFolder, rootFolder);
 
         var summary = await SolutionChangeSummary.ComputeAsync(srcFolder, rootFolder, fromSide, toSide, _capture, cancellationToken);
         Logger.LogInformation("Diff: from={From} to={To} files={TotalFiles}", fromSide.GitRef, toSide.GitRef ?? "<working tree>", summary.TotalFiles);
 
         // Both lines name the two compared points and no environment: this command contacts none.
         var (fromName, toName) = (Name(fromSide), Name(toSide));
-        summary.WriteTree(Console, $"No changes between {Markup.Escape(fromName)} and {Markup.Escape(toName)}.", verbose);
+        summary.WriteTree(Console, $"No changes between {Markup.Escape(fromName)} and {Markup.Escape(toName)}.", verbose,
+            OverflowHint(writeTo));
 
         if (writeTo is not null)
+        {
+            // A named target is rewritten even when nothing changed, so re-running a release range never
+            // leaves a stale file looking current. The bare default is CHANGES.md at the project root —
+            // sync's own report — so a no-change run leaves it alone rather than replacing sync's answer
+            // with this one.
+            var writeWhenEmpty = !bareWrite;
             await summary.WriteChangesFileAsync(writeTo, solutionName, $"Compared: {fromName} -> {toName}",
-                writeWhenEmpty: true, cancellationToken);
+                writeWhenEmpty, cancellationToken);
+
+            var display = ConsolePath.FormatRelativePath(writeTo, rootFolder);
+            if (summary.TotalFiles > 0 || writeWhenEmpty)
+                Console.Ok($"Wrote {display}");
+            else
+                Console.Skip($"No changes, so {display} is untouched");
+        }
 
         // Any changed file counts, including one the parser can't name as a component (Other/Solution.xml),
         // so a version-only bump is a change. Same number the tree and the written report are built from.
@@ -128,12 +165,51 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     /// <see cref="ExitCode.ConfigInvalid"/>, matching <c>GitUtils.AssertGitRepoAsync</c> — the same missing
     /// prerequisite should not carry two exit codes.
     /// </exception>
-    internal static void EnsureGitRepository(string rootFolder)
+    /// <remarks>
+    /// Asks git rather than looking for a <c>.git</c> entry: a worktree or submodule <c>.git</c> file whose
+    /// gitdir pointer is stale exists on disk but isn't a usable repository, and every listing below would
+    /// then fail as a broken comparison instead of as the missing prerequisite it is.
+    /// </remarks>
+    internal static async Task EnsureGitRepositoryAsync(string rootFolder, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
     {
-        if (GitUtils.FindRepositoryRoot(rootFolder) is not null) return;
+        var usable = Directory.Exists(rootFolder);
+        if (usable)
+        {
+            var cmd = Cli.Wrap("git")
+                         .WithWorkingDirectory(rootFolder)
+                         .WithArguments(args => args.Add("rev-parse").Add("--git-dir"))
+                         .WithValidation(CommandResultValidation.None);
+            var result = await (capture?.Apply(cmd, suppressErrors: true) ?? cmd).ExecuteBufferedAsync(cancellationToken);
+            usable = result.ExitCode == 0;
+        }
+        if (usable) return;
 
         throw new FlowlineException(ExitCode.ConfigInvalid,
-            $"No Git repo at '{ConsolePath.FormatRelativePath(rootFolder, markup: false)}' — 'diff' compares two points in git history. Run 'git init' first, or run it inside a repository.");
+            $"No usable Git repo at '{ConsolePath.FormatRelativePath(rootFolder, markup: false)}' — 'diff' compares two points in git history. Run 'git init' first, or run it inside a repository.");
+    }
+
+    /// <summary>Keeps the written report out of the folder the comparison scans.</summary>
+    /// <remarks>
+    /// A report inside <c>src/</c> is listed as a change by the next run, which pins <c>--exit-code</c> to
+    /// <see cref="ExitCode.ChangesFound"/> forever and puts generated output in the unpacked solution.
+    /// </remarks>
+    /// <exception cref="FlowlineException"><see cref="ExitCode.ValidationFailed"/> for a target inside the source folder.</exception>
+    /// <summary>Where to send someone whose component has more sub-changes than the tree shows.</summary>
+    /// <remarks>
+    /// The tree caps named sub-changes and <c>--verbose</c> does not lift the cap, so this hint is the only
+    /// route offered and it has to name one that exists. <c>sync</c> can always say "see CHANGES.md" because
+    /// it always writes it; this command writes nothing unless asked, so with no target the route is the flag.
+    /// </remarks>
+    internal static string OverflowHint(string? writeTo) =>
+        writeTo is null ? "pass --write for the full list" : $"see {Path.GetFileName(writeTo)}";
+
+    internal static void EnsureWriteTargetOutsideSource(string writeTo, string srcFolder, string rootFolder)
+    {
+        var relative = Path.GetRelativePath(srcFolder, writeTo);
+        if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar)) return;
+
+        throw new FlowlineException(ExitCode.ValidationFailed,
+            $"--write target '{ConsolePath.FormatRelativePath(writeTo, rootFolder, markup: false)}' is inside the unpacked solution source that 'diff' compares, so every later run would report the report itself as a change. Pick a path outside '{ConsolePath.FormatRelativePath(srcFolder, rootFolder, markup: false)}'.");
     }
 
     /// <summary>Finds the unpacked solution XML through the solution file.</summary>

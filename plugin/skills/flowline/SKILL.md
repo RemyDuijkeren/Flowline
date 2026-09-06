@@ -156,8 +156,10 @@ some cleanup failed.
 - `sync`: `--bump patch|minor|major|none`, `--managed [false]`, `--no-build`, `--dev <url>`.
 - `init`: `--dev <url>`, `--publisher-prefix <prefix>`, `--publisher-name`, `--display-name`.
 - `diff`: `--from <ref>`, `--to <ref>` (needs `--from`; without it the right side is the working tree,
-  so uncommitted and untracked files count), `--write [FILE]` (default `CHANGES.md` at the repo root),
-  `--exit-code`. Writes nothing unless `--write` is passed.
+  so uncommitted and untracked files count), `--write [FILE]` (bare: `CHANGES.md` at the project root,
+  left alone when nothing changed since that's sync's file; with a value: a relative path resolves against
+  the current folder, and it's rewritten every run), `--exit-code`. Writes nothing unless `--write` is
+  passed.
 - Global: `--verbose` (`-v`), `--force <specifier>` (`-f`), `--no-cache`,
   `--auto-select-auth-profile` (`-a`).
 - `flowline sln add <path.cdsproj>` wires a `.cdsproj` into the solution file — `dotnet sln add`
