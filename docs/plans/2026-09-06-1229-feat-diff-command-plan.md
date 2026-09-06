@@ -216,7 +216,7 @@ U1 unlocks everything else. U3 depends on U1. U4, U5, U6 depend on U3. U7 lands 
 - **Patterns to follow:** The `FlagValue<bool>` option on `sync --managed [false]` (`src/Flowline/Commands/SyncCommand.cs:25-28`) for the optional-value shape.
 - **Test scenarios:**
   - Without `--write`, no file is created and an existing `CHANGES.md` is unmodified.
-  - Bare `--write` writes `CHANGES.md` beside the resolved source root.
+  - Bare `--write` writes `CHANGES.md` at the repo root, per KTD5.
   - `--write <name>` writes that file and leaves `CHANGES.md` untouched.
   - A file written by `--write` does not appear as an untracked addition on the next run.
   - `--write` to a path whose parent does not exist creates the parent.
