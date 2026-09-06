@@ -1134,3 +1134,223 @@ public class SolutionChangeSummaryWriteTests
         SolutionChangeSummary.DiffConnectionReferences(ConnRefsBefore, ConnRefsBefore).Should().BeEmpty();
     }
 }
+
+public class SolutionChangeSummaryRefModeTests : IDisposable
+{
+    readonly string _root = Path.Combine(Path.GetTempPath(), "flowline-refmode-tests", Guid.NewGuid().ToString("N"));
+    readonly string _srcFolder;
+
+    static SolutionChangeSummary.ComparisonSide Ref(string r) => new(r);
+    static SolutionChangeSummary.ComparisonSide WorkingTree => SolutionChangeSummary.ComparisonSide.WorkingTree;
+
+    public SolutionChangeSummaryRefModeTests()
+    {
+        _srcFolder = Path.Combine(_root, "solutions", "TestSln", "src");
+        Directory.CreateDirectory(_srcFolder);
+        RunGit("init");
+        RunGit("config", "user.email", "test@example.com");
+        RunGit("config", "user.name", "Test");
+        File.WriteAllText(Path.Combine(_root, ".gitkeep"), "");
+        RunGit("add", ".gitkeep");
+        RunGit("commit", "-m", "init");
+        RunGit("tag", "v0");
+    }
+
+    public void Dispose()
+    {
+        if (!Directory.Exists(_root)) return;
+        foreach (var f in Directory.GetFiles(_root, "*", SearchOption.AllDirectories))
+        {
+            try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+        }
+        Directory.Delete(_root, true);
+    }
+
+    [Fact]
+    public async Task ComputeAsync_RefToRef_ReportsComponentAddedBetweenCommits()
+    {
+        CommitFile("Entities/Account/Entity.xml", "<entity/>", "v1");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v0"), Ref("v1"));
+
+        result.TotalFiles.Should().Be(1);
+        result.Groups.Should().ContainSingle(g => g.Label == "Account");
+        result.Groups[0].Items[0].Status.Should().Be(SolutionChangeSummary.ChangeStatus.Added);
+    }
+
+    [Fact]
+    public async Task ComputeAsync_RefToRef_ReportsComponentDeletedBetweenCommits()
+    {
+        CommitFile("Entities/Account/Entity.xml", "<entity/>", "v1");
+        DeleteAndCommit("Entities/Account/Entity.xml", "v2");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+
+        result.TotalFiles.Should().Be(1);
+        result.Groups.Should().ContainSingle(g => g.Label == "Account");
+        result.Groups[0].Items[0].Status.Should().Be(SolutionChangeSummary.ChangeStatus.Deleted);
+    }
+
+    [Fact]
+    public async Task ComputeAsync_RefToRef_ReportsModifiedComponentWithSubChanges()
+    {
+        CommitFile("OptionSets/my_choice.xml", OptionSetXml(("1", "One")), "v1");
+        CommitFile("OptionSets/my_choice.xml", OptionSetXml(("1", "One"), ("2", "Two")), "v2");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+
+        var item = result.Groups.Single(g => g.Label == "OptionSets").Items.Single();
+        item.Status.Should().Be(SolutionChangeSummary.ChangeStatus.Modified);
+        item.SubChanges.Should().ContainSingle(s => s.Description == "Two (2)"
+            && s.Status == SolutionChangeSummary.ChangeStatus.Added);
+    }
+
+    [Fact]
+    public async Task ComputeAsync_RefToWorkingTree_ReportsCommittedAndUncommittedChanges()
+    {
+        CommitFile("Entities/Account/Entity.xml", "<entity/>", "v1");
+        WriteFile("Entities/Contact/Entity.xml", "<entity/>");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v0"), WorkingTree);
+
+        result.TotalFiles.Should().Be(2);
+        result.Groups.Should().Contain(g => g.Label == "Account");
+        result.Groups.Should().Contain(g => g.Label == "Contact");
+    }
+
+    [Fact]
+    public async Task ComputeAsync_RefToRef_IgnoresUncommittedWorkingTreeEdit()
+    {
+        CommitFile("Entities/Account/Entity.xml", "<entity/>", "v1");
+        WriteFile("Entities/Contact/Entity.xml", "<entity/>");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v0"), Ref("v1"));
+
+        result.TotalFiles.Should().Be(1);
+        result.Groups.Should().ContainSingle(g => g.Label == "Account");
+    }
+
+    [Fact]
+    public async Task ComputeAsync_RefToRef_Rename_ReportsOldPathDeletedAndNewPathAdded()
+    {
+        const string guid = "45534473-EA8B-4AD0-A20F-67C7F430C5FA";
+        CommitFile($"Workflows/OldName-{guid}.xaml", "<workflow/>", "v1");
+        DeleteFile($"Workflows/OldName-{guid}.xaml");
+        WriteFile($"Workflows/NewName-{guid}.xaml", "<workflow/>");
+        CommitAll("v2");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+
+        var items = result.Groups.Single(g => g.Label == "Workflows").Items;
+        items.Should().ContainSingle(i => i.ComponentName == "OldName"
+            && i.Status == SolutionChangeSummary.ChangeStatus.Deleted);
+        items.Should().ContainSingle(i => i.ComponentName == "NewName"
+            && i.Status == SolutionChangeSummary.ChangeStatus.Added);
+    }
+
+    [Fact]
+    public async Task ComputeAsync_RefToRef_WorkingTreeRenameDoesNotChangeReportedName()
+    {
+        var relPath = "Entities/Account/FormXml/main/{11111111-1111-1111-1111-111111111111}.xml";
+        CommitFile(relPath, FormXml("Old Title"), "v1");
+        CommitFile(relPath, FormXml("Committed Title"), "v2");
+        WriteFile(relPath, FormXml("Working Tree Title"));
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+
+        result.Groups.Single(g => g.Label == "Account").Items
+            .Should().ContainSingle(i => i.ComponentName == "Committed Title (main form)");
+    }
+
+    [Fact]
+    public async Task ComputeAsync_RefToRef_DeletedOnRightRefButPresentOnDisk_IsNamedFromRef()
+    {
+        var relPath = "SdkMessageProcessingSteps/{22222222-2222-2222-2222-222222222222}.xml";
+        CommitFile(relPath, "<SdkMessageProcessingStep Name=\"Committed Step\" />", "v1");
+        DeleteAndCommit(relPath, "v2");
+        WriteFile(relPath, "<SdkMessageProcessingStep Name=\"Disk Step\" />");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+
+        result.Groups.Single(g => g.Label == "Plugin Steps").Items
+            .Should().ContainSingle(i => i.ComponentName == "Committed Step"
+                && i.Status == SolutionChangeSummary.ChangeStatus.Deleted);
+    }
+
+    [Fact]
+    public async Task ComputeAsync_UnknownRef_Throws()
+    {
+        var act = async () => await SolutionChangeSummary.ComputeAsync(
+            _srcFolder, _root, Ref("no-such-ref"), WorkingTree);
+
+        (await act.Should().ThrowAsync<Flowline.Core.FlowlineException>())
+            .Which.Message.Should().Contain("no-such-ref");
+    }
+
+    static string FormXml(string title) =>
+        "<forms><systemform><LocalizedNames>"
+        + $"<LocalizedName languagecode=\"1033\" description=\"{title}\" />"
+        + "</LocalizedNames></systemform></forms>";
+
+    static string OptionSetXml(params (string Value, string Label)[] options)
+    {
+        var body = string.Concat(options.Select(o =>
+            $"<option value=\"{o.Value}\"><labels><label description=\"{o.Label}\" languagecode=\"1033\" /></labels></option>"));
+        return $"<optionset><options>{body}</options></optionset>";
+    }
+
+    void WriteFile(string relativePath, string content)
+    {
+        var full = Path.Combine(_srcFolder, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, content);
+    }
+
+    void DeleteFile(string relativePath) =>
+        File.Delete(Path.Combine(_srcFolder, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+    void CommitFile(string relativePath, string content, string tag)
+    {
+        WriteFile(relativePath, content);
+        CommitAll(tag);
+    }
+
+    void DeleteAndCommit(string relativePath, string tag)
+    {
+        DeleteFile(relativePath);
+        CommitAll(tag);
+    }
+
+    void CommitAll(string tag)
+    {
+        RunGit("add", "-A");
+        RunGit("commit", "-m", tag);
+        RunGit("tag", tag);
+    }
+
+    void RunGit(params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = _root,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        p.WaitForExit();
+    }
+
+    [Fact]
+    public async Task ComputeAsync_WorkingTreeAsLeftSide_Throws()
+    {
+        var act = () => SolutionChangeSummary.ComputeAsync(
+            _srcFolder, _root,
+            SolutionChangeSummary.ComparisonSide.WorkingTree,
+            SolutionChangeSummary.ComparisonSide.WorkingTree);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("from");
+    }
+}

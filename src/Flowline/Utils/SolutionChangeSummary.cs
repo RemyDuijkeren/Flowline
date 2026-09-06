@@ -16,6 +16,14 @@ public class SolutionChangeSummary
     public record SubChange(string Description, ChangeStatus Status);
     public record ChangeItem(string ComponentName, IReadOnlyList<string> FilePaths, ChangeStatus Status = ChangeStatus.Modified, IReadOnlyList<SubChange>? SubChanges = null);
 
+    /// <summary>One side of a comparison: a git ref, or the working tree when <see cref="GitRef"/> is null.</summary>
+    public readonly record struct ComparisonSide(string? GitRef)
+    {
+        public static ComparisonSide WorkingTree => new((string?)null);
+        public static ComparisonSide Head => new("HEAD");
+        public bool IsWorkingTree => GitRef is null;
+    }
+
     internal const int SubChangeDisplayThreshold = 5;
     public record ChangeGroup(string Label, IReadOnlyList<ChangeItem> Items, bool IsEntity = false);
 
@@ -35,30 +43,74 @@ public class SolutionChangeSummary
         Groups = groups;
     }
 
-    public static async Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, SubprocessCapture? capture = null, CancellationToken ct = default)
+    public static Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, SubprocessCapture? capture = null, CancellationToken ct = default) =>
+        ComputeAsync(srcFolder, workingDirectory, ComparisonSide.Head, ComparisonSide.WorkingTree, capture, ct);
+
+    public static async Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, ComparisonSide from, ComparisonSide to, SubprocessCapture? capture = null, CancellationToken ct = default)
     {
+        // The left side is always a ref: git can compare a ref against the working tree but not the other
+        // way round, and every mode the CLI exposes moves only the left side. Guarded rather than left to
+        // NullReferenceException inside the argument builders, because both sides are public API.
+        if (from.IsWorkingTree)
+            throw new ArgumentException("The working tree can only be the right-hand side of a comparison; pass a git ref as 'from'.", nameof(from));
+
         var srcRelPath = Path.GetRelativePath(workingDirectory, srcFolder).Replace('\\', '/');
 
         static Task<CliWrap.Buffered.BufferedCommandResult> Run(Command cmd, SubprocessCapture? cap, CancellationToken ct, bool suppressErrors = false) =>
             (cap?.Apply(cmd, suppressErrors: suppressErrors) ?? cmd).ExecuteBufferedAsync(ct);
 
-        var statusResult = await Run(
-            Cli.Wrap("git")
+        Command Porcelain() => Cli.Wrap("git")
             .WithWorkingDirectory(workingDirectory)
             .WithArguments(args => args
                 .Add("-c").Add("core.quotepath=false")
                 .Add("-c").Add("core.safecrlf=false")
                 .Add("status").Add("--porcelain").Add("-uall")
                 .Add("--").Add(srcRelPath))
-            .WithValidation(CommandResultValidation.None),
-            capture, ct);
+            .WithValidation(CommandResultValidation.None);
 
-        var changedFiles = statusResult.StandardOutput
-            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-            .Where(line => line.Length > 3)
-            .Select(line => (status: line[..2], path: line[3..].Replace('\\', '/')))
-            .Where(f => !IsExcluded(f.path))
-            .ToList();
+        // HEAD-vs-working-tree keeps the porcelain listing it always used; any other pair of sides is
+        // listed by git diff, which is the only listing that means anything between two refs.
+        var defaultMode = to.IsWorkingTree && from.GitRef == "HEAD";
+        List<ChangedFile> changedFiles;
+
+        if (defaultMode)
+        {
+            var statusResult = await Run(Porcelain(), capture, ct);
+            changedFiles = ParsePorcelain(statusResult.StandardOutput);
+        }
+        else
+        {
+            foreach (var side in new[] { from, to })
+                if (side.GitRef is { } gitRef)
+                    await EnsureRefExistsAsync(gitRef, workingDirectory, capture, ct);
+
+            var nameStatusResult = await Run(
+                Cli.Wrap("git")
+                .WithWorkingDirectory(workingDirectory)
+                .WithArguments(args =>
+                {
+                    args.Add("-c").Add("core.quotepath=false")
+                        .Add("-c").Add("core.safecrlf=false")
+                        .Add("diff").Add("--name-status").Add("--no-renames")
+                        .Add(from.GitRef!);
+                    if (!to.IsWorkingTree) args.Add(to.GitRef!);
+                    args.Add("--").Add(srcRelPath);
+                })
+                .WithValidation(CommandResultValidation.None),
+                capture, ct);
+
+            changedFiles = ParseNameStatus(nameStatusResult.StandardOutput);
+
+            if (to.IsWorkingTree)
+            {
+                var statusResult = await Run(Porcelain(), capture, ct);
+                var listed = changedFiles.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                changedFiles.AddRange(ParsePorcelain(statusResult.StandardOutput)
+                    .Where(f => f.Untracked && !listed.Contains(f.Path)));
+            }
+        }
+
+        changedFiles = changedFiles.Where(f => !IsExcluded(f.Path)).ToList();
 
         if (changedFiles.Count == 0)
             return new SolutionChangeSummary(0, 0, 0, []);
@@ -66,11 +118,15 @@ public class SolutionChangeSummary
         var numstatResult = await Run(
             Cli.Wrap("git")
             .WithWorkingDirectory(workingDirectory)
-            .WithArguments(args => args
-                .Add("-c").Add("core.quotepath=false")
-                .Add("-c").Add("core.safecrlf=false")
-                .Add("diff").Add("HEAD").Add("--numstat")
-                .Add("--").Add(srcRelPath))
+            .WithArguments(args =>
+            {
+                args.Add("-c").Add("core.quotepath=false")
+                    .Add("-c").Add("core.safecrlf=false")
+                    .Add("diff").Add("--numstat").Add("--no-renames")
+                    .Add(from.GitRef!);
+                if (!to.IsWorkingTree) args.Add(to.GitRef!);
+                args.Add("--").Add(srcRelPath);
+            })
             .WithValidation(CommandResultValidation.None),
             capture, ct, suppressErrors: true);
 
@@ -81,12 +137,12 @@ public class SolutionChangeSummary
             .ToDictionary(p => p[2], p => (added: int.Parse(p[0]), removed: int.Parse(p[1])));
 
         var srcPrefix = srcRelPath.TrimEnd('/') + "/";
-        var components = new Dictionary<string, (ParsedPath Parsed, List<string> Paths, List<string> FileStatuses)>(StringComparer.OrdinalIgnoreCase);
+        var components = new Dictionary<string, (ParsedPath Parsed, List<string> Paths, List<ChangeStatus> FileStatuses)>(StringComparer.OrdinalIgnoreCase);
         int fileCount = 0;
         int totalAdded = 0, totalRemoved = 0;
         var customizationsChanged = false;
 
-        foreach (var (status, absPath) in changedFiles)
+        foreach (var (status, untracked, absPath) in changedFiles)
         {
             var relPath = absPath.StartsWith(srcPrefix) ? absPath[srcPrefix.Length..] : absPath;
 
@@ -96,7 +152,7 @@ public class SolutionChangeSummary
             // dirty-tree checks on TotalFiles must not silently pass just because a change can't be described.
             fileCount++;
 
-            if (status.Trim() == "??")
+            if (untracked)
             {
                 var fullPath = Path.Combine(workingDirectory, absPath.Replace('/', Path.DirectorySeparatorChar));
                 if (File.Exists(fullPath))
@@ -133,9 +189,9 @@ public class SolutionChangeSummary
             foreach (var c in g)
             {
                 var name = c.Parsed.StaticName ?? await ResolveXmlNameAsync(
-                    c.Paths[0], srcFolder, workingDirectory, srcRelPath, c.Parsed, ct);
+                    c.Paths[0], srcFolder, workingDirectory, srcRelPath, from, to, c.Parsed, ct);
                 var status = AggregateStatus(c.FileStatuses);
-                var subChanges = await ResolveSubChangesAsync(c.Parsed, c.Paths[0], srcFolder, workingDirectory, srcRelPath, status, ct);
+                var subChanges = await ResolveSubChangesAsync(c.Parsed, c.Paths[0], srcFolder, workingDirectory, srcRelPath, from, to, status, ct);
                 items.Add(new ChangeItem(name, c.Paths, status, subChanges));
             }
             resolvedGroups.Add(new ChangeGroup(g.Key, items, g.First().Parsed.IsEntity));
@@ -144,8 +200,8 @@ public class SolutionChangeSummary
         if (customizationsChanged)
         {
             var connRefItems = DiffConnectionReferences(
-                await GetHeadXmlAsync(CustomizationsRelPath, srcRelPath, workingDirectory, ct),
-                await GetCurrentXmlAsync(CustomizationsRelPath, srcFolder, ct));
+                await GetSideXmlAsync(from, CustomizationsRelPath, srcFolder, srcRelPath, workingDirectory, ct),
+                await GetSideXmlAsync(to, CustomizationsRelPath, srcFolder, srcRelPath, workingDirectory, ct));
             if (connRefItems is { Count: > 0 })
                 resolvedGroups.Add(new ChangeGroup("Connection References", connRefItems));
         }
@@ -489,14 +545,49 @@ public class SolutionChangeSummary
         }
     }
 
+    /// <summary>A file listed by either vocabulary, already normalized: git status porcelain (two-character
+    /// codes, "??" for untracked) and git diff --name-status (single letters, renames disabled).</summary>
+    record struct ChangedFile(ChangeStatus Status, bool Untracked, string Path);
+
+    static List<ChangedFile> ParsePorcelain(string output) =>
+        output
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => line.Length > 3)
+            .Select(line => new ChangedFile(
+                ClassifyFileStatus(line[..2]), line[..2] == "??", line[3..].Replace('\\', '/')))
+            .ToList();
+
+    static List<ChangedFile> ParseNameStatus(string output) =>
+        output
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Split('\t'))
+            .Where(p => p.Length >= 2 && p[0].Length > 0)
+            .Select(p => new ChangedFile(
+                p[0][0] switch { 'A' => ChangeStatus.Added, 'D' => ChangeStatus.Deleted, _ => ChangeStatus.Modified },
+                false,
+                p[1].Replace('\\', '/')))
+            .ToList();
+
+    static async Task EnsureRefExistsAsync(string gitRef, string workingDirectory, SubprocessCapture? capture, CancellationToken ct)
+    {
+        var cmd = Cli.Wrap("git")
+            .WithWorkingDirectory(workingDirectory)
+            .WithArguments(args => args.Add("rev-parse").Add("--verify").Add("--quiet").Add(gitRef + "^{commit}"))
+            .WithValidation(CommandResultValidation.None);
+        var result = await (capture?.Apply(cmd, suppressErrors: true) ?? cmd).ExecuteBufferedAsync(ct);
+        if (result.ExitCode != 0)
+            throw new FlowlineException(ExitCode.NotFound,
+                $"No git ref named '{gitRef}'. List the refs you can compare with: git log --oneline");
+    }
+
     static ChangeStatus ClassifyFileStatus(string gitStatus) =>
         gitStatus == "??" || gitStatus[0] == 'A' || gitStatus[1] == 'A' ? ChangeStatus.Added :
         gitStatus[0] == 'D' || gitStatus[1] == 'D' ? ChangeStatus.Deleted :
         ChangeStatus.Modified;
 
-    static ChangeStatus AggregateStatus(IEnumerable<string> gitStatuses)
+    static ChangeStatus AggregateStatus(IEnumerable<ChangeStatus> fileStatuses)
     {
-        var classified = gitStatuses.Select(ClassifyFileStatus).Distinct().ToList();
+        var classified = fileStatuses.Distinct().ToList();
         return classified.Count == 1 ? classified[0] : ChangeStatus.Modified;
     }
 
@@ -519,37 +610,12 @@ public class SolutionChangeSummary
 
     static async Task<string> ResolveXmlNameAsync(
         string relPath, string srcFolder, string workingDirectory, string srcRelPath,
-        ParsedPath parsed, CancellationToken ct)
+        ComparisonSide from, ComparisonSide to, ParsedPath parsed, CancellationToken ct)
     {
-        var fullPath = Path.Combine(srcFolder, relPath.Replace('/', Path.DirectorySeparatorChar));
-        string? xml = null;
-
-        if (File.Exists(fullPath))
-        {
-            try { xml = await File.ReadAllTextAsync(fullPath, ct); }
-            catch (OperationCanceledException) { throw; }
-            catch { }
-        }
-        else
-        {
-            var gitPath = srcRelPath.TrimEnd('/') + "/" + relPath;
-            var logResult = await Cli.Wrap("git")
-                .WithWorkingDirectory(workingDirectory)
-                .WithArguments(args => args.Add("log").Add("-n1").Add("--format=%H").Add("--").Add(gitPath))
-                .WithValidation(CommandResultValidation.None)
-                .ExecuteBufferedAsync(ct);
-            var commitHash = logResult.StandardOutput.Trim();
-            if (!string.IsNullOrEmpty(commitHash))
-            {
-                var showResult = await Cli.Wrap("git")
-                    .WithWorkingDirectory(workingDirectory)
-                    .WithArguments(args => args.Add("show").Add($"{commitHash}:{gitPath}"))
-                    .WithValidation(CommandResultValidation.None)
-                    .ExecuteBufferedAsync(ct);
-                if (showResult.ExitCode == 0)
-                    xml = showResult.StandardOutput;
-            }
-        }
+        // Right side first, left side for a component the right side no longer has. Both resolve against
+        // the compared sides only, never against whatever happens to be on disk.
+        var xml = await GetSideXmlAsync(to, relPath, srcFolder, srcRelPath, workingDirectory, ct)
+                  ?? await GetSideXmlAsync(from, relPath, srcFolder, srcRelPath, workingDirectory, ct);
 
         var fallback = parsed.FallbackName ?? Path.GetFileNameWithoutExtension(relPath);
         return ResolveXmlName(xml, parsed.XmlRead, parsed.NameSuffix) ?? fallback;
@@ -574,7 +640,7 @@ public class SolutionChangeSummary
 
     static async Task<IReadOnlyList<SubChange>?> ResolveSubChangesAsync(
         ParsedPath parsed, string relPath, string srcFolder, string workingDirectory,
-        string srcRelPath, ChangeStatus status, CancellationToken ct)
+        string srcRelPath, ComparisonSide from, ComparisonSide to, ChangeStatus status, CancellationToken ct)
     {
         bool isEntityMeta = parsed.ComponentKey.EndsWith("/entity", StringComparison.OrdinalIgnoreCase);
         bool isView       = parsed.XmlRead == XmlRead.ViewTitle;
@@ -584,8 +650,10 @@ public class SolutionChangeSummary
         if (!isEntityMeta && !isView && !isForm && !isOptionSet) return null;
         if (status == ChangeStatus.Added) return null;
 
-        var oldXml = await GetHeadXmlAsync(relPath, srcRelPath, workingDirectory, ct);
-        var newXml = status == ChangeStatus.Deleted ? null : await GetCurrentXmlAsync(relPath, srcFolder, ct);
+        var oldXml = await GetSideXmlAsync(from, relPath, srcFolder, srcRelPath, workingDirectory, ct);
+        var newXml = status == ChangeStatus.Deleted
+            ? null
+            : await GetSideXmlAsync(to, relPath, srcFolder, srcRelPath, workingDirectory, ct);
 
         if (oldXml == null && newXml == null) return null;
 
@@ -597,26 +665,28 @@ public class SolutionChangeSummary
         return result is { Count: > 0 } ? result : null;
     }
 
-    static async Task<string?> GetHeadXmlAsync(string relPath, string srcRelPath, string workingDirectory, CancellationToken ct)
+    static async Task<string?> GetSideXmlAsync(
+        ComparisonSide side, string relPath, string srcFolder, string srcRelPath,
+        string workingDirectory, CancellationToken ct)
     {
+        if (side.IsWorkingTree)
+        {
+            var fullPath = Path.Combine(srcFolder, relPath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(fullPath)) return null;
+            try { return await File.ReadAllTextAsync(fullPath, ct); }
+            catch (OperationCanceledException) { throw; }
+            catch { return null; }
+        }
+
         var gitPath = srcRelPath.TrimEnd('/') + "/" + relPath;
         var result = await Cli.Wrap("git")
             .WithWorkingDirectory(workingDirectory)
             .WithArguments(args => args
                 .Add("-c").Add("core.quotepath=false")
-                .Add("show").Add($"HEAD:{gitPath}"))
+                .Add("show").Add($"{side.GitRef}:{gitPath}"))
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(ct);
         return result.ExitCode == 0 ? XmlHelpers.StripBom(result.StandardOutput) : null;
-    }
-
-    static async Task<string?> GetCurrentXmlAsync(string relPath, string srcFolder, CancellationToken ct)
-    {
-        var fullPath = Path.Combine(srcFolder, relPath.Replace('/', Path.DirectorySeparatorChar));
-        if (!File.Exists(fullPath)) return null;
-        try { return await File.ReadAllTextAsync(fullPath, ct); }
-        catch (OperationCanceledException) { throw; }
-        catch { return null; }
     }
 
     static List<SubChange>? DiffEntityAttributes(string? oldXml, string? newXml)
