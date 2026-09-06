@@ -1333,7 +1333,7 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
     {
         CommitFile("Entities/Account/Entity.xml", "<entity/>", "v1");
 
-        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v0"), Ref("v1"));
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, "v0", Ref("v1"));
 
         result.TotalFiles.Should().Be(1);
         result.Groups.Should().ContainSingle(g => g.Label == "Account");
@@ -1346,7 +1346,7 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
         CommitFile("Entities/Account/Entity.xml", "<entity/>", "v1");
         DeleteAndCommit("Entities/Account/Entity.xml", "v2");
 
-        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, "v1", Ref("v2"));
 
         result.TotalFiles.Should().Be(1);
         result.Groups.Should().ContainSingle(g => g.Label == "Account");
@@ -1359,7 +1359,7 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
         CommitFile("OptionSets/my_choice.xml", OptionSetXml(("1", "One")), "v1");
         CommitFile("OptionSets/my_choice.xml", OptionSetXml(("1", "One"), ("2", "Two")), "v2");
 
-        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, "v1", Ref("v2"));
 
         var item = result.Groups.Single(g => g.Label == "OptionSets").Items.Single();
         item.Status.Should().Be(SolutionChangeSummary.ChangeStatus.Modified);
@@ -1373,7 +1373,7 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
         CommitFile("Entities/Account/Entity.xml", "<entity/>", "v1");
         WriteFile("Entities/Contact/Entity.xml", "<entity/>");
 
-        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v0"), WorkingTree);
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, "v0", WorkingTree);
 
         result.TotalFiles.Should().Be(2);
         result.Groups.Should().Contain(g => g.Label == "Account");
@@ -1386,7 +1386,7 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
         CommitFile("Entities/Account/Entity.xml", "<entity/>", "v1");
         WriteFile("Entities/Contact/Entity.xml", "<entity/>");
 
-        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v0"), Ref("v1"));
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, "v0", Ref("v1"));
 
         result.TotalFiles.Should().Be(1);
         result.Groups.Should().ContainSingle(g => g.Label == "Account");
@@ -1401,7 +1401,7 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
         WriteFile($"Workflows/NewName-{guid}.xaml", "<workflow/>");
         CommitAll("v2");
 
-        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, "v1", Ref("v2"));
 
         var items = result.Groups.Single(g => g.Label == "Workflows").Items;
         items.Should().ContainSingle(i => i.ComponentName == "OldName"
@@ -1418,7 +1418,7 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
         CommitFile(relPath, FormXml("Committed Title"), "v2");
         WriteFile(relPath, FormXml("Working Tree Title"));
 
-        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, "v1", Ref("v2"));
 
         result.Groups.Single(g => g.Label == "Account").Items
             .Should().ContainSingle(i => i.ComponentName == "Committed Title (main form)");
@@ -1432,7 +1432,7 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
         DeleteAndCommit(relPath, "v2");
         WriteFile(relPath, "<SdkMessageProcessingStep Name=\"Disk Step\" />");
 
-        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, "v1", Ref("v2"));
 
         result.Groups.Single(g => g.Label == "Plugin Steps").Items
             .Should().ContainSingle(i => i.ComponentName == "Committed Step"
@@ -1443,7 +1443,7 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
     public async Task ComputeAsync_UnknownRef_Throws()
     {
         var act = async () => await SolutionChangeSummary.ComputeAsync(
-            _srcFolder, _root, Ref("no-such-ref"), WorkingTree);
+            _srcFolder, _root, "no-such-ref", WorkingTree);
 
         (await act.Should().ThrowAsync<Flowline.Core.FlowlineException>())
             .Which.Message.Should().Contain("no-such-ref");
@@ -1455,7 +1455,7 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
         CommitFile("Other/Solution.xml", SolutionXml("1.12.38"), "v1");
         CommitFile("Other/Solution.xml", SolutionXml("1.12.39"), "v2");
 
-        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, Ref("v1"), Ref("v2"));
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root, "v1", Ref("v2"));
 
         result.Version.Should().Be(new SolutionChangeSummary.VersionTransition("1.12.38", "1.12.39"));
     }
@@ -1553,16 +1553,5 @@ public class SolutionChangeSummaryRefModeTests : IDisposable
             }
             Directory.Delete(root, true);
         }
-    }
-
-    [Fact]
-    public async Task ComputeAsync_WorkingTreeAsLeftSide_Throws()
-    {
-        var act = () => SolutionChangeSummary.ComputeAsync(
-            _srcFolder, _root,
-            SolutionChangeSummary.ComparisonSide.WorkingTree,
-            SolutionChangeSummary.ComparisonSide.WorkingTree);
-
-        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("from");
     }
 }

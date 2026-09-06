@@ -16,11 +16,11 @@ public class SolutionChangeSummary
     public record SubChange(string Description, ChangeStatus Status);
     public record ChangeItem(string ComponentName, IReadOnlyList<string> FilePaths, ChangeStatus Status = ChangeStatus.Modified, IReadOnlyList<SubChange>? SubChanges = null);
 
-    /// <summary>One side of a comparison: a git ref, or the working tree when <see cref="GitRef"/> is null.</summary>
+    /// <summary>The right side of a comparison: a git ref, or the working tree when <see cref="GitRef"/> is null.
+    /// The left side is always a ref, so it is a plain string.</summary>
     public readonly record struct ComparisonSide(string? GitRef)
     {
         public static ComparisonSide WorkingTree => new((string?)null);
-        public static ComparisonSide Head => new("HEAD");
         public bool IsWorkingTree => GitRef is null;
     }
 
@@ -50,16 +50,12 @@ public class SolutionChangeSummary
     }
 
     public static Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, SubprocessCapture? capture = null, CancellationToken ct = default) =>
-        ComputeAsync(srcFolder, workingDirectory, ComparisonSide.Head, ComparisonSide.WorkingTree, capture, ct);
+        ComputeAsync(srcFolder, workingDirectory, "HEAD", ComparisonSide.WorkingTree, capture, ct);
 
-    public static async Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, ComparisonSide from, ComparisonSide to, SubprocessCapture? capture = null, CancellationToken ct = default)
+    /// <remarks>The left side is a ref, not a <see cref="ComparisonSide"/>: git can compare a ref against the
+    /// working tree but not the other way round, and every mode the CLI exposes moves only the left side.</remarks>
+    public static async Task<SolutionChangeSummary> ComputeAsync(string srcFolder, string workingDirectory, string fromRef, ComparisonSide to, SubprocessCapture? capture = null, CancellationToken ct = default)
     {
-        // The left side is always a ref: git can compare a ref against the working tree but not the other
-        // way round, and every mode the CLI exposes moves only the left side. Guarded rather than left to
-        // NullReferenceException inside the argument builders, because both sides are public API.
-        if (from.IsWorkingTree)
-            throw new ArgumentException("The working tree can only be the right-hand side of a comparison; pass a git ref as 'from'.", nameof(from));
-
         // Every git listing prints paths relative to the repository root, and `git show <ref>:<path>`
         // resolves from the root too — so the whole comparison runs from there and uses one path form.
         // Running from the root also neutralizes a user's diff.relative=true, which would otherwise
@@ -75,6 +71,7 @@ public class SolutionChangeSummary
         // list is a transposition waiting to happen.
         Task<SideXmlResult> SideXml(ComparisonSide side, string relPath) =>
             GetSideXmlAsync(side, relPath, srcFolder, srcRelPath, repoRoot, capture, ct);
+        var fromSide = new ComparisonSide(fromRef);
 
         // --no-renames matches the diff listings below: git status otherwise emits a staged rename as
         // "R  old -> new" on one line, which the path parser reads as a single nonexistent file.
@@ -104,7 +101,7 @@ public class SolutionChangeSummary
         // the first sync in a fresh repo reports nothing. git status --porcelain needs no commit, so
         // HEAD-vs-working-tree stays on it. Every other pair of sides is between two refs, where only a diff
         // means anything.
-        var defaultMode = to.IsWorkingTree && from.GitRef == "HEAD";
+        var defaultMode = to.IsWorkingTree && fromRef == "HEAD";
         List<ChangedFile> changedFiles;
 
         if (defaultMode)
@@ -115,9 +112,9 @@ public class SolutionChangeSummary
         }
         else
         {
-            foreach (var side in new[] { from, to })
-                if (side.GitRef is { } gitRef)
-                    await EnsureRefExistsAsync(gitRef, repoRoot, capture, ct);
+            await EnsureRefExistsAsync(fromRef, repoRoot, capture, ct);
+            if (to.GitRef is { } toRef)
+                await EnsureRefExistsAsync(toRef, repoRoot, capture, ct);
 
             var nameStatusResult = await Run(
                 Cli.Wrap("git")
@@ -128,7 +125,7 @@ public class SolutionChangeSummary
                         .Add("-c").Add("core.safecrlf=false")
                         .Add("--literal-pathspecs")
                         .Add("diff").Add("--name-status").Add("--no-renames")
-                        .Add(from.GitRef!);
+                        .Add(fromRef);
                     if (!to.IsWorkingTree) args.Add(to.GitRef!);
                     args.Add("--").Add(srcRelPath);
                 })
@@ -162,7 +159,7 @@ public class SolutionChangeSummary
                     .Add("-c").Add("core.safecrlf=false")
                     .Add("--literal-pathspecs")
                     .Add("diff").Add("--numstat").Add("--no-renames")
-                    .Add(from.GitRef!);
+                    .Add(fromRef);
                 if (!to.IsWorkingTree) args.Add(to.GitRef!);
                 args.Add("--").Add(srcRelPath);
             })
@@ -246,7 +243,7 @@ public class SolutionChangeSummary
                     (newXml, readFailed) = await SideXml(to, relPath);
                 if (needsSubChanges || (needsName && newXml is null))
                 {
-                    var old = await SideXml(from, relPath);
+                    var old = await SideXml(fromSide, relPath);
                     oldXml = old.Xml;
                     readFailed |= old.ReadFailed;
                 }
@@ -264,7 +261,7 @@ public class SolutionChangeSummary
 
         if (customizationsChanged)
         {
-            var oldCust = await SideXml(from, CustomizationsRelPath);
+            var oldCust = await SideXml(fromSide, CustomizationsRelPath);
             var newCust = await SideXml(to, CustomizationsRelPath);
             // Same reason as the sub-changes above: an unreadable side would list every connection
             // reference as Added.
@@ -279,7 +276,7 @@ public class SolutionChangeSummary
         VersionTransition? version = null;
         if (solutionChanged)
             version = DiffSolutionVersion(
-                (await SideXml(from, SolutionRelPath)).Xml,
+                (await SideXml(fromSide, SolutionRelPath)).Xml,
                 (await SideXml(to, SolutionRelPath)).Xml);
 
         return new SolutionChangeSummary(fileCount, totalAdded, totalRemoved, resolvedGroups, version);

@@ -96,7 +96,7 @@ public class DiffCommandTests : IDisposable
     {
         var (from, to) = DiffCommand.ResolveSides(null, null);
 
-        from.GitRef.Should().Be("HEAD");
+        from.Should().Be("HEAD");
         to.IsWorkingTree.Should().BeTrue();
     }
 
@@ -106,7 +106,7 @@ public class DiffCommandTests : IDisposable
     {
         var (from, to) = DiffCommand.ResolveSides("v1.2.0", null);
 
-        from.GitRef.Should().Be("v1.2.0");
+        from.Should().Be("v1.2.0");
         to.IsWorkingTree.Should().BeTrue();
     }
 
@@ -116,7 +116,7 @@ public class DiffCommandTests : IDisposable
     {
         var (from, to) = DiffCommand.ResolveSides("v1.2.0", "main");
 
-        from.GitRef.Should().Be("v1.2.0");
+        from.Should().Be("v1.2.0");
         to.GitRef.Should().Be("main");
         to.IsWorkingTree.Should().BeFalse();
     }
