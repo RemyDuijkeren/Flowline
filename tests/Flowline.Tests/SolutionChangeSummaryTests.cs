@@ -1,4 +1,4 @@
-﻿using FluentAssertions;
+using FluentAssertions;
 using Flowline.Utils;
 using Spectre.Console.Testing;
 
@@ -894,7 +894,7 @@ public class SolutionChangeSummaryChangesFileTests : IDisposable
                     new SolutionChangeSummary.SubChange("av_oldfield", SolutionChangeSummary.ChangeStatus.Deleted))
             ], IsEntity: true));
 
-        await summary.WriteChangesFileAsync(_tempFolder, "TestSln", "Dev");
+        await summary.WriteChangesFileAsync(Path.Combine(_tempFolder, "CHANGES.md"), "TestSln", "Synced from: Dev");
 
         var content = await File.ReadAllTextAsync(Path.Combine(_tempFolder, "CHANGES.md"));
         content.Should().Contain("# Changes — TestSln");
@@ -915,7 +915,7 @@ public class SolutionChangeSummaryChangesFileTests : IDisposable
                     new SolutionChangeSummary.SubChange("Active (100000000)", SolutionChangeSummary.ChangeStatus.Added))
             ]));
 
-        await summary.WriteChangesFileAsync(_tempFolder, "TestSln", "Dev");
+        await summary.WriteChangesFileAsync(Path.Combine(_tempFolder, "CHANGES.md"), "TestSln", "Synced from: Dev");
 
         var content = await File.ReadAllTextAsync(Path.Combine(_tempFolder, "CHANGES.md"));
         content.Should().Contain("## OptionSets");
@@ -931,7 +931,7 @@ public class SolutionChangeSummaryChangesFileTests : IDisposable
                 Item("entity metadata", SolutionChangeSummary.ChangeStatus.Added)
             ], IsEntity: true));
 
-        await summary.WriteChangesFileAsync(_tempFolder, "TestSln", null);
+        await summary.WriteChangesFileAsync(Path.Combine(_tempFolder, "CHANGES.md"), "TestSln", null);
 
         var content = await File.ReadAllTextAsync(Path.Combine(_tempFolder, "CHANGES.md"));
         content.Should().Contain("`+` entity metadata");
@@ -945,7 +945,7 @@ public class SolutionChangeSummaryChangesFileTests : IDisposable
             [new SolutionChangeSummary.ChangeGroup("Account", [Item("entity metadata", SolutionChangeSummary.ChangeStatus.Modified)], IsEntity: true)],
             new SolutionChangeSummary.VersionTransition("1.12.38", "1.12.39"));
 
-        await summary.WriteChangesFileAsync(_tempFolder, "TestSln", "Dev");
+        await summary.WriteChangesFileAsync(Path.Combine(_tempFolder, "CHANGES.md"), "TestSln", "Synced from: Dev");
 
         var content = await File.ReadAllTextAsync(Path.Combine(_tempFolder, "CHANGES.md"));
         content.Should().Contain("Version 1.12.38 -> 1.12.39");
@@ -956,7 +956,7 @@ public class SolutionChangeSummaryChangesFileTests : IDisposable
     {
         var summary = new SolutionChangeSummary(0, 0, 0, []);
 
-        await summary.WriteChangesFileAsync(_tempFolder, "TestSln", "Dev");
+        await summary.WriteChangesFileAsync(Path.Combine(_tempFolder, "CHANGES.md"), "TestSln", "Synced from: Dev");
 
         File.Exists(Path.Combine(_tempFolder, "CHANGES.md")).Should().BeFalse();
     }
@@ -970,7 +970,7 @@ public class SolutionChangeSummaryChangesFileTests : IDisposable
                 Item("entity metadata", SolutionChangeSummary.ChangeStatus.Modified)
             ], IsEntity: true));
 
-        await summary.WriteChangesFileAsync(missingFolder, "TestSln", "Dev");
+        await summary.WriteChangesFileAsync(Path.Combine(missingFolder, "CHANGES.md"), "TestSln", "Synced from: Dev");
 
         File.Exists(Path.Combine(missingFolder, "CHANGES.md")).Should().BeTrue();
     }
@@ -993,7 +993,7 @@ public class SolutionChangeSummaryWriteTests
         var console = new TestConsole();
         var summary = Build(0, 0, 0);
 
-        summary.WriteTree(console, "Contoso Dev", verbose: false);
+        summary.WriteTree(console, "No changes pulled from Contoso Dev.", verbose: false);
 
         console.Output.Should().Contain("No changes pulled from Contoso Dev.");
     }
@@ -1004,7 +1004,7 @@ public class SolutionChangeSummaryWriteTests
         var console = new TestConsole();
         var summary = Build(0, 0, 0);
 
-        summary.WriteTree(console, null, verbose: false);
+        summary.WriteTree(console, "No changes pulled from DEV.", verbose: false);
 
         console.Output.Should().Contain("No changes pulled from DEV.");
     }
@@ -1015,7 +1015,7 @@ public class SolutionChangeSummaryWriteTests
         var console = new TestConsole();
         var summary = Build(3, 47, 23, Group("Account", "entity metadata"));
 
-        summary.WriteTree(console, "Dev", verbose: false);
+        summary.WriteTree(console, "No changes pulled from Dev.", verbose: false);
 
         console.Output.Should().Contain("Changes (3 files, +47 -23)");
     }
@@ -1026,7 +1026,7 @@ public class SolutionChangeSummaryWriteTests
         var console = new TestConsole();
         var summary = Build(1, 5, 0, Group("Account", "entity metadata"));
 
-        summary.WriteTree(console, "Dev", verbose: false);
+        summary.WriteTree(console, "No changes pulled from Dev.", verbose: false);
 
         console.Output.Should().Contain("1 file,");
         console.Output.Should().NotContain("1 files");
@@ -1039,7 +1039,7 @@ public class SolutionChangeSummaryWriteTests
         var summary = Build(2, 10, 5,
             Group("Account", "Information (main)", "Active Accounts"));
 
-        summary.WriteTree(console, "Dev", verbose: false);
+        summary.WriteTree(console, "No changes pulled from Dev.", verbose: false);
 
         console.Output.Should().Contain("Account");
         console.Output.Should().Contain("Information (main)");
@@ -1053,7 +1053,7 @@ public class SolutionChangeSummaryWriteTests
         var summary = Build(1, 5, 0,
             GroupWithPaths("Account", "entity metadata", "Entities/Account/Entity.xml"));
 
-        summary.WriteTree(console, "Dev", verbose: true);
+        summary.WriteTree(console, "No changes pulled from Dev.", verbose: true);
 
         var output = console.Output;
         output.Should().Contain("Account");
@@ -1069,7 +1069,7 @@ public class SolutionChangeSummaryWriteTests
             new SolutionChangeSummary.ChangeGroup("Account", [new SolutionChangeSummary.ChangeItem("entity metadata", [])], IsEntity: true),
             new SolutionChangeSummary.ChangeGroup("Contact", [new SolutionChangeSummary.ChangeItem("ribbon", [])], IsEntity: true));
 
-        summary.WriteTree(console, "Dev", verbose: false);
+        summary.WriteTree(console, "No changes pulled from Dev.", verbose: false);
 
         var output = console.Output;
         output.Should().Contain("Entities");
@@ -1087,7 +1087,7 @@ public class SolutionChangeSummaryWriteTests
                 new SolutionChangeSummary.ChangeItem("av_Cr07982/script/test.js", [], SolutionChangeSummary.ChangeStatus.Modified),
             ]));
 
-        summary.WriteTree(console, "Dev", verbose: false);
+        summary.WriteTree(console, "No changes pulled from Dev.", verbose: false);
 
         var output = console.Output;
         output.Should().Contain("av_Cr07982");
@@ -1109,7 +1109,7 @@ public class SolutionChangeSummaryWriteTests
                 new SolutionChangeSummary.ChangeItem("Old Form", [], SolutionChangeSummary.ChangeStatus.Deleted),
             ]));
 
-        summary.WriteTree(console, "Dev", verbose: false);
+        summary.WriteTree(console, "No changes pulled from Dev.", verbose: false);
 
         var output = console.Output;
         output.Should().Contain("+ New Form");
@@ -1124,7 +1124,7 @@ public class SolutionChangeSummaryWriteTests
         var summary = new SolutionChangeSummary(1, 2, 1, [Group("Account", "entity metadata")],
             new SolutionChangeSummary.VersionTransition("1.12.38", "1.12.39"));
 
-        summary.WriteTree(console, "Dev", verbose: false);
+        summary.WriteTree(console, "No changes pulled from Dev.", verbose: false);
 
         console.Output.Should().Contain("Version 1.12.38 -> 1.12.39");
     }
@@ -1135,7 +1135,7 @@ public class SolutionChangeSummaryWriteTests
         var console = new TestConsole();
         var summary = Build(1, 2, 1, Group("Account", "entity metadata"));
 
-        summary.WriteTree(console, "Dev", verbose: false);
+        summary.WriteTree(console, "No changes pulled from Dev.", verbose: false);
 
         console.Output.Should().NotContain("Version ");
     }
@@ -1149,7 +1149,7 @@ public class SolutionChangeSummaryWriteTests
             Group("Contact", "ribbon"),
             Group("Workflows", "AccountWF01"));
 
-        summary.WriteTree(console, "Dev", verbose: false);
+        summary.WriteTree(console, "No changes pulled from Dev.", verbose: false);
 
         var output = console.Output;
         output.Should().Contain("Account");

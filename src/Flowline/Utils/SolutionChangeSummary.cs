@@ -278,17 +278,30 @@ public class SolutionChangeSummary
         return [..added, ..removed, ..modified];
     }
 
-    public async Task WriteChangesFileAsync(string slnFolder, string solutionName, string? envName, CancellationToken ct = default)
+    /// <summary>Writes the report to <paramref name="outputPath"/>.</summary>
+    /// <remarks>
+    /// The caller supplies the target and the provenance line: what the two compared points were is
+    /// command-specific — an environment for <c>sync</c>, two git points for <c>diff</c> — and so is whether
+    /// an empty report is worth a file at all.
+    /// </remarks>
+    public async Task WriteChangesFileAsync(string outputPath, string solutionName, string? provenanceLine,
+        bool writeWhenEmpty = false, CancellationToken ct = default)
     {
-        if (TotalFiles == 0) return;
+        if (TotalFiles == 0 && !writeWhenEmpty) return;
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"# Changes — {solutionName} ({DateTime.Now:yyyy-MM-dd})");
         sb.AppendLine();
-        if (envName != null)
+        if (provenanceLine != null)
         {
-            sb.AppendLine($"Synced from: {envName}");
+            sb.AppendLine(provenanceLine);
             sb.AppendLine();
+        }
+        if (TotalFiles == 0)
+        {
+            sb.AppendLine("No changes.");
+            await WriteFileAsync(outputPath, sb.ToString(), ct);
+            return;
         }
         if (Version is { } version)
         {
@@ -359,9 +372,13 @@ public class SolutionChangeSummary
             sb.AppendLine();
         }
 
-        var outputPath = Path.Combine(slnFolder, "CHANGES.md");
-        Directory.CreateDirectory(slnFolder);
-        await File.WriteAllTextAsync(outputPath, sb.ToString(), ct);
+        await WriteFileAsync(outputPath, sb.ToString(), ct);
+    }
+
+    static Task WriteFileAsync(string outputPath, string content, CancellationToken ct)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        return File.WriteAllTextAsync(outputPath, content, ct);
     }
 
     public void WriteFlat(IAnsiConsole console, FlowlineRuntimeOptions options, string? markupPrefix = null)
@@ -381,11 +398,13 @@ public class SolutionChangeSummary
         }
     }
 
-    public void WriteTree(IAnsiConsole console, string? envName, bool verbose)
+    /// <summary>Renders the report. <paramref name="noChangesMessage"/> is the complete, already-escaped line
+    /// shown when nothing changed — the caller owns it, because only the caller knows what was compared.</summary>
+    public void WriteTree(IAnsiConsole console, string noChangesMessage, bool verbose)
     {
         if (TotalFiles == 0)
         {
-            console.Info($"No changes pulled from {Markup.Escape(envName ?? "DEV")}.");
+            console.Info(noChangesMessage);
             return;
         }
 

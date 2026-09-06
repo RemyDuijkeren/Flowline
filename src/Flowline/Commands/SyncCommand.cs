@@ -158,8 +158,9 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Summary of changes
         var summary = await SolutionChangeSummary.ComputeAsync(srcPath, RootFolder, _capture, cancellationToken);
         Logger.LogInformation("Diff: {TotalFiles} files changed", summary.TotalFiles);
-        summary.WriteTree(Console, devEnv.DisplayName, settings.Verbose);
-        await summary.WriteChangesFileAsync(slnFolder, projectSln.UniqueName, devEnv.DisplayName, cancellationToken);
+        summary.WriteTree(Console, $"No changes pulled from {Markup.Escape(devEnv.DisplayName ?? "DEV")}.", settings.Verbose);
+        await summary.WriteChangesFileAsync(Path.Combine(slnFolder, "CHANGES.md"), projectSln.UniqueName,
+            devEnv.DisplayName is null ? null : $"Synced from: {devEnv.DisplayName}", writeWhenEmpty: false, cancellationToken);
         await new DataverseContextGenerator(Console).GenerateAsync(
             srcPath, projectSln.UniqueName, RootFolder, cancellationToken);
 

@@ -36,10 +36,18 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         [CommandOption("--to <REF>")]
         [Description("Git ref to compare to (default: the working tree, so uncommitted and untracked files count). Needs --from")]
         public string? To { get; set; }
+
+        [CommandOption("--write [FILE]")]
+        [Description("Write the report to a file (default: CHANGES.md in the repo root)")]
+        public FlagValue<string> Write { get; set; } = null!;
     }
 
     /// <summary>The unpacked solution source lives in <c>src/</c> beside the <c>.cdsproj</c>.</summary>
     const string SrcFolderName = "src";
+
+    /// <summary>Default target of a bare <c>--write</c>, resolved against the repo root — never the source
+    /// root, which is the folder the file listing scans.</summary>
+    internal const string ChangesFileName = "CHANGES.md";
 
     // A repo cloned by Flowline has a .flowline, so project mode still resolves the root from any subfolder.
     // Without one, the working directory is used and the missing-solution-file error below is what the user
@@ -56,27 +64,38 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     protected override Task CheckSetupAsync(Settings settings, CancellationToken cancellationToken) => Task.CompletedTask;
 
     protected override Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) =>
-        DiffAsync(RootFolder, settings.From, settings.To, settings.Verbose, cancellationToken);
+        DiffAsync(RootFolder, settings.From, settings.To,
+            settings.Write.IsSet ? Path.GetFullPath(settings.Write.Value ?? ChangesFileName, RootFolder) : null,
+            settings.Verbose, cancellationToken);
 
     /// <summary>Runs the comparison against <paramref name="rootFolder"/> and renders it.</summary>
     /// <remarks>
     /// Takes the root and the two refs rather than reading <c>Settings</c>, and is <c>internal</c>, so every
     /// path is exercisable against a temp repository without running the base command pipeline.
     /// </remarks>
-    internal async Task<int> DiffAsync(string rootFolder, string? from, string? to, bool verbose, CancellationToken cancellationToken)
+    internal async Task<int> DiffAsync(string rootFolder, string? from, string? to, string? writeTo, bool verbose, CancellationToken cancellationToken)
     {
         var (fromSide, toSide) = ResolveSides(from, to);
         EnsureGitRepository(rootFolder);
 
-        var srcFolder = await ResolveSourceFolderAsync(rootFolder, cancellationToken);
+        var (srcFolder, solutionName) = await ResolveSourceFolderAsync(rootFolder, cancellationToken);
 
         var summary = await SolutionChangeSummary.ComputeAsync(srcFolder, rootFolder, fromSide, toSide, _capture, cancellationToken);
         Logger.LogInformation("Diff: from={From} to={To} files={TotalFiles}", fromSide.GitRef, toSide.GitRef ?? "<working tree>", summary.TotalFiles);
 
-        // No environment name: this command contacts none.
-        summary.WriteTree(Console, null, verbose);
+        // Both lines name the two compared points and no environment: this command contacts none.
+        var (fromName, toName) = (Name(fromSide), Name(toSide));
+        summary.WriteTree(Console, $"No changes between {Markup.Escape(fromName)} and {Markup.Escape(toName)}.", verbose);
+
+        if (writeTo is not null)
+            await summary.WriteChangesFileAsync(writeTo, solutionName, $"Compared: {fromName} -> {toName}",
+                writeWhenEmpty: true, cancellationToken);
+
         return (int)ExitCode.Success;
     }
+
+    /// <summary>How a side reads in a message — the ref itself, or the files on disk.</summary>
+    static string Name(SolutionChangeSummary.ComparisonSide side) => side.GitRef ?? "working tree";
 
     /// <summary>Turns the two options into the two sides of the comparison.</summary>
     /// <remarks>
@@ -119,7 +138,7 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     /// naming the solution file when there is none.
     /// </remarks>
     /// <exception cref="FlowlineException"><see cref="ExitCode.NotFound"/> when the source folder is missing.</exception>
-    internal static async Task<string> ResolveSourceFolderAsync(string rootFolder, CancellationToken cancellationToken)
+    internal static async Task<(string SrcFolder, string SolutionName)> ResolveSourceFolderAsync(string rootFolder, CancellationToken cancellationToken)
     {
         var layout = await SolutionFileLayout.LoadAsync(rootFolder, cancellationToken);
         var srcFolder = Path.Combine(layout.DataverseSolutionFolder, SrcFolderName);
@@ -128,6 +147,8 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
             throw new FlowlineException(ExitCode.NotFound,
                 $"No unpacked solution source at '{ConsolePath.FormatRelativePath(srcFolder, rootFolder, markup: false)}' — 'diff' reads that XML. Run 'flowline sync' to unpack it first.");
 
-        return srcFolder;
+        // The .cdsproj carries the solution's identity, so the written report is headed by the same name
+        // sync writes.
+        return (srcFolder, Path.GetFileNameWithoutExtension(layout.DataverseSolutionProjectPath));
     }
 }

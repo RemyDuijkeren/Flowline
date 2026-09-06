@@ -179,9 +179,10 @@ public class DiffCommandTests : IDisposable
     {
         var expected = await CreateSolutionRepoAsync();
 
-        var resolved = await DiffCommand.ResolveSourceFolderAsync(_root, CancellationToken.None);
+        var (resolved, solutionName) = await DiffCommand.ResolveSourceFolderAsync(_root, CancellationToken.None);
 
         resolved.Should().Be(expected);
+        solutionName.Should().Be("Contoso");
     }
 
     // ---- reporting ----------------------------------------------------------------------------
@@ -195,7 +196,7 @@ public class DiffCommandTests : IDisposable
         await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
         var (command, console) = MakeCommand();
 
-        var exitCode = await command.DiffAsync(_root, from: null, to: null, verbose: false, CancellationToken.None);
+        var exitCode = await command.DiffAsync(_root, from: null, to: null, writeTo: null, verbose: false, CancellationToken.None);
 
         exitCode.Should().Be((int)ExitCode.Success);
         console.Output.Should().Contain("Account").And.Contain("entity metadata");
@@ -208,7 +209,7 @@ public class DiffCommandTests : IDisposable
         await CreateSolutionRepoAsync();
         var (command, console) = MakeCommand();
 
-        var exitCode = await command.DiffAsync(_root, from: "HEAD", to: "HEAD", verbose: false, CancellationToken.None);
+        var exitCode = await command.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: null, verbose: false, CancellationToken.None);
 
         exitCode.Should().Be((int)ExitCode.Success);
         console.Output.Should().Contain("No changes");
@@ -222,7 +223,7 @@ public class DiffCommandTests : IDisposable
         await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
         var (command, console) = MakeCommand();
 
-        var exitCode = await command.DiffAsync(_root, from: "HEAD", to: "HEAD", verbose: false, CancellationToken.None);
+        var exitCode = await command.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: null, verbose: false, CancellationToken.None);
 
         exitCode.Should().Be((int)ExitCode.Success);
         console.Output.Should().NotContain("entity metadata");
@@ -235,10 +236,171 @@ public class DiffCommandTests : IDisposable
         await CreateSolutionRepoAsync();
         var (command, _) = MakeCommand();
 
-        var act = () => command.DiffAsync(_root, from: "no-such-ref", to: null, verbose: false, CancellationToken.None);
+        var act = () => command.DiffAsync(_root, from: "no-such-ref", to: null, writeTo: null, verbose: false, CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Where(e => e.ExitCode == ExitCode.NotFound)
             .And.Message.Should().Contain("git log");
+    }
+
+    /// <summary>R10/KTD6. The terminal no-changes line names the two compared points and no environment —
+    /// this command contacts none.</summary>
+    [Fact]
+    public async Task DiffAsync_WithNoChanges_NamesTheComparedPointsAndNoEnvironment()
+    {
+        await CreateSolutionRepoAsync();
+        var (command, console) = MakeCommand();
+
+        await command.DiffAsync(_root, from: "HEAD", to: null, writeTo: null, verbose: false, CancellationToken.None);
+
+        console.Output.Should().Contain("HEAD").And.Contain("working tree");
+        console.Output.Should().NotContain("DEV");
+    }
+
+    // ---- --write ------------------------------------------------------------------------------
+
+    /// <summary>R9. Without --write the command creates nothing and leaves an existing CHANGES.md alone.</summary>
+    [Fact]
+    public async Task DiffAsync_WithoutWrite_CreatesNoFileAndLeavesAnExistingReportAlone()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        var existing = Path.Combine(_root, "CHANGES.md");
+        await File.WriteAllTextAsync(existing, "untouched");
+        var before = Directory.GetFiles(_root, "*", SearchOption.AllDirectories).Length;
+        var (command, _) = MakeCommand();
+
+        await command.DiffAsync(_root, from: null, to: null, writeTo: null, verbose: false, CancellationToken.None);
+
+        (await File.ReadAllTextAsync(existing)).Should().Be("untouched");
+        Directory.GetFiles(_root, "*", SearchOption.AllDirectories).Length.Should().Be(before);
+    }
+
+    /// <summary>R8/KTD5. A bare --write lands CHANGES.md at the repo root, not inside the scanned source root.</summary>
+    [Fact]
+    public async Task DiffAsync_WithBareWrite_WritesChangesFileAtTheRepoRoot()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        var (command, _) = MakeCommand();
+
+        await command.DiffAsync(_root, from: null, to: null, writeTo: Path.Combine(_root, "CHANGES.md"),
+            verbose: false, CancellationToken.None);
+
+        var content = await File.ReadAllTextAsync(Path.Combine(_root, "CHANGES.md"));
+        content.Should().Contain("entity metadata");
+        File.Exists(Path.Combine(srcFolder, "CHANGES.md")).Should().BeFalse();
+    }
+
+    /// <summary>R8. A named target is written and CHANGES.md is left out of it entirely.</summary>
+    [Fact]
+    public async Task DiffAsync_WithNamedWriteTarget_WritesThatFileOnly()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        var (command, _) = MakeCommand();
+
+        await command.DiffAsync(_root, from: null, to: null, writeTo: Path.Combine(_root, "report.md"),
+            verbose: false, CancellationToken.None);
+
+        File.Exists(Path.Combine(_root, "report.md")).Should().BeTrue();
+        File.Exists(Path.Combine(_root, "CHANGES.md")).Should().BeFalse();
+    }
+
+    /// <summary>KTD5. The report lands outside the scanned source root, so a second run doesn't report the
+    /// report itself as an untracked addition.</summary>
+    [Fact]
+    public async Task DiffAsync_WithWrite_DoesNotReportItsOwnFileOnTheNextRun()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        var target = Path.Combine(_root, "CHANGES.md");
+        var (first, _) = MakeCommand();
+        await first.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, CancellationToken.None);
+
+        var (second, console) = MakeCommand();
+        await second.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, CancellationToken.None);
+
+        console.Output.Should().NotContain("CHANGES");
+    }
+
+    /// <summary>R8. A target under a folder that doesn't exist yet gets its parent created.</summary>
+    [Fact]
+    public async Task DiffAsync_WithWriteUnderAMissingFolder_CreatesTheParent()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        var target = Path.Combine(_root, "reports", "diff.md");
+        var (command, _) = MakeCommand();
+
+        await command.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, CancellationToken.None);
+
+        File.Exists(target).Should().BeTrue();
+    }
+
+    /// <summary>R8. No changes still writes, recording the compared points and zero changes.</summary>
+    [Fact]
+    public async Task DiffAsync_WithWriteAndNoChanges_StillWritesNamingTheComparedPoints()
+    {
+        await CreateSolutionRepoAsync();
+        var target = Path.Combine(_root, "CHANGES.md");
+        var (command, _) = MakeCommand();
+
+        await command.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: target, verbose: false, CancellationToken.None);
+
+        var content = await File.ReadAllTextAsync(target);
+        content.Should().Contain("Compared: HEAD -> HEAD");
+        content.Should().Contain("No changes.");
+    }
+
+    /// <summary>R8. Writing over an earlier report replaces it rather than leaving stale content behind.</summary>
+    [Fact]
+    public async Task DiffAsync_WithWriteOverAnEarlierReport_ReplacesItsContent()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        var target = Path.Combine(_root, "CHANGES.md");
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        var (first, _) = MakeCommand();
+        await first.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, CancellationToken.None);
+        File.Delete(Path.Combine(srcFolder, "Entities", "Account", "Entity.xml"));
+
+        var (second, _) = MakeCommand();
+        await second.DiffAsync(_root, from: "HEAD", to: "HEAD", writeTo: target, verbose: false, CancellationToken.None);
+
+        (await File.ReadAllTextAsync(target)).Should().NotContain("entity metadata");
+    }
+
+    /// <summary>R10. The file records which two points were compared — working-tree mode.</summary>
+    [Fact]
+    public async Task DiffAsync_WithWrite_RecordsTheComparedPointsInWorkingTreeMode()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        var target = Path.Combine(_root, "CHANGES.md");
+        var (command, _) = MakeCommand();
+
+        await command.DiffAsync(_root, from: null, to: null, writeTo: target, verbose: false, CancellationToken.None);
+
+        var content = await File.ReadAllTextAsync(target);
+        content.Should().Contain("Compared: HEAD -> working tree");
+        content.Should().NotContain("Synced from");
+    }
+
+    /// <summary>R10. The file records which two points were compared — ref-to-ref mode.</summary>
+    [Fact]
+    public async Task DiffAsync_WithWrite_RecordsTheComparedPointsInRefToRefMode()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        RunGit("add", ".");
+        RunGit("commit", "-m", "second");
+        var target = Path.Combine(_root, "CHANGES.md");
+        var (command, _) = MakeCommand();
+
+        await command.DiffAsync(_root, from: "HEAD~1", to: "HEAD", writeTo: target, verbose: false, CancellationToken.None);
+
+        var content = await File.ReadAllTextAsync(target);
+        content.Should().Contain("Compared: HEAD~1 -> HEAD");
+        content.Should().Contain("entity metadata");
     }
 }
