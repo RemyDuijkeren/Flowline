@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Flowline.Utils;
 using Spectre.Console.Testing;
 
@@ -452,6 +452,52 @@ public class SolutionChangeSummaryComputeTests : IDisposable
 
         result.TotalFiles.Should().Be(1);
         result.Version.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ComputeAsync_WhenGitListingFails_ThrowsInconclusive()
+    {
+        WriteFile("Entities/Account/Entity.xml", "<entity/>");
+        // A stale gitdir pointer: git fails, prints nothing on stdout, and the parse would see no changes.
+        var gitPath = Path.Combine(_root, ".git");
+        foreach (var f in Directory.GetFiles(gitPath, "*", SearchOption.AllDirectories))
+            File.SetAttributes(f, FileAttributes.Normal);
+        Directory.Delete(gitPath, true);
+        File.WriteAllText(gitPath, "gitdir: C:/nonexistent-flowline-gitdir\n");
+
+        var act = () => SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+
+        (await act.Should().ThrowAsync<Flowline.Core.FlowlineException>())
+            .Which.ExitCode.Should().Be(Flowline.Core.ExitCode.Inconclusive);
+    }
+
+    [Fact]
+    public async Task ComputeAsync_ProjectRootBelowRepoRoot_StillGroupsComponents()
+    {
+        WriteFile("Entities/Account/Entity.xml", "<entity/>");
+        var projectRoot = Path.Combine(_root, "solutions", "TestSln");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, projectRoot);
+
+        result.TotalFiles.Should().Be(1);
+        result.Groups.Should().ContainSingle(g => g.Label == "Account");
+    }
+
+    [Fact]
+    public async Task ComputeAsync_StagedRename_ReportsDeleteAndAdd()
+    {
+        CommitFile("OptionSets/old_name.xml", "<optionset/>");
+        var srcRelPath = Path.GetRelativePath(_root, _srcFolder).Replace('\\', '/');
+        RunGit("mv", srcRelPath + "/OptionSets/old_name.xml", srcRelPath + "/OptionSets/new_name.xml");
+
+        var result = await SolutionChangeSummary.ComputeAsync(_srcFolder, _root);
+
+        result.TotalFiles.Should().Be(2);
+        var items = result.Groups.Single(g => g.Label == "OptionSets").Items;
+        items.Should().Contain(i => i.ComponentName == "old_name"
+                                    && i.Status == SolutionChangeSummary.ChangeStatus.Deleted);
+        items.Should().Contain(i => i.ComponentName == "new_name"
+                                    && i.Status == SolutionChangeSummary.ChangeStatus.Added);
     }
 
     void WriteFile(string relativePath, string content)

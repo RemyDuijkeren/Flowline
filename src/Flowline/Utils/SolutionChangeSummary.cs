@@ -60,22 +60,40 @@ public class SolutionChangeSummary
         if (from.IsWorkingTree)
             throw new ArgumentException("The working tree can only be the right-hand side of a comparison; pass a git ref as 'from'.", nameof(from));
 
-        var srcRelPath = Path.GetRelativePath(workingDirectory, srcFolder).Replace('\\', '/');
+        // Every git listing prints paths relative to the repository root, and `git show <ref>:<path>`
+        // resolves from the root too — so the whole comparison runs from there and uses one path form.
+        // Running from the root also neutralizes a user's diff.relative=true, which would otherwise
+        // reintroduce the prefix mismatch this replaced.
+        var repoRoot = GitUtils.FindRepositoryRoot(workingDirectory) ?? workingDirectory;
+        var srcRelPath = Path.GetRelativePath(repoRoot, srcFolder).Replace('\\', '/');
 
-        // Closes over the three path values every fetch needs, so a call site states only which side and
-        // which file. They are fixed for the whole comparison, and three same-typed strings in a parameter
+        // Closes over the four values every fetch needs, so a call site states only which side and
+        // which file. They are fixed for the whole comparison, and same-typed strings in a parameter
         // list is a transposition waiting to happen.
-        Task<string?> SideXml(ComparisonSide side, string relPath) =>
-            GetSideXmlAsync(side, relPath, srcFolder, srcRelPath, workingDirectory, ct);
+        Task<SideXmlResult> SideXml(ComparisonSide side, string relPath) =>
+            GetSideXmlAsync(side, relPath, srcFolder, srcRelPath, repoRoot, capture, ct);
 
+        // --no-renames matches the diff listings below: git status otherwise emits a staged rename as
+        // "R  old -> new" on one line, which the path parser reads as a single nonexistent file.
         Command Porcelain() => Cli.Wrap("git")
-            .WithWorkingDirectory(workingDirectory)
+            .WithWorkingDirectory(repoRoot)
             .WithArguments(args => args
                 .Add("-c").Add("core.quotepath=false")
                 .Add("-c").Add("core.safecrlf=false")
-                .Add("status").Add("--porcelain").Add("-uall")
+                .Add("status").Add("--porcelain").Add("--no-renames").Add("-uall")
                 .Add("--").Add(srcRelPath))
             .WithValidation(CommandResultValidation.None);
+
+        // A listing that failed produces empty stdout, which parses as "nothing changed". Callers gate
+        // CI checks and destructive overwrites on that answer, so a broken listing has to stop the run.
+        void AssertListed(BufferedCommandResult result, string what)
+        {
+            if (result.ExitCode == 0) return;
+            var stderr = result.StandardError.Trim();
+            throw new FlowlineException(ExitCode.Inconclusive,
+                $"Git couldn't list the changes in '{srcRelPath}' ({what}): {stderr}. "
+                + $"Run 'git status' in {repoRoot} to repair the repository, then try again.");
+        }
 
         // HEAD-vs-working-tree keeps the porcelain listing it always used; any other pair of sides is
         // listed by git diff, which is the only listing that means anything between two refs.
@@ -85,17 +103,18 @@ public class SolutionChangeSummary
         if (defaultMode)
         {
             var statusResult = await Run(Porcelain(), capture, ct);
+            AssertListed(statusResult, "git status --porcelain");
             changedFiles = ParsePorcelain(statusResult.StandardOutput);
         }
         else
         {
             foreach (var side in new[] { from, to })
                 if (side.GitRef is { } gitRef)
-                    await EnsureRefExistsAsync(gitRef, workingDirectory, capture, ct);
+                    await EnsureRefExistsAsync(gitRef, repoRoot, capture, ct);
 
             var nameStatusResult = await Run(
                 Cli.Wrap("git")
-                .WithWorkingDirectory(workingDirectory)
+                .WithWorkingDirectory(repoRoot)
                 .WithArguments(args =>
                 {
                     args.Add("-c").Add("core.quotepath=false")
@@ -108,11 +127,13 @@ public class SolutionChangeSummary
                 .WithValidation(CommandResultValidation.None),
                 capture, ct);
 
+            AssertListed(nameStatusResult, "git diff --name-status");
             changedFiles = ParseNameStatus(nameStatusResult.StandardOutput);
 
             if (to.IsWorkingTree)
             {
                 var statusResult = await Run(Porcelain(), capture, ct);
+                AssertListed(statusResult, "git status --porcelain");
                 var listed = changedFiles.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 changedFiles.AddRange(ParsePorcelain(statusResult.StandardOutput)
                     .Where(f => f.Untracked && !listed.Contains(f.Path)));
@@ -126,7 +147,7 @@ public class SolutionChangeSummary
 
         var numstatResult = await Run(
             Cli.Wrap("git")
-            .WithWorkingDirectory(workingDirectory)
+            .WithWorkingDirectory(repoRoot)
             .WithArguments(args =>
             {
                 args.Add("-c").Add("core.quotepath=false")
@@ -164,7 +185,7 @@ public class SolutionChangeSummary
 
             if (untracked)
             {
-                var fullPath = Path.Combine(workingDirectory, absPath.Replace('/', Path.DirectorySeparatorChar));
+                var fullPath = Path.Combine(repoRoot, absPath.Replace('/', Path.DirectorySeparatorChar));
                 if (File.Exists(fullPath))
                     totalAdded += CountLines(fullPath);
             }
@@ -211,15 +232,22 @@ public class SolutionChangeSummary
                 var needsSubChanges = HasSubChanges(c.Parsed) && status != ChangeStatus.Added;
 
                 string? newXml = null, oldXml = null;
+                var readFailed = false;
                 if ((needsName || needsSubChanges) && status != ChangeStatus.Deleted)
-                    newXml = await SideXml(to, relPath);
+                    (newXml, readFailed) = await SideXml(to, relPath);
                 if (needsSubChanges || (needsName && newXml is null))
-                    oldXml = await SideXml(from, relPath);
+                {
+                    var old = await SideXml(from, relPath);
+                    oldXml = old.Xml;
+                    readFailed |= old.ReadFailed;
+                }
 
                 var name = c.Parsed.StaticName
                            ?? ResolveXmlName(newXml ?? oldXml, c.Parsed.XmlRead, c.Parsed.NameSuffix)
                            ?? c.Parsed.FallbackName ?? Path.GetFileNameWithoutExtension(relPath);
-                var subChanges = needsSubChanges ? ResolveSubChanges(c.Parsed, oldXml, newXml) : null;
+                // A side that couldn't be read is not an empty side: diffing against it would render every
+                // attribute as Added. Report the component's own status and drop the sub-change block.
+                var subChanges = needsSubChanges && !readFailed ? ResolveSubChanges(c.Parsed, oldXml, newXml) : null;
                 items.Add(new ChangeItem(name, c.Paths, status, subChanges));
             }
             resolvedGroups.Add(new ChangeGroup(g.Key, items, g.First().Parsed.IsEntity));
@@ -227,18 +255,23 @@ public class SolutionChangeSummary
 
         if (customizationsChanged)
         {
-            var connRefItems = DiffConnectionReferences(
-                await SideXml(from, CustomizationsRelPath),
-                await SideXml(to, CustomizationsRelPath));
-            if (connRefItems is { Count: > 0 })
-                resolvedGroups.Add(new ChangeGroup("Connection References", connRefItems));
+            var oldCust = await SideXml(from, CustomizationsRelPath);
+            var newCust = await SideXml(to, CustomizationsRelPath);
+            // Same reason as the sub-changes above: an unreadable side would list every connection
+            // reference as Added.
+            if (!oldCust.ReadFailed && !newCust.ReadFailed)
+            {
+                var connRefItems = DiffConnectionReferences(oldCust.Xml, newCust.Xml);
+                if (connRefItems is { Count: > 0 })
+                    resolvedGroups.Add(new ChangeGroup("Connection References", connRefItems));
+            }
         }
 
         VersionTransition? version = null;
         if (solutionChanged)
             version = DiffSolutionVersion(
-                await SideXml(from, SolutionRelPath),
-                await SideXml(to, SolutionRelPath));
+                (await SideXml(from, SolutionRelPath)).Xml,
+                (await SideXml(to, SolutionRelPath)).Xml);
 
         return new SolutionChangeSummary(fileCount, totalAdded, totalRemoved, resolvedGroups, version);
     }
@@ -729,28 +762,50 @@ public class SolutionChangeSummary
         return result is { Count: > 0 } ? result : null;
     }
 
-    static async Task<string?> GetSideXmlAsync(
+    /// <summary>One side's file content. <see cref="ReadFailed"/> separates "the read broke" from
+    /// "the file genuinely isn't on that side" — both arrive as a null <see cref="Xml"/>, but only the
+    /// second one may be diffed against.</summary>
+    readonly record struct SideXmlResult(string? Xml, bool ReadFailed);
+
+    static async Task<SideXmlResult> GetSideXmlAsync(
         ComparisonSide side, string relPath, string srcFolder, string srcRelPath,
-        string workingDirectory, CancellationToken ct)
+        string repoRoot, SubprocessCapture? capture, CancellationToken ct)
     {
         if (side.IsWorkingTree)
         {
             var fullPath = Path.Combine(srcFolder, relPath.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(fullPath)) return null;
-            try { return await File.ReadAllTextAsync(fullPath, ct); }
+            if (!File.Exists(fullPath)) return new SideXmlResult(null, false);
+            try { return new SideXmlResult(await File.ReadAllTextAsync(fullPath, ct), false); }
             catch (OperationCanceledException) { throw; }
-            catch { return null; }
+            catch { return new SideXmlResult(null, true); }
         }
 
+        // Repo-root-relative: `git show <ref>:<path>` resolves from the top of the tree, not from the
+        // process working directory.
         var gitPath = srcRelPath.TrimEnd('/') + "/" + relPath;
-        var result = await Cli.Wrap("git")
-            .WithWorkingDirectory(workingDirectory)
+
+        // Deliberately NOT routed through Run/SubprocessCapture, unlike every other git call here.
+        // Capture pipes each stdout line through the console renderer and the log sink, which is right
+        // for a listing of a few lines and wrong for this: stdout is the whole component file. One
+        // solution manifest is tens of thousands of lines, fetched once per side, so routing it through
+        // capture put minutes of rendering on the main path. This is file content, not tool output.
+        var cmd = Cli.Wrap("git")
+            .WithWorkingDirectory(repoRoot)
             .WithArguments(args => args
                 .Add("-c").Add("core.quotepath=false")
                 .Add("show").Add($"{side.GitRef}:{gitPath}"))
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteBufferedAsync(ct);
-        return result.ExitCode == 0 ? XmlHelpers.StripBom(result.StandardOutput) : null;
+            // git localizes its fatal messages, and the absent-vs-failed split below reads them.
+            .WithEnvironmentVariables(e => e.Set("LC_ALL", "C"))
+            .WithValidation(CommandResultValidation.None);
+        var result = await cmd.ExecuteBufferedAsync(ct);
+
+        if (result.ExitCode == 0) return new SideXmlResult(XmlHelpers.StripBom(result.StandardOutput), false);
+
+        // git says "does not exist in" / "exists on disk, but not in" for a path absent from the ref;
+        // any other fatal (broken object, unreadable repo) is a read failure, not an absence.
+        var absent = result.StandardError.Contains("does not exist in", StringComparison.Ordinal)
+                     || result.StandardError.Contains("exists on disk, but not in", StringComparison.Ordinal);
+        return new SideXmlResult(null, !absent);
     }
 
     static List<SubChange>? DiffEntityAttributes(string? oldXml, string? newXml)
