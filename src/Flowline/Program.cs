@@ -226,7 +226,14 @@ app.Configure(config =>
           .WithExample("drift", "https://contoso-test.crm4.dynamics.com/")
           .WithExample("drift", "https://contoso-test.crm4.dynamics.com/", "--path", "ContosoCustomizations_1_2_0_0.zip");
 
-    // scaffold = write a project template locally; the only command here that never reaches Dataverse
+    // diff = read-only comparison of two points in git history; the git counterpart to drift
+    config.AddCommand<DiffCommand>("diff")
+          .WithDescription("Report which solution components changed between two points in git history. Reads git and the unpacked solution XML only — no Dataverse connection, no authentication, no network. Run before a commit to see what a DEV session actually changed, or between two tags to see what a release contains. Read-only — changes nothing. Use 'drift' to compare against a live environment instead.")
+          .WithExample("diff")
+          .WithExample("diff", "--from", "v1.2.0")
+          .WithExample("diff", "--from", "v1.2.0", "--to", "v1.3.0");
+
+    // scaffold = write a project template locally; reaches Dataverse no more than diff above does
     config.AddCommand<ScaffoldCommand>("scaffold")
           .WithAlias("new")
           .WithDescription("Write a project template into this folder. Needs no Dataverse connection, no authentication, and no network. Writes the project where you are standing, and looks for a solution file here and upward as far as the repo root: found, the project is named after it and added to it; not found, the template lands alone and the run says so. Skips and changes nothing when the project is already there. Alias: new")
