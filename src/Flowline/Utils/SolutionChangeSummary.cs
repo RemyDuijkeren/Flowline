@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using CliWrap;
@@ -84,6 +84,7 @@ public class SolutionChangeSummary
         var components = new Dictionary<string, (ParsedPath Parsed, List<string> Paths, List<string> FileStatuses)>(StringComparer.OrdinalIgnoreCase);
         int fileCount = 0;
         int totalAdded = 0, totalRemoved = 0;
+        var customizationsChanged = false;
 
         foreach (var (status, absPath) in changedFiles)
         {
@@ -106,6 +107,9 @@ public class SolutionChangeSummary
                 totalAdded += counts.added;
                 totalRemoved += counts.removed;
             }
+
+            if (relPath.Equals(CustomizationsRelPath, StringComparison.OrdinalIgnoreCase))
+                customizationsChanged = true;
 
             var parsed = ParseComponentPath(relPath);
             if (parsed == null) continue;
@@ -137,7 +141,50 @@ public class SolutionChangeSummary
             resolvedGroups.Add(new ChangeGroup(g.Key, items, g.First().Parsed.IsEntity));
         }
 
+        if (customizationsChanged)
+        {
+            var connRefItems = DiffConnectionReferences(
+                await GetHeadXmlAsync(CustomizationsRelPath, srcRelPath, workingDirectory, ct),
+                await GetCurrentXmlAsync(CustomizationsRelPath, srcFolder, ct));
+            if (connRefItems is { Count: > 0 })
+                resolvedGroups.Add(new ChangeGroup("Connection References", connRefItems));
+        }
+
         return new SolutionChangeSummary(fileCount, totalAdded, totalRemoved, resolvedGroups);
+    }
+
+    internal const string CustomizationsRelPath = "Other/Customizations.xml";
+
+    /// <summary>Connection references live inside Other/Customizations.xml, not their own files, so they need an
+    /// element-level diff of that one file rather than the per-file component pipeline.</summary>
+    internal static List<ChangeItem>? DiffConnectionReferences(string? oldXml, string? newXml)
+    {
+        var oldRefs = ParseXmlElements(oldXml, "connectionreference", e => (string?)e.Attribute("connectionreferencelogicalname"));
+        var newRefs = ParseXmlElements(newXml, "connectionreference", e => (string?)e.Attribute("connectionreferencelogicalname"));
+        if (oldRefs == null && newRefs == null) return null;
+
+        static string Name(string logicalName, XElement el)
+        {
+            var display = (string?)el.Element("connectionreferencedisplayname");
+            return string.IsNullOrWhiteSpace(display) || display == logicalName ? logicalName : $"{display} ({logicalName})";
+        }
+
+        var added = new List<ChangeItem>();
+        var removed = new List<ChangeItem>();
+        var modified = new List<ChangeItem>();
+
+        foreach (var (logicalName, el) in newRefs ?? [])
+        {
+            if (!(oldRefs?.TryGetValue(logicalName, out var oldEl) ?? false))
+                added.Add(new ChangeItem(Name(logicalName, el), [CustomizationsRelPath], ChangeStatus.Added));
+            else if (oldEl.ToString() != el.ToString())
+                modified.Add(new ChangeItem(Name(logicalName, el), [CustomizationsRelPath], ChangeStatus.Modified));
+        }
+        foreach (var (logicalName, el) in oldRefs ?? [])
+            if (!(newRefs?.ContainsKey(logicalName) ?? false))
+                removed.Add(new ChangeItem(Name(logicalName, el), [CustomizationsRelPath], ChangeStatus.Deleted));
+
+        return [..added, ..removed, ..modified];
     }
 
     public async Task WriteChangesFileAsync(string slnFolder, string solutionName, string? envName, CancellationToken ct = default)

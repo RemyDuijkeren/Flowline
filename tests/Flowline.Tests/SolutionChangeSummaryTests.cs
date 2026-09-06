@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Flowline.Utils;
 using Spectre.Console.Testing;
 
@@ -1081,5 +1081,56 @@ public class SolutionChangeSummaryWriteTests
         output.Should().Contain("Account");
         output.Should().Contain("Contact");
         output.Should().Contain("Workflows");
+    }
+
+    const string ConnRefsBefore = """
+        <ImportExportXml>
+          <connectionreferences>
+            <connectionreference connectionreferencelogicalname="dwe_keep">
+              <connectionreferencedisplayname>Keep</connectionreferencedisplayname>
+            </connectionreference>
+            <connectionreference connectionreferencelogicalname="dwe_gone">
+              <connectionreferencedisplayname>Temp for issue</connectionreferencedisplayname>
+            </connectionreference>
+            <connectionreference connectionreferencelogicalname="dwe_edited">
+              <connectionreferencedisplayname>Old name</connectionreferencedisplayname>
+            </connectionreference>
+          </connectionreferences>
+        </ImportExportXml>
+        """;
+
+    const string ConnRefsAfter = """
+        <ImportExportXml>
+          <connectionreferences>
+            <connectionreference connectionreferencelogicalname="dwe_keep">
+              <connectionreferencedisplayname>Keep</connectionreferencedisplayname>
+            </connectionreference>
+            <connectionreference connectionreferencelogicalname="dwe_edited">
+              <connectionreferencedisplayname>New name</connectionreferencedisplayname>
+            </connectionreference>
+            <connectionreference connectionreferencelogicalname="dwe_new">
+              <connectionreferencedisplayname>Brand new</connectionreferencedisplayname>
+            </connectionreference>
+          </connectionreferences>
+        </ImportExportXml>
+        """;
+
+    [Fact]
+    public void DiffConnectionReferences_DetectsAddedRemovedModified()
+    {
+        var items = SolutionChangeSummary.DiffConnectionReferences(ConnRefsBefore, ConnRefsAfter);
+
+        items!.Select(i => (i.ComponentName, i.Status)).Should().BeEquivalentTo(new[]
+        {
+            ("Brand new (dwe_new)", SolutionChangeSummary.ChangeStatus.Added),
+            ("Temp for issue (dwe_gone)", SolutionChangeSummary.ChangeStatus.Deleted),
+            ("New name (dwe_edited)", SolutionChangeSummary.ChangeStatus.Modified),
+        });
+    }
+
+    [Fact]
+    public void DiffConnectionReferences_NoChange_ReturnsEmpty()
+    {
+        SolutionChangeSummary.DiffConnectionReferences(ConnRefsBefore, ConnRefsBefore).Should().BeEmpty();
     }
 }
