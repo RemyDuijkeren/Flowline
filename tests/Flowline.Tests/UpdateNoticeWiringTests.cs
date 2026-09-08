@@ -57,7 +57,7 @@ public class UpdateNoticeWiringTests
             ExecuteAsync(new CommandContext([], new NoRemainingArguments(), "test-command", null), settings, CancellationToken.None);
     }
 
-    static (TestCommand Command, TestConsole Console, string NewerVersion) MakeCommand()
+    static (TestCommand Command, TestConsole Console, string NewerVersion, FlowlineValidator Validator) MakeCommand()
     {
         var running = NuGetVersion.Parse(FlowlineVersion.Display);
         var newer = new NuGetVersion(running.Major + 1, 0, 0).ToString();
@@ -78,13 +78,13 @@ public class UpdateNoticeWiringTests
             new NuGetVersionClient(new HttpClient(new FakeHandler($$"""{"versions":["{{newer}}"]}"""))),
             validator);
 
-        return (command, console, newer);
+        return (command, console, newer, validator);
     }
 
     [Fact]
     public async Task ExecuteAsync_NoFlowlineProject_PrintsNoticeBeforeThrowing()
     {
-        var (command, console, newerVersion) = MakeCommand();
+        var (command, console, newerVersion, _) = MakeCommand();
 
         var act = () => command.RunAsync(new FlowlineSettings());
 
@@ -95,11 +95,29 @@ public class UpdateNoticeWiringTests
     [Fact]
     public async Task ExecuteAsync_CommandSkipsSetupCheck_StillPrintsNotice()
     {
-        var (command, console, newerVersion) = MakeCommand();
+        var (command, console, newerVersion, _) = MakeCommand();
         command.SkipSetup = true;
 
         (await command.RunAsync(new FlowlineSettings())).Should().Be(0);
 
         console.Output.Should().Contain(newerVersion);
+    }
+
+    // U1: NoCache moved off FlowlineSettings onto DataverseSettings. This TestCommand is typed
+    // FlowlineCommand<FlowlineSettings> — like diff, scaffold and sln add — so the notice check must
+    // resolve noCache=false for it rather than fail to compile or silently misread. Proven here by
+    // seeding a fresh "no newer version" cache entry: if noCache had resolved true, the fake HTTP
+    // handler above (which always reports a newer version) would be consulted instead and the notice
+    // would print.
+    [Fact]
+    public async Task ExecuteAsync_FreshCachedNoUpdate_PlainFlowlineSettingsDefaultsNoCacheFalse_HonorsCache()
+    {
+        var (command, console, newerVersion, validator) = MakeCommand();
+        validator.SaveUpdateCheck(null);
+        command.SkipSetup = true;
+
+        (await command.RunAsync(new FlowlineSettings())).Should().Be(0);
+
+        console.Output.Should().NotContain(newerVersion);
     }
 }

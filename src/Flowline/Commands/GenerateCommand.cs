@@ -23,7 +23,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
     IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService, SecretResolver secretResolver, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient)
     : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
-    public sealed class Settings : FlowlineSettings
+    public sealed class Settings : DataverseSettings
     {
         [CommandArgument(0, "[solution]")]
         [Description("Solution to generate types for (optional in project mode)")]

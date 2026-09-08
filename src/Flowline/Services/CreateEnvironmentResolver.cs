@@ -82,8 +82,11 @@ public class CreateEnvironmentResolver(
         // profile matches, and never creates a profile or launches a login (R9/R13).
         var profile = await profileResolutionService.ResolveAsync(url, cancellationToken);
 
+        // NoCache lives on DataverseSettings, not the shared base — this class serves both init and
+        // clone, so it isn't known statically which settings type it got.
+        var noCache = (settings as DataverseSettings)?.NoCache ?? false;
         var getEnvironmentInfo = GetEnvironmentInfoByUrlOverride
-            ?? ((u, p, s, ct) => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(u, p, s, ct));
+            ?? ((u, p, s, ct) => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(u, p, s, noCache, ct));
         var env = await console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{url}[/]...",
             _ => getEnvironmentInfo(url, profile, settings, cancellationToken));

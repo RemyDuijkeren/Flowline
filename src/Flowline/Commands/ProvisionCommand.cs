@@ -19,7 +19,7 @@ public enum CopyType { Minimal, Full }
 
 public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
-    public sealed class Settings : FlowlineSettings
+    public sealed class Settings : DataverseSettings
     {
         [CommandArgument(0, "[role]")]
         [Description("Target role: dev, test, or uat")]
@@ -84,7 +84,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         }
 
         // Validate target environment
-        var targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, cancellationToken);
+        var targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, settings.NoCache, cancellationToken);
         if (targetEnv == null)
         {
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
@@ -107,7 +107,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             if (!createResult.IsSuccess)
                 throw new FlowlineException(ExitCode.GeneralError, "Environment creation failed — check the environment and your PAC login. Use --verbose for more details.");
 
-            targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, cancellationToken);
+            targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, settings.NoCache, cancellationToken);
             if (targetEnv == null)
             {
                 Console.Error("Environment created but not found — check the Power Platform admin center");

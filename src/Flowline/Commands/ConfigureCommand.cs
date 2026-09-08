@@ -29,7 +29,7 @@ public class ConfigureCommand(
     NuGetVersionClient nuGetVersionClient)
     : FlowlineCommand<ConfigureCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
-    public sealed class Settings : FlowlineSettings
+    public sealed class Settings : DataverseSettings
     {
         [CommandArgument(0, "<target>")]
         [Description("Target environment: prod, uat, test, dev, or a URL")]
@@ -347,7 +347,7 @@ public class ConfigureCommand(
         var profile = await ProfileResolutionService.ResolveAsync(target, ct);
         var env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{Markup.Escape(target)}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, profile, settings, ct));
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, profile, settings, settings.NoCache, ct));
 
         if (env is null)
             throw new FlowlineException(ExitCode.ConnectionFailed,

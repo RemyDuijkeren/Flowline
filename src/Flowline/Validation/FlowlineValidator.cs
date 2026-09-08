@@ -26,22 +26,24 @@ public sealed class FlowlineValidator
         _probes = probes;
     }
 
-    public async Task<ToolCheckResult> EnsureDotNetAsync(FlowlineSettings settings, CancellationToken cancellationToken)
+    public async Task<ToolCheckResult> EnsureDotNetAsync(FlowlineSettings settings, bool noCache, CancellationToken cancellationToken)
     {
         return await GetOrRunToolCheckAsync(
             "dotnet",
             ToolTtl,
             settings,
+            noCache,
             cancellationToken,
             async () => new ToolCheckResult { Version = await _probes.CheckDotNetAsync(settings.Verbose, cancellationToken) });
     }
 
-    public async Task<ToolCheckResult> EnsurePacCliAsync(FlowlineSettings settings, CancellationToken cancellationToken)
+    public async Task<ToolCheckResult> EnsurePacCliAsync(FlowlineSettings settings, bool noCache, CancellationToken cancellationToken)
     {
         return await GetOrRunToolCheckAsync(
             "pac",
             ToolTtl,
             settings,
+            noCache,
             cancellationToken,
             async () =>
             {
@@ -52,12 +54,13 @@ public sealed class FlowlineValidator
             });
     }
 
-    public async Task<ToolCheckResult> EnsureGitAsync(FlowlineSettings settings, CancellationToken cancellationToken)
+    public async Task<ToolCheckResult> EnsureGitAsync(FlowlineSettings settings, bool noCache, CancellationToken cancellationToken)
     {
         return await GetOrRunToolCheckAsync(
             "git",
             ToolTtl,
             settings,
+            noCache,
             cancellationToken,
             async () => new ToolCheckResult
             {
@@ -65,12 +68,12 @@ public sealed class FlowlineValidator
             });
     }
 
-    public async Task EnsureGitRepoAsync(string rootFolder, FlowlineSettings settings, CancellationToken cancellationToken)
+    public async Task EnsureGitRepoAsync(string rootFolder, FlowlineSettings settings, bool noCache, CancellationToken cancellationToken)
     {
         var key = NormalizePath(rootFolder);
         var cache = _store.Load();
 
-        if (!settings.NoCache &&
+        if (!noCache &&
             cache.GitRepos.TryGetValue(key, out var cached) &&
             IsFresh(cached.CheckedAtUtc, GitRepoTtl))
         {
@@ -88,8 +91,9 @@ public sealed class FlowlineValidator
     public Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(
         string environmentUrl,
         FlowlineSettings settings,
+        bool noCache,
         CancellationToken cancellationToken) =>
-        GetEnvironmentInfoCoreAsync(environmentUrl, settings, cancellationToken,
+        GetEnvironmentInfoCoreAsync(environmentUrl, settings, noCache, cancellationToken,
             () => _probes.GetEnvironmentAsync(environmentUrl, cancellationToken));
 
     // Profile-scoped overload — used wherever a PAC auth profile has already been resolved for the target
@@ -99,20 +103,22 @@ public sealed class FlowlineValidator
         string environmentUrl,
         PacProfile profile,
         FlowlineSettings settings,
+        bool noCache,
         CancellationToken cancellationToken) =>
-        GetEnvironmentInfoCoreAsync(environmentUrl, settings, cancellationToken,
+        GetEnvironmentInfoCoreAsync(environmentUrl, settings, noCache, cancellationToken,
             () => _probes.GetEnvironmentByProfileAsync(profile, environmentUrl, cancellationToken));
 
     async Task<EnvironmentInfo?> GetEnvironmentInfoCoreAsync(
         string environmentUrl,
         FlowlineSettings settings,
+        bool noCache,
         CancellationToken cancellationToken,
         Func<Task<EnvironmentInfo?>> probe)
     {
         var key = NormalizeEnvironmentUrl(environmentUrl);
         var cache = _store.Load();
 
-        if (!settings.NoCache &&
+        if (!noCache &&
             cache.Environments.TryGetValue(key, out var cached) &&
             IsFresh(cached.CheckedAtUtc, EnvironmentTtl))
         {
@@ -137,13 +143,14 @@ public sealed class FlowlineValidator
         string solutionName,
         bool includeManaged,
         FlowlineSettings settings,
+        bool noCache,
         CancellationToken cancellationToken,
         bool bypassCache = false)
     {
         var key = SolutionKey(environmentUrl, solutionName, includeManaged);
         var cache = _store.Load();
 
-        if (!bypassCache && !settings.NoCache &&
+        if (!bypassCache && !noCache &&
             cache.Solutions.TryGetValue(key, out var cached) &&
             IsFresh(cached.CheckedAtUtc, SolutionTtl))
         {
@@ -208,11 +215,12 @@ public sealed class FlowlineValidator
         string key,
         TimeSpan ttl,
         FlowlineSettings settings,
+        bool noCache,
         CancellationToken cancellationToken,
         Func<Task<ToolCheckResult>> checkAsync)
     {
         var cache = _store.Load();
-        if (!settings.NoCache &&
+        if (!noCache &&
             cache.ToolChecks.TryGetValue(key, out var cached) &&
             IsFresh(cached.CheckedAtUtc, ttl))
         {

@@ -159,7 +159,9 @@ public class FlowlineCommandStandaloneTests
 
         var command = MakeCommand();
         command.Standalone = true;
-        var settings = new FlowlineSettings { NoCache = true };
+        // NoCache no longer lives on FlowlineSettings (it moved to DataverseSettings in U1) — this
+        // TestCommand is deliberately typed FlowlineSettings, so it always resolves noCache=false.
+        var settings = new FlowlineSettings();
 
         // The standalone branch still shells out to `pac` (EnsurePacCliAsync) — a runner with no PAC
         // CLI installed (CI's ubuntu-latest has none) throws for that unrelated reason. What this test
@@ -215,8 +217,10 @@ public class FlowlineCommandStandaloneTests
     public async Task CheckSetupAsync_ProjectMode_ProbesGitAndDotnet_UnlikeStandalone()
     {
         var command = MakeCommand();
-        // Standalone left false (default) — project mode, the unchanged base branch.
-        var settings = new FlowlineSettings { NoCache = true };
+        // Standalone left false (default) — project mode, the unchanged base branch. NoCache no longer
+        // lives on FlowlineSettings (moved to DataverseSettings in U1); this test double stays typed
+        // FlowlineSettings, so noCache always resolves false here.
+        var settings = new FlowlineSettings();
 
         try
         {

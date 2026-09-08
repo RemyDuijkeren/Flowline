@@ -17,7 +17,7 @@ namespace Flowline.Commands;
 
 public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) : FlowlineCommand<DriftCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
-    public sealed class Settings : FlowlineSettings
+    public sealed class Settings : DataverseSettings
     {
         [CommandArgument(0, "<target>")]
         [Description("Target environment: prod, uat, test, dev, or a URL")]
@@ -176,7 +176,7 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         var profile = await ProfileResolutionService.ResolveAsync(target, ct);
         var env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{target}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, profile, settings, ct));
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, profile, settings, settings.NoCache, ct));
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"Environment not found — check the URL '{target}' or your PAC login.");
 
