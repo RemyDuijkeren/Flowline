@@ -156,11 +156,21 @@ public class ScaffoldCommandTests
     [InlineData("scripttests")]
     public void ValidateName_RejectsANameFlowlineWouldReadAsATestProject(string name)
     {
-        var act = () => ScaffoldCommand.ValidateName(name);
+        var act = () => ScaffoldCommand.ValidateName(name, "webresources");
 
         act.Should().Throw<FlowlineException>()
            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
            .And.Message.Should().Contain("test project");
+    }
+
+    /// <summary>The Test/Tests rule only protects WebResourcesProjectResolver's name-based recognition —
+    /// PluginProjectResolver never excludes a project by name, so the same name is fine for plugins.</summary>
+    [Fact]
+    public void ValidateName_PluginsPart_AllowsATestSuffixedName()
+    {
+        var act = () => ScaffoldCommand.ValidateName("ScriptTests", "plugins");
+
+        act.Should().NotThrow();
     }
 
     /// <summary>Covers AE17. <c>--name</c> names one folder inside the target; a path there would let it
@@ -168,7 +178,7 @@ public class ScaffoldCommandTests
     [Fact]
     public void ValidateName_RejectsAPath_NamingTheFlagThatTakesOne()
     {
-        var act = () => ScaffoldCommand.ValidateName(Path.Combine("src", "Scripts"));
+        var act = () => ScaffoldCommand.ValidateName(Path.Combine("src", "Scripts"), "webresources");
 
         act.Should().Throw<FlowlineException>()
            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
@@ -178,7 +188,7 @@ public class ScaffoldCommandTests
     [Fact]
     public void ValidateName_WithNoName_Passes()
     {
-        var act = () => ScaffoldCommand.ValidateName(null);
+        var act = () => ScaffoldCommand.ValidateName(null, "webresources");
 
         act.Should().NotThrow();
     }

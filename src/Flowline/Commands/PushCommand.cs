@@ -41,7 +41,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         [Description("Limit the push scope: all, webresources, plugins, or assemblyonly. Can be used more than once.")]
         public PushScope[] Scopes { get; set; } = [];
 
-        [CommandOption("-p|--pluginFile <PATH>")]
+        [CommandOption("-p|--plugin-file <PATH>")]
         [Description("Prebuilt plugin file (.dll) or NuGet package (.nupkg) to push without using a Flowline project")]
         public string? PluginFile { get; set; }
 
@@ -60,7 +60,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         public bool NoBuild { get; set; } = false;
 
         [CommandOption("--no-publish")]
-        [Description("Skip publishing web resources and form event handlers after sync")]
+        [Description("Skip publishing web resources and form event handlers after the push")]
         [DefaultValue(false)]
         public bool NoPublish { get; set; } = false;
 
@@ -242,7 +242,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
                 ? "Nothing to push — already up to date."
                 : standaloneMode
                     ? "Assets pushed! (•ᴗ•)و"
-                    : "Assets pushed! Use 'sync' to keep it in flow. (•ᴗ•)و");
+                    : "Assets pushed! Use 'pull' to keep it in flow. (•ᴗ•)و");
 
         return 0;
     }
@@ -607,7 +607,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         if (standaloneMode)
         {
             if ((scope.HasFlag(PushScope.Plugins) || scope.HasFlag(PushScope.AssemblyOnly)) && string.IsNullOrWhiteSpace(settings.PluginFile))
-                throw new FlowlineException(ExitCode.ValidationFailed, "--scope plugins/assemblyonly requires --pluginFile.");
+                throw new FlowlineException(ExitCode.ValidationFailed, "--scope plugins/assemblyonly requires --plugin-file.");
             if (scope.HasFlag(PushScope.WebResources) && string.IsNullOrWhiteSpace(settings.WebResources))
                 throw new FlowlineException(ExitCode.ValidationFailed, "--scope webresources requires --webresources.");
         }
@@ -618,7 +618,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
     internal static void ValidateStandaloneMode(Settings settings, string rootFolder)
     {
         if (File.Exists(Path.Combine(rootFolder, ProjectConfig.s_configFileName)))
-            throw new FlowlineException(ExitCode.ValidationFailed, "--pluginFile and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "--plugin-file and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");
     }
 
     internal static string ResolveStandaloneSolutionName(Settings settings)
@@ -762,7 +762,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
             return (Path.GetFileNameWithoutExtension(nupkgPath), assemblies);
 
         throw new FlowlineException(ExitCode.ValidationFailed,
-            $"--pluginFile package contains {assemblies.Count} plugin-bearing assemblies " +
+            $"--plugin-file package contains {assemblies.Count} plugin-bearing assemblies " +
             $"({string.Join(", ", assemblies.Select(a => a.Name))}) — standalone mode can't determine which " +
             "one is primary without project context. Push from the project instead.");
     }
@@ -775,7 +775,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         // R2a/KD6: .nupkg is accepted here and routes to the exact same package entry point project mode
         // uses — no separate standalone implementation.
         if (!string.Equals(ext, ".dll", StringComparison.OrdinalIgnoreCase) && !string.Equals(ext, ".nupkg", StringComparison.OrdinalIgnoreCase))
-            throw new FlowlineException(ExitCode.ValidationFailed, "--pluginFile must point to a .dll or .nupkg file.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "--plugin-file must point to a .dll or .nupkg file.");
 
         if (!File.Exists(path))
             throw new FlowlineException(ExitCode.NotFound, $"Plugin file not found: {path}");

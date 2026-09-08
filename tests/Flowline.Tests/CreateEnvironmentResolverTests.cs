@@ -101,10 +101,10 @@ public class CreateEnvironmentResolverTests
 
     // === ResolveCreateTargetAsync (init) — DEV-only ===
 
-    // --- R13/AE2: no --dev, no TTY — errors naming the flag, never prompts ---
+    // --- R13/AE2: no --env, no TTY — errors naming the flag, never prompts ---
 
     [Fact]
-    public async Task ResolveCreateTarget_NoDevUrl_NonInteractive_ThrowsNamingDevFlag_WithoutPrompting()
+    public async Task ResolveCreateTarget_NoDevUrl_NonInteractive_ThrowsNamingEnvFlag_WithoutPrompting()
     {
         var resolver = MakeResolver(); // non-interactive
         // No SelectionPrompt/environment-list seam is configured — if the resolver tried to prompt
@@ -114,7 +114,7 @@ public class CreateEnvironmentResolverTests
         var act = () => resolver.ResolveCreateTargetAsync(devUrl: null, new FlowlineSettings(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
-            .Which.Message.Should().Contain("--dev");
+            .Which.Message.Should().Contain("--env");
     }
 
     // --- R9/R13/AE7: --dev env with no matching pac auth profile, no TTY — errors naming `pac auth create` ---
@@ -185,6 +185,7 @@ public class CreateEnvironmentResolverTests
 
         var act = () => resolver.ResolveSourceAsync(sourceUrl: null, new FlowlineSettings(), CancellationToken.None);
 
-        await act.Should().ThrowAsync<FlowlineException>();
+        await act.Should().ThrowAsync<FlowlineException>()
+            .WithMessage("*--env <url>*");
     }
 }

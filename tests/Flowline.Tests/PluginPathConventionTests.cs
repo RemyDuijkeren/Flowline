@@ -73,7 +73,7 @@ public class PluginPathConventionTests
     }
 
     /// <summary>
-    /// Standalone mode must never reach solution-file discovery — that's what makes `--pluginFile` the way
+    /// Standalone mode must never reach solution-file discovery — that's what makes `--plugin-file` the way
     /// out when discovery can't classify a project and refuses the push.
     /// </summary>
     [Fact]
@@ -93,7 +93,7 @@ public class PluginPathConventionTests
         source[start..end]
             .Where(l => l.Contains("PluginProjectResolver", StringComparison.Ordinal) ||
                         l.Contains("MsBuildSolutionReader", StringComparison.Ordinal))
-            .Should().BeEmpty("--pluginFile names the artifact outright, so it must bypass discovery entirely");
+            .Should().BeEmpty("--plugin-file names the artifact outright, so it must bypass discovery entirely");
     }
 
     static IEnumerable<string> FindOffendingLines(string filePath)

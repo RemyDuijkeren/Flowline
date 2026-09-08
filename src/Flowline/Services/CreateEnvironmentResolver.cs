@@ -56,7 +56,7 @@ public class CreateEnvironmentResolver(
         // R13: no flag, no TTY — error naming the flag, never prompt or hang.
         if (!IsInteractive())
             throw new FlowlineException(ExitCode.ValidationFailed,
-                "DEV environment is required — pass --dev <URL>, or run this interactively to pick one.");
+                "DEV environment is required — pass --env <url>, or run this interactively to pick one.");
 
         return await PickCreateTargetAsync(cancellationToken);
     }
@@ -71,7 +71,7 @@ public class CreateEnvironmentResolver(
 
         if (!IsInteractive())
             throw new FlowlineException(ExitCode.ValidationFailed,
-                "Environment is required — pass a role URL (e.g. --prod <URL>), or run this interactively to pick one.");
+                "Environment is required — pass --env <url>, or run this interactively to pick one.");
 
         return await PickSourceAsync(cancellationToken);
     }

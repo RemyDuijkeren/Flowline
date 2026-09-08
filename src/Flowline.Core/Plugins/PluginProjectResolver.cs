@@ -176,7 +176,7 @@ public static class PluginProjectResolver
     /// consolation. Refusing the push is only defensible when the refusal comes with the alternative.
     /// </remarks>
     internal const string StandaloneEscapeHatch =
-        "To push right now, use standalone mode: flowline push --pluginFile <dll>.";
+        "To push right now, use standalone mode: flowline push --plugin-file <dll>.";
 
     /// <summary>
     /// Finds the assembly in a candidate's Release output that carries plugin types (R4/KD3, R2/KD2).

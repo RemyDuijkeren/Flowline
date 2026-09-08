@@ -27,7 +27,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     public sealed class Settings : DataverseSettings
     {
         [CommandArgument(0, "<target>")]
-        [Description("Target environment: prod, uat, test, dev, or a URL")]
+        [Description("Target environment: prod, uat, test, or a URL")]
         public string Target { get; set; } = null!;
 
         [CommandOption("--path <zip>")]
@@ -467,7 +467,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (dtapDecision.Outcome == DtapGateOutcome.DevBlock)
             throw new FlowlineException(ExitCode.ValidationFailed,
-                "Dev is a development environment — use 'sync' to push changes there, not 'deploy'.");
+                "Dev is a development environment — use 'push' to push changes there, not 'deploy'.");
 
         if (dtapDecision.Outcome != DtapGateOutcome.Check)
         {
@@ -570,7 +570,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         if (!settings.HasForce("drift"))
             throw new FlowlineException(ExitCode.ValidationFailed,
-                "Local changes not in Dataverse — deploy would revert them. Run 'push' then 'sync' to capture them, or use --force drift to skip.");
+                "Local changes not in Dataverse — deploy would revert them. Run 'push' then 'pull' to capture them, or use --force drift to skip.");
     }
 
     private static string ResolveArtifactZipPath(string slnFolder, string slnName, bool includeManaged)

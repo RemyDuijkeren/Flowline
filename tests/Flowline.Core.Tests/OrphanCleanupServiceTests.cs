@@ -2308,12 +2308,15 @@ public class OrphanCleanupServiceTests : IDisposable
 
     // R10: drift's exit code selection mirrors DriftCommand.SelectExitCode exactly (Flowline.Commands
     // isn't referenceable from Flowline.Core.Tests) — it must read identically before and after verdict
-    // resolution for the same entry set.
-    static int SelectExitCodeLikeDrift(CompareResult result) => result switch
+    // resolution for the same entry set. Current contract: drift is read-only and exits 0 whether or not
+    // orphans were found; only --exit-code turns "orphans found" into 22 (ChangesFound). A skipped
+    // comparison stays 19 either way. exitCodeOnChanges defaults to false since the test below only
+    // compares two invocations against each other, never exercises the --exit-code branch.
+    static int SelectExitCodeLikeDrift(CompareResult result, bool exitCodeOnChanges = false) => result switch
     {
-        { Skipped: true }    => (int)ExitCode.Inconclusive,
-        { Entries.Count: 0 } => (int)ExitCode.Success,
-        _                    => (int)ExitCode.ValidationFailed
+        { Skipped: true }                            => (int)ExitCode.Inconclusive,
+        { Entries.Count: > 0 } when exitCodeOnChanges => (int)ExitCode.ChangesFound,
+        _                                             => (int)ExitCode.Success
     };
 
     [Fact]

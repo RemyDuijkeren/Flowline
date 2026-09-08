@@ -9,6 +9,6 @@ namespace Flowline;
 public class EnvironmentSettings : DataverseSettings
 {
     [CommandOption("-e|--env <ROLE|URL>")]
-    [Description("Target environment: dev, test, uat, prod, or a URL (default: dev)")]
+    [Description("Target environment: dev, test, uat, prod, or a URL")]
     public string? Env { get; set; }
 }

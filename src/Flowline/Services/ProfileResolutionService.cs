@@ -34,7 +34,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     internal Func<PacProfile, string, CancellationToken, Task<ReachabilityProbeResult>>? ProbeReachabilityOverride { get; set; }
 
     /// <summary>
-    /// Resolves the environment a standalone run targets: the explicit <c>--dev</c> URL when given,
+    /// Resolves the environment a standalone run targets: the explicit <c>--env</c> URL when given,
     /// otherwise the resource-specific PAC auth profile that is currently active. A universal profile
     /// carries no environment URL, so it cannot stand in for one.
     /// </summary>
@@ -49,7 +49,7 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         if (!string.IsNullOrWhiteSpace(profile?.Resource))
             return profile.Resource.Trim();
 
-        throw new FlowlineException(ExitCode.ValidationFailed, "Dev URL is required in standalone mode — use --dev <URL> or select a resource-specific PAC auth profile.");
+        throw new FlowlineException(ExitCode.ValidationFailed, "Dev URL is required in standalone mode — use --env <URL> or select a resource-specific PAC auth profile.");
     }
 
     public async Task<PacProfile> ResolveAsync(string environmentUrl, CancellationToken cancellationToken = default)

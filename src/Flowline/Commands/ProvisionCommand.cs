@@ -185,7 +185,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             throw new FlowlineException(ExitCode.GeneralError, "Copy from prod didn't finish — check 'pac admin status' and the Power Platform admin center. Use --verbose for more details.");
 
         Config!.Save();
-        Console.Done($"Provisioned! Prod copied into [bold]{targetDisplayName}[/]. Run 'clone' or 'sync' to get going. ٩(◕‿◕｡)۶");
+        Console.Done($"Provisioned! Prod copied into [bold]{targetDisplayName}[/]. Run 'clone' or 'pull' to get going. ٩(◕‿◕｡)۶");
 
         return 0;
 
