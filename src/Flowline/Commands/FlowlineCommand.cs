@@ -245,19 +245,22 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             EnvironmentRole.Dev  => "Dev",
             _ => throw new ArgumentOutOfRangeException(nameof(role))
         };
-        var flag = role switch
+        var key = role switch
         {
-            EnvironmentRole.Prod => "--prod",
-            EnvironmentRole.Uat  => "--uat",
-            EnvironmentRole.Test => "--test",
-            EnvironmentRole.Dev  => "--dev",
+            EnvironmentRole.Prod => "ProdUrl",
+            EnvironmentRole.Uat  => "UatUrl",
+            EnvironmentRole.Test => "TestUrl",
+            EnvironmentRole.Dev  => "DevUrl",
             _ => throw new ArgumentOutOfRangeException(nameof(role))
         };
 
         var url = GetOrUpdateUrl(role, inputUrl, settings);
 
+        // The role flags are gone (KD5); the only way to supply a missing role URL is the file itself,
+        // or provision's own --prod for the one command that still takes a source override.
         if (string.IsNullOrEmpty(url))
-            throw new FlowlineException(ExitCode.ConfigInvalid, $"{label} URL is required — use {flag} <URL>.");
+            throw new FlowlineException(ExitCode.ConfigInvalid,
+                $"{label} URL isn't set in .flowline — add \"{key}\": \"<url>\" to .flowline" + (role == EnvironmentRole.Prod ? ", or pass --prod <URL>." : "."));
 
         return await GetAndCheckEnvironmentAsync(url, role, settings, cancellationToken, resolvedProfile, skipTypeGuard);
     }

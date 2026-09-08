@@ -28,7 +28,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         public Role Role { get; set; } = Role.Dev; // dev|test|uat
 
         [CommandOption("--prod <URL>")]
-        [Description("Production environment URL to copy from")]
+        [Description("Production environment URL to copy from (saved to .flowline)")]
         public string? ProdUrl { get; set; }
 
         [CommandOption("--copy <minimal|full>")]
