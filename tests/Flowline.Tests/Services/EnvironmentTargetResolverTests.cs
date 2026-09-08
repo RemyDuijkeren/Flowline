@@ -300,6 +300,70 @@ public class EnvironmentTargetResolverTests
         (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
     }
 
+    [Theory]
+    [InlineData("https://contoso-test.crm4.dynamics.com/", "TEST")]
+    [InlineData("https://contoso-uat.crm4.dynamics.com/", "UAT")]
+    public async Task ResolveAsync_Gate_NewSandboxUrlWithTestOrUatSuffix_DevOnly_Refused_NothingSaved(string url, string label)
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig();
+
+        var act = () => resolver.ResolveAsync(url, config, devOnly: true, isInteractive: false,
+            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Where(e => e.Message.Contains(label) && e.Message.Contains("only runs against DEV"));
+        config.TestUrl.Should().BeNull();
+        config.UatUrl.Should().BeNull();
+        config.DevUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Gate_NewSandboxUrlWithTestSuffix_DevOnly_Interactive_RefusedBeforeAnyPicker()
+    {
+        var (resolver, console) = MakeResolver(interactive: true);
+        var config = new ProjectConfig();
+
+        var act = () => resolver.ResolveAsync(TestUrl, config, devOnly: true, isInteractive: true,
+            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
+        console.Output.Should().NotContain("Save");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Interactive_OverwriteDeclined_UsesTypedUrlOnce_KeepsStoredUrl()
+    {
+        var (resolver, console) = MakeResolver(interactive: true);
+        var config = new ProjectConfig { DevUrl = "https://old-dev.crm4.dynamics.com/" };
+        const string newUrl = "https://contoso-dev.crm4.dynamics.com/";
+
+        // Role picker on the resolver's console: Dev is inferred and listed first -> Enter. The overwrite
+        // prompt runs on the static AnsiConsole.Console (ProjectConfig's seam), so that one answers 'n'.
+        console.Input.PushKey(ConsoleKey.Enter);
+        var original = AnsiConsole.Console;
+        var promptConsole = new TestConsole();
+        promptConsole.Interactive();
+        promptConsole.Input.PushTextWithEnter("n");
+        AnsiConsole.Console = promptConsole;
+        EnvironmentTargetResult result;
+        try
+        {
+            result = await resolver.ResolveAsync(newUrl, config, devOnly: true, isInteractive: true,
+                new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+        }
+        finally
+        {
+            AnsiConsole.Console = original;
+        }
+
+        result.Url.Should().Be(newUrl);
+        result.Saved.Should().BeFalse();
+        config.DevUrl.Should().Be("https://old-dev.crm4.dynamics.com/");
+        console.Output.Should().Contain("once");
+    }
+
     [Fact]
     public async Task ResolveAsync_Gate_SandboxUrlWithDevSuffix_DevOnly_Passes()
     {

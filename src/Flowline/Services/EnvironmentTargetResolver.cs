@@ -72,13 +72,20 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
 
         var inference = EnvironmentRoleInference.Infer(value, envType);
 
+        // R3 with the inferred role in view: a Sandbox whose name says -test or -uat is a TEST or UAT
+        // environment as far as Flowline can tell, so a DEV-only command refuses it here rather than
+        // saving it under TestUrl and pushing to it. An uninferred Sandbox falls through to the
+        // ask-or-fail path below, which on a DEV-only command can only end in DEV or "use once".
+        if (devOnly && inference.Role is { } inferredRole && inferredRole != InferredRole.Dev)
+            throw DevOnlyRefusal($"'{value}' looks like a {RoleLabel(ToEnvironmentRole(inferredRole))} environment ({inference.Source})");
+
         return isInteractive
             ? await ResolveNewUrlInteractivelyAsync(value, inference, devOnly, config, settings, cancellationToken)
             : ResolveNewUrlNonInteractively(value, inference, config, settings);
     }
 
     // R7: non-interactive save, or R8's failure when nothing could be inferred.
-    static EnvironmentTargetResult ResolveNewUrlNonInteractively(string url, RoleInferenceResult inference, ProjectConfig config, FlowlineSettings settings)
+    EnvironmentTargetResult ResolveNewUrlNonInteractively(string url, RoleInferenceResult inference, ProjectConfig config, FlowlineSettings settings)
     {
         if (inference.Role is not { } inferred)
             throw new FlowlineException(ExitCode.ValidationFailed,
@@ -130,10 +137,20 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         return SaveRole(role, url, saveReason, config, settings);
     }
 
-    static EnvironmentTargetResult SaveRole(EnvironmentRole role, string url, string? saveReason, ProjectConfig config, FlowlineSettings settings)
+    EnvironmentTargetResult SaveRole(EnvironmentRole role, string url, string? saveReason, ProjectConfig config, FlowlineSettings settings)
     {
         var before = config.GetUrl(role);
         var after = config.GetOrUpdateUrl(role, url, settings, saveReason)!;
+
+        // The overwrite prompt was declined: the stored URL stays, but the user named this one, so this
+        // run targets it once rather than silently retargeting onto the environment they just refused to
+        // replace.
+        if (!string.Equals(NormalizeForCompare(after), NormalizeForCompare(url), StringComparison.Ordinal))
+        {
+            console.Skip($"Using {url} once — not saved to .flowline");
+            return new EnvironmentTargetResult(url, role, Saved: false);
+        }
+
         var saved = !string.Equals(NormalizeForCompare(before), NormalizeForCompare(after), StringComparison.Ordinal);
         return new EnvironmentTargetResult(after, role, saved);
     }
