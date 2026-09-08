@@ -244,5 +244,4 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         return Regex.Replace(spaced, @"\s+", " ").Trim();
     }
 
-    bool IsInteractive() => Console.Profile.Capabilities.Interactive;
 }

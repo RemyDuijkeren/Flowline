@@ -209,9 +209,7 @@ public static class GitUtils
         var result = await (capture?.Apply(finalCmd, suppressErrors: true) ?? finalCmd)
                            .ExecuteBufferedAsync(cancellationToken);
 
-        if (result.ExitCode != 0) return null;
-        var sha = result.StandardOutput.Trim();
-        return string.IsNullOrWhiteSpace(sha) ? null : sha;
+        return ShaOrNull(result);
     }
 
     // Null exit code means "no common history", not "git failed" — the same shape GetLastCommitShaForPathAsync
@@ -227,6 +225,12 @@ public static class GitUtils
         var result = await (capture?.Apply(finalCmd, suppressErrors: true) ?? finalCmd)
                            .ExecuteBufferedAsync(cancellationToken);
 
+        return ShaOrNull(result);
+    }
+
+    // A failed git call and an empty answer both read as "no sha"; callers give that its meaning.
+    static string? ShaOrNull(BufferedCommandResult result)
+    {
         if (result.ExitCode != 0) return null;
         var sha = result.StandardOutput.Trim();
         return string.IsNullOrWhiteSpace(sha) ? null : sha;

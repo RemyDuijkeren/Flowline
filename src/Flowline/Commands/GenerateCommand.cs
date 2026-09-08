@@ -282,7 +282,6 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
     private bool IsStandaloneMode() =>
         !File.Exists(Path.Combine(RootFolder, ProjectConfig.s_configFileName));
 
-    bool IsInteractive() => Console.Profile.Capabilities.Interactive;
 
     /// <summary>
     /// Whether a completed run writes what it resolved back to <c>.flowline</c>: project mode with a

@@ -579,7 +579,6 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         public string? WebResourcesPath { get; set; }
     }
 
-    bool IsInteractive() => Console.Profile.Capabilities.Interactive;
 
     internal static bool IsStandaloneMode(Settings settings) =>
         !string.IsNullOrWhiteSpace(settings.PluginFile) || !string.IsNullOrWhiteSpace(settings.WebResources);

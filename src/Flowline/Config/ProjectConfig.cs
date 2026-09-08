@@ -21,16 +21,16 @@ public class ProjectConfig
     public ProjectSolution? Solution { get; set; }
 
     public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateValue(inputUatUrl, () => UatUrl, v => UatUrl = v, "UAT", "UatUrl", settings);
+        GetOrUpdateUrl(EnvironmentRole.Uat, inputUatUrl, settings);
 
     public string? GetOrUpdateTestUrl(string? inputTestUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateValue(inputTestUrl, () => TestUrl, v => TestUrl = v, "Test", "TestUrl", settings);
+        GetOrUpdateUrl(EnvironmentRole.Test, inputTestUrl, settings);
 
     public string? GetOrUpdateDevUrl(string? inputDevUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateValue(inputDevUrl, () => DevUrl, v => DevUrl = v, "Dev", "DevUrl", settings);
+        GetOrUpdateUrl(EnvironmentRole.Dev, inputDevUrl, settings);
 
     public string? GetOrUpdateProdUrl(string? inputProdUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateValue(inputProdUrl, () => ProdUrl, v => ProdUrl = v, "Prod", "ProdUrl", settings);
+        GetOrUpdateUrl(EnvironmentRole.Prod, inputProdUrl, settings);
 
     // Read-only role-keyed accessor — lets a caller (EnvironmentTargetResolver) look up or compare
     // against a role's URL without switching on EnvironmentRole itself.
@@ -43,9 +43,7 @@ public class ProjectConfig
         _ => throw new ArgumentOutOfRangeException(nameof(role))
     };
 
-    // Role-keyed sibling of the four GetOrUpdate*Url wrappers, for callers that only have an
-    // EnvironmentRole (EnvironmentTargetResolver's save flow) — same four branches, same saveReason
-    // support, just picked by role instead of by name.
+    // The one place a role picks its .flowline slot; the four named wrappers above delegate here.
     public string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl, FlowlineSettings? settings = null, string? saveReason = null) => role switch
     {
         EnvironmentRole.Prod => GetOrUpdateValue(inputUrl, () => ProdUrl, v => ProdUrl = v, "Prod", "ProdUrl", settings, saveReason),

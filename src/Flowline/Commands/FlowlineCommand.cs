@@ -221,6 +221,20 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         Console.Ok("Prerequisites all good, let's go!");
     }
 
+    // Mixed-case label for the "Checking dev ..." spinner and the environment-check errors; null covers a
+    // use-once URL that belongs to no role.
+    static string RoleLabel(EnvironmentRole? role) => role switch
+    {
+        EnvironmentRole.Prod => "Prod",
+        EnvironmentRole.Uat  => "UAT",
+        EnvironmentRole.Test => "Test",
+        EnvironmentRole.Dev  => "Dev",
+        null => "Environment",
+        _ => throw new ArgumentOutOfRangeException(nameof(role))
+    };
+
+    protected bool IsInteractive() => Console.Profile.Capabilities.Interactive;
+
     // Single source of truth for choosing between the four ProjectConfig.GetOrUpdate*Url wrappers —
     // ProvisionCommand's Role enum has no Prod member, so it converts to EnvironmentRole before calling
     // this rather than duplicating its own switch.
@@ -237,22 +251,8 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
         bool skipTypeGuard = false)
     {
-        var label = role switch
-        {
-            EnvironmentRole.Prod => "Prod",
-            EnvironmentRole.Uat  => "UAT",
-            EnvironmentRole.Test => "Test",
-            EnvironmentRole.Dev  => "Dev",
-            _ => throw new ArgumentOutOfRangeException(nameof(role))
-        };
-        var key = role switch
-        {
-            EnvironmentRole.Prod => "ProdUrl",
-            EnvironmentRole.Uat  => "UatUrl",
-            EnvironmentRole.Test => "TestUrl",
-            EnvironmentRole.Dev  => "DevUrl",
-            _ => throw new ArgumentOutOfRangeException(nameof(role))
-        };
+        var label = RoleLabel(role);
+        var key = role.ConfigKey();
 
         var url = GetOrUpdateUrl(role, inputUrl, settings);
 
@@ -274,15 +274,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         string url, EnvironmentRole? role, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
         bool skipTypeGuard = false)
     {
-        var label = role switch
-        {
-            EnvironmentRole.Prod => "Prod",
-            EnvironmentRole.Uat  => "UAT",
-            EnvironmentRole.Test => "Test",
-            EnvironmentRole.Dev  => "Dev",
-            null => "Environment",
-            _ => throw new ArgumentOutOfRangeException(nameof(role))
-        };
+        var label = RoleLabel(role);
 
         // Resolved before opening the status spinner — ProfileResolutionService.ResolveAsync can prompt
         // interactively on an ambiguous match, and Spectre.Console throws if a prompt runs while a

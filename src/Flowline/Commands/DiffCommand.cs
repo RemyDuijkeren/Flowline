@@ -187,10 +187,10 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     }
 
     /// <summary>Turns a parsed, non-range ref pair into the two sides of the comparison.</summary>
-    /// <remarks>A missing left side defaults to HEAD — the same default a bare run uses.</remarks>
-    internal static (string From, SolutionChangeSummary.ComparisonSide To) ResolveSides(string? from, string? to)
+    /// <remarks>The left side is always present: ParseRefSpec supplies HEAD when none was given.</remarks>
+    internal static (string From, SolutionChangeSummary.ComparisonSide To) ResolveSides(string from, string? to)
     {
-        var fromRef = string.IsNullOrWhiteSpace(from) ? "HEAD" : from.Trim();
+        var fromRef = from.Trim();
         var toRef = string.IsNullOrWhiteSpace(to) ? null : to.Trim();
 
         return (fromRef, toRef is null ? SolutionChangeSummary.ComparisonSide.WorkingTree : new SolutionChangeSummary.ComparisonSide(toRef));

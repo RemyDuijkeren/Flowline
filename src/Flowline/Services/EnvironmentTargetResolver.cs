@@ -35,10 +35,10 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
             var configuredUrl = config.GetUrl(keywordRole);
             if (string.IsNullOrWhiteSpace(configuredUrl))
                 throw new FlowlineException(ExitCode.ConfigInvalid,
-                    $"{RoleKey(keywordRole)} isn't set in .flowline — add it, or pass --env <url>.");
+                    $"{keywordRole.ConfigKey()} isn't set in .flowline — add it, or pass --env <url>.");
 
             if (devOnly && keywordRole != EnvironmentRole.Dev)
-                throw DevOnlyRefusal($"'{value}' targets {RoleLabel(keywordRole)}");
+                throw DevOnlyRefusal($"'{value}' targets {keywordRole.UpperLabel()}");
 
             return new EnvironmentTargetResult(configuredUrl, keywordRole, Saved: false);
         }
@@ -49,7 +49,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         if (matchedRole is not null)
         {
             if (devOnly && matchedRole != EnvironmentRole.Dev)
-                throw DevOnlyRefusal($"'{value}' is your {RoleLabel(matchedRole.Value)} environment");
+                throw DevOnlyRefusal($"'{value}' is your {matchedRole.Value.UpperLabel()} environment");
 
             return new EnvironmentTargetResult(config.GetUrl(matchedRole.Value)!, matchedRole, Saved: false);
         }
@@ -77,7 +77,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         // saving it under TestUrl and pushing to it. An uninferred Sandbox falls through to the
         // ask-or-fail path below, which on a DEV-only command can only end in DEV or "use once".
         if (devOnly && inference.Role is { } inferredRole && inferredRole != InferredRole.Dev)
-            throw DevOnlyRefusal($"'{value}' looks like a {RoleLabel(ToEnvironmentRole(inferredRole))} environment ({inference.Source})");
+            throw DevOnlyRefusal($"'{value}' looks like a {ToEnvironmentRole(inferredRole).UpperLabel()} environment ({inference.Source})");
 
         return isInteractive
             ? await ResolveNewUrlInteractivelyAsync(value, inference, devOnly, config, settings, cancellationToken)
@@ -114,7 +114,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
 
         const string useOnceLabel = "Use this URL once — don't save it";
         var choices = ordered
-            .Select(r => (Label: RoleLabel(r), Role: (EnvironmentRole?)r))
+            .Select(r => (Label: r.UpperLabel(), Role: (EnvironmentRole?)r))
             .Append((Label: useOnceLabel, Role: (EnvironmentRole?)null))
             .ToList();
 
@@ -158,7 +158,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
     static EnvironmentRole? MatchConfiguredUrl(string url, ProjectConfig config)
     {
         var normalized = NormalizeForCompare(url);
-        foreach (var role in new[] { EnvironmentRole.Dev, EnvironmentRole.Test, EnvironmentRole.Uat, EnvironmentRole.Prod })
+        foreach (var role in EnvironmentRoles.All)
         {
             var configured = config.GetUrl(role);
             if (!string.IsNullOrWhiteSpace(configured) && NormalizeForCompare(configured) == normalized)
@@ -204,24 +204,6 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
     };
 
     static string NormalizeForCompare(string? url) => (url ?? "").Trim().TrimEnd('/').ToLowerInvariant();
-
-    static string RoleLabel(EnvironmentRole role) => role switch
-    {
-        EnvironmentRole.Dev => "DEV",
-        EnvironmentRole.Test => "TEST",
-        EnvironmentRole.Uat => "UAT",
-        EnvironmentRole.Prod => "PROD",
-        _ => role.ToString()
-    };
-
-    static string RoleKey(EnvironmentRole role) => role switch
-    {
-        EnvironmentRole.Dev => "DevUrl",
-        EnvironmentRole.Test => "TestUrl",
-        EnvironmentRole.Uat => "UatUrl",
-        EnvironmentRole.Prod => "ProdUrl",
-        _ => role.ToString()
-    };
 
     static FlowlineException DevOnlyRefusal(string detail) =>
         new(ExitCode.ValidationFailed, $"{detail} — this command only runs against DEV. Use --env dev or a DEV environment URL.");

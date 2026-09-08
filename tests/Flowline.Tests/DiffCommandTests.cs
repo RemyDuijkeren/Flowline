@@ -108,7 +108,7 @@ public class DiffCommandTests : IDisposable
     [Fact]
     public void ResolveSides_WithNoOptions_IsHeadAgainstTheWorkingTree()
     {
-        var (from, to) = DiffCommand.ResolveSides(null, null);
+        var (from, to) = DiffCommand.ResolveSides("HEAD", null);
 
         from.Should().Be("HEAD");
         to.IsWorkingTree.Should().BeTrue();

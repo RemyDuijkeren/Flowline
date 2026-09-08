@@ -169,7 +169,6 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         return 0;
     }
 
-    bool IsInteractive() => Console.Profile.Capabilities.Interactive;
 
     internal static string BumpVersion(string version, BumpComponent component)
     {

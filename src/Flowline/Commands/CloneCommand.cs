@@ -146,7 +146,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
     // U4: pure — no I/O — which .flowline roles already have a URL, in Dev/Test/Uat/Prod order.
     internal static List<EnvironmentRole> ConfiguredRoles(ProjectConfig config) =>
-        new[] { EnvironmentRole.Dev, EnvironmentRole.Test, EnvironmentRole.Uat, EnvironmentRole.Prod }
+        EnvironmentRoles.All
             .Where(r => !string.IsNullOrWhiteSpace(config.GetUrl(r)))
             .ToList();
 
@@ -236,16 +236,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         // source-of-truth model means a Production source is the Prod role; the gate above only reaches
         // here when no role is configured yet.
         var role = await ResolveRoleAsync(devEnv, cancellationToken);
-        _ = role switch
-        {
-            EnvironmentRole.Dev  => config.GetOrUpdateDevUrl(devEnv.EnvironmentUrl, settings),
-            EnvironmentRole.Test => config.GetOrUpdateTestUrl(devEnv.EnvironmentUrl, settings),
-            EnvironmentRole.Uat  => config.GetOrUpdateUatUrl(devEnv.EnvironmentUrl, settings),
-            EnvironmentRole.Prod => config.GetOrUpdateProdUrl(devEnv.EnvironmentUrl, settings),
-            _ => throw new ArgumentOutOfRangeException(nameof(role))
-        };
-        var roleLabel = role switch { EnvironmentRole.Dev => "DEV", EnvironmentRole.Test => "TEST", EnvironmentRole.Uat => "UAT", EnvironmentRole.Prod => "PROD", _ => role.ToString() };
-        Console.Ok($"{roleLabel} set to [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})");
+        config.GetOrUpdateUrl(role, devEnv.EnvironmentUrl, settings);
+        Console.Ok($"{role.UpperLabel()} set to [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})");
 
         var projectSln = config.GetOrUpdateSolution(selected.SolutionUniqueName,
             settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings)!;
@@ -278,5 +270,4 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         return (await Console.PromptAsync(prompt, cancellationToken)).Role;
     }
 
-    bool IsInteractive() => Console.Profile.Capabilities.Interactive;
 }
