@@ -1,6 +1,9 @@
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Infrastructure;
+using Spectre.Console.Cli;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -125,14 +128,15 @@ public class ProvisionCommandTests
     }
 
     [Fact]
-    public void ValidateForce_UnrecognizedValue_ThrowsNamingConfigAndAll()
+    public void ValidateForce_UnrecognizedValue_ThrowsNamingOverwriteConfigAndAll()
     {
         var settings = new ProvisionCommand.Settings { Force = ["dirty"] };
 
-        var act = () => FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "provision");
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, ProvisionCommand.ValidSpecifiers, "provision");
 
         act.Should().Throw<FlowlineException>()
-            .Where(e => e.ExitCode == ExitCode.ValidationFailed && e.Message.Contains("config") && e.Message.Contains("all"));
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed
+                && e.Message.Contains("overwrite") && e.Message.Contains("config") && e.Message.Contains("all"));
     }
 
     [Fact]
@@ -140,8 +144,145 @@ public class ProvisionCommandTests
     {
         var settings = new ProvisionCommand.Settings { Force = ["config"] };
 
-        var act = () => FlowlineSettings.ValidateForce(settings.Force, FlowlineSettings.ConfigOnlyValidSpecifiers, "provision");
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, ProvisionCommand.ValidSpecifiers, "provision");
 
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateForce_Overwrite_DoesNotThrow()
+    {
+        var settings = new ProvisionCommand.Settings { Force = ["overwrite"] };
+
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, ProvisionCommand.ValidSpecifiers, "provision");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void HasForce_Overwrite_ApprovesOverwriteSpecifierOnly()
+    {
+        var settings = new ProvisionCommand.Settings { Force = ["overwrite"] };
+
+        settings.HasForce("overwrite").Should().BeTrue();
+        settings.HasForce("config").Should().BeFalse();
+    }
+
+    [Fact]
+    public void HasForce_All_ApprovesOverwrite()
+    {
+        var settings = new ProvisionCommand.Settings { Force = ["all"] };
+
+        settings.HasForce("overwrite").Should().BeTrue();
+    }
+
+    [Fact]
+    public void BuildOverwritePrompt_NamesTheTargetAndAsksToOverwrite()
+    {
+        var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
+
+        prompt.Should().Contain("ContosoSales Dev");
+        prompt.Should().Contain("overwrite");
+    }
+
+    [Theory]
+    [InlineData(Role.Dev, null, CopyType.Minimal)]
+    [InlineData(Role.Test, null, CopyType.Full)]
+    [InlineData(Role.Uat, null, CopyType.Full)]
+    [InlineData(Role.Test, CopyType.Minimal, CopyType.Minimal)]
+    [InlineData(Role.Uat, CopyType.Minimal, CopyType.Minimal)]
+    [InlineData(Role.Dev, CopyType.Full, CopyType.Full)]
+    public void ResolveCopyType_ExplicitCopyWinsOtherwiseRoleDefault(Role role, CopyType? requested, CopyType expected)
+    {
+        ProvisionCommand.ResolveCopyType(role, requested).Should().Be(expected);
+    }
+
+    // AE7: existing target, no TTY, no --force overwrite -> exit 17 naming --force overwrite; --force all
+    // proceeds without prompting. Exercises the exact call ProvisionCommand makes (ConfirmAsync with the
+    // "overwrite" specifier), not just the generic gate mechanism.
+    [Fact]
+    public async Task OverwriteGate_NonInteractive_NoForce_ThrowsForceRequiredNamingForceOverwrite()
+    {
+        var settings = new ProvisionCommand.Settings { Force = [] };
+        var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
+
+        var act = () => new TestConsole().ConfirmAsync(prompt, false, settings, "overwrite", CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force overwrite"));
+    }
+
+    [Fact]
+    public async Task OverwriteGate_NonInteractive_ForceAll_ProceedsWithoutPrompting()
+    {
+        var settings = new ProvisionCommand.Settings { Force = ["all"] };
+        var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
+
+        var result = await new TestConsole().ConfirmAsync(prompt, false, settings, "overwrite", CancellationToken.None);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task OverwriteGate_NonInteractive_ForceOverwrite_ProceedsWithoutPrompting()
+    {
+        var settings = new ProvisionCommand.Settings { Force = ["overwrite"] };
+        var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
+
+        var result = await new TestConsole().ConfirmAsync(prompt, false, settings, "overwrite", CancellationToken.None);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task OverwriteGate_Interactive_Decline_ReturnsFalse()
+    {
+        var settings = new ProvisionCommand.Settings { Force = [] };
+        var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
+        var console = new TestConsole().Interactive();
+        console.Input.PushTextWithEnter("n");
+
+        var result = await console.ConfirmAsync(prompt, false, settings, "overwrite", CancellationToken.None);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task OverwriteGate_Interactive_Accept_ReturnsTrue()
+    {
+        var settings = new ProvisionCommand.Settings { Force = [] };
+        var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
+        var console = new TestConsole().Interactive();
+        console.Input.PushTextWithEnter("y");
+
+        var result = await console.ConfirmAsync(prompt, false, settings, "overwrite", CancellationToken.None);
+
+        result.Should().BeTrue();
+    }
+
+    sealed class ProvisionProbeCommand : Command<ProvisionCommand.Settings>
+    {
+        public static ProvisionCommand.Settings? Captured;
+        protected override int Execute(CommandContext context, ProvisionCommand.Settings settings, CancellationToken cancellationToken)
+        {
+            Captured = settings;
+            return 0;
+        }
+    }
+
+    // KD5: --allow-overwrite is removed with no alias. Spectre.Console.Cli doesn't reject unrecognized
+    // long options at parse time (confirmed against the real Program.cs binary too) — it just has
+    // nothing left to bind the value to, so this locks in that there's no settings property carrying it.
+    [Fact]
+    public void Parse_AllowOverwriteFlag_NoLongerBindsToASetting()
+    {
+        var app = new CommandApp<ProvisionProbeCommand>();
+        app.Configure(config => config.PropagateExceptions());
+
+        var result = app.Run(["dev", "--allow-overwrite"]);
+
+        result.Should().Be(0);
+        ProvisionProbeCommand.Captured!.Role.Should().Be(Role.Dev);
+        typeof(ProvisionCommand.Settings).GetProperty("AllowOverwrite").Should().BeNull();
     }
 }

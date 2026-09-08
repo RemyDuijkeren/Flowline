@@ -4,6 +4,7 @@ using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
+using Flowline.Infrastructure;
 using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
@@ -31,20 +32,16 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         public string? ProdUrl { get; set; }
 
         [CommandOption("--copy <minimal|full>")]
-        [Description("Copy with data (full) or no data (minimal) from prod (default: minimal for dev, full for test)")]
+        [Description("Copy with data (full) or no data (minimal) from prod (default: minimal for dev, full for test and uat)")]
         public CopyType? CopyType { get; set; }
 
         [CommandOption("--suffix <suffix>")]
         [Description("Target URL suffix  (default: <role name>)")]
         public string? Suffix { get; set; }
-
-        [CommandOption("--allow-overwrite")]
-        [Description("Overwrite an existing target")]
-        [DefaultValue(false)]
-        public bool AllowOverwrite { get; set; } = false;
     }
 
-    protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
+    internal static readonly string[] ValidSpecifiers = ["overwrite", "config", "all"];
+    protected override string[] ValidForceSpecifiers => ValidSpecifiers;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
@@ -85,6 +82,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
         // Validate target environment
         var targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, settings.NoCache, cancellationToken);
+        var targetExisted = targetEnv != null;
         if (targetEnv == null)
         {
             var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
@@ -126,10 +124,11 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             return (int)ExitCode.ValidationFailed;
         }
 
-        if (!settings.AllowOverwrite)
+        // R16: only an existing target has something to lose — one Flowline just created is empty.
+        if (targetExisted && !await AnsiConsole.Console.ConfirmAsync(BuildOverwritePrompt(targetEnv.DisplayName!), false, settings, "overwrite", cancellationToken))
         {
-            Console.Warning($"[bold]{targetEnv.DisplayName}[/] already exists — use --allow-overwrite to overwrite");
-            return 0;
+            Console.Info("Provision cancelled. Re-run with --force overwrite to overwrite the environment.");
+            return (int)ExitCode.ForceRequired;
         }
         // reset: empty env with factory settings (https://learn.microsoft.com/en-us/power-platform/admin/reset-environment)?
         // after rest: deploy the solution from prod?
@@ -154,8 +153,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
             return (int)ExitCode.ValidationFailed;
         }
 
-        // Test and UAT are always a FullCopy
-        string copyType = (settings.Role is Role.Test or Role.Uat || settings.CopyType == CopyType.Full) ? "FullCopy" : "MinimalCopy";
+        string copyType = ResolveCopyType(settings.Role, settings.CopyType) == CopyType.Full ? "FullCopy" : "MinimalCopy";
         Logger.LogInformation("Copying {CopyType} from {Source} to {Target}", copyType, prodEnv.EnvironmentUrl, targetEnv.EnvironmentUrl);
 
         var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
@@ -194,6 +192,13 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         // TODO: add a different strategy where we import solution(s) from prod, instead of copying the whole environment.
         // should be much faster. also for reset the environment. => use this path also for Development environments.
     }
+
+    internal static string BuildOverwritePrompt(string targetDisplayName) =>
+        $"'{targetDisplayName}' already exists — overwrite it with a fresh copy from prod?";
+
+    // R17: an explicit --copy always wins; otherwise test/uat default to a full copy and dev to minimal.
+    internal static CopyType ResolveCopyType(Role role, CopyType? copyType) =>
+        copyType ?? (role is Role.Test or Role.Uat ? CopyType.Full : CopyType.Minimal);
 
     internal static IReadOnlyList<(SolutionInfo Target, string Reason)> FindProblematicSolutions(
         IEnumerable<SolutionInfo> targetSolutions,
