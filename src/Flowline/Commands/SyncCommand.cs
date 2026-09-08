@@ -19,8 +19,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 {
     public sealed class Settings : EnvironmentSettings
     {
-        [CommandOption("--managed [false]")]
-        [Description("Include managed artifacts (--managed false resets to default)")]
+        [CommandOption("--managed [true|false]")]
+        [Description("Include managed artifacts (--managed false resets to default) (saved to .flowline)")]
         [DefaultValue(true)]
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
 

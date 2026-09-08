@@ -21,16 +21,16 @@ public class ProjectConfig
     public ProjectSolution? Solution { get; set; }
 
     public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(inputUatUrl, () => UatUrl, v => UatUrl = v, "UAT", "UatUrl", settings);
+        GetOrUpdateValue(inputUatUrl, () => UatUrl, v => UatUrl = v, "UAT", "UatUrl", settings);
 
     public string? GetOrUpdateTestUrl(string? inputTestUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(inputTestUrl, () => TestUrl, v => TestUrl = v, "Test", "TestUrl", settings);
+        GetOrUpdateValue(inputTestUrl, () => TestUrl, v => TestUrl = v, "Test", "TestUrl", settings);
 
     public string? GetOrUpdateDevUrl(string? inputDevUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(inputDevUrl, () => DevUrl, v => DevUrl = v, "Dev", "DevUrl", settings);
+        GetOrUpdateValue(inputDevUrl, () => DevUrl, v => DevUrl = v, "Dev", "DevUrl", settings);
 
     public string? GetOrUpdateProdUrl(string? inputProdUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(inputProdUrl, () => ProdUrl, v => ProdUrl = v, "Prod", "ProdUrl", settings);
+        GetOrUpdateValue(inputProdUrl, () => ProdUrl, v => ProdUrl = v, "Prod", "ProdUrl", settings);
 
     // Read-only role-keyed accessor — lets a caller (EnvironmentTargetResolver) look up or compare
     // against a role's URL without switching on EnvironmentRole itself.
@@ -48,19 +48,23 @@ public class ProjectConfig
     // support, just picked by role instead of by name.
     public string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl, FlowlineSettings? settings = null, string? saveReason = null) => role switch
     {
-        EnvironmentRole.Prod => GetOrUpdateUrl(inputUrl, () => ProdUrl, v => ProdUrl = v, "Prod", "ProdUrl", settings, saveReason),
-        EnvironmentRole.Uat  => GetOrUpdateUrl(inputUrl, () => UatUrl, v => UatUrl = v, "UAT", "UatUrl", settings, saveReason),
-        EnvironmentRole.Test => GetOrUpdateUrl(inputUrl, () => TestUrl, v => TestUrl = v, "Test", "TestUrl", settings, saveReason),
-        EnvironmentRole.Dev  => GetOrUpdateUrl(inputUrl, () => DevUrl, v => DevUrl = v, "Dev", "DevUrl", settings, saveReason),
+        EnvironmentRole.Prod => GetOrUpdateValue(inputUrl, () => ProdUrl, v => ProdUrl = v, "Prod", "ProdUrl", settings, saveReason),
+        EnvironmentRole.Uat  => GetOrUpdateValue(inputUrl, () => UatUrl, v => UatUrl = v, "UAT", "UatUrl", settings, saveReason),
+        EnvironmentRole.Test => GetOrUpdateValue(inputUrl, () => TestUrl, v => TestUrl = v, "Test", "TestUrl", settings, saveReason),
+        EnvironmentRole.Dev  => GetOrUpdateValue(inputUrl, () => DevUrl, v => DevUrl = v, "Dev", "DevUrl", settings, saveReason),
         _ => throw new ArgumentOutOfRangeException(nameof(role))
     };
 
-    // Properties can't be passed by ref, so the four environment URLs share this via get/set delegates.
-    // key is the .flowline JSON property name (e.g. "DevUrl") — printed on first save, distinct from
-    // label (e.g. "Dev"), which reads better in the overwrite prompt. saveReason, when given, is
+    // R11: the one write-on-first-use, ask-on-change rule for every persisting flag — originally just
+    // the four environment URLs, now shared by GetOrUpdateSolution's managed branch and generate's five
+    // flags too (GenerateCommand.ApplyPersistedGenerateSettings). Properties/fields can't be passed by
+    // ref, so callers wire their backing value through get/set delegates. key is the .flowline JSON path
+    // (e.g. "DevUrl", "Solution.Generate.Namespace") — printed on first save, distinct from label (e.g.
+    // "Dev", "Namespace"), which reads better in the overwrite prompt. saveReason, when given, is
     // appended to the first-save line as "(inferred from <reason>)" — EnvironmentTargetResolver's only
-    // caller of that parameter; every other call site leaves it null.
-    static string? GetOrUpdateUrl(
+    // caller of that parameter; every other call site leaves it null. get()'s value is user-controlled
+    // for non-URL callers, so it's escaped before going into markup.
+    internal static string? GetOrUpdateValue(
         string? input,
         Func<string?> get,
         Action<string?> set,
@@ -95,10 +99,10 @@ public class ProjectConfig
 
         if (get() != input)
         {
-            AnsiConsole.Console.Warning($"{label} is already set: [bold]{get()}[/]");
+            AnsiConsole.Console.Warning($"{label} is already set: [bold]{Markup.Escape(get()!)}[/]");
             if (!AnsiConsole.Console.Confirm("Overwrite it?", false, settings, "config"))
             {
-                AnsiConsole.MarkupLine($"[dim]Keeping {label} as-is: [link]{get()}[/][/]");
+                AnsiConsole.MarkupLine($"[dim]Keeping {label} as-is: {Markup.Escape(get()!)}[/]");
                 return get();
             }
             AnsiConsole.Console.Ok($"{label} updated");
@@ -170,23 +174,23 @@ public class ProjectConfig
                 $"'{uniqueName}' doesn't match the configured solution '{Solution.UniqueName}' — pass the correct name, or omit it to use the configured solution.");
         }
 
-        if (includeManaged.HasValue && Solution.IncludeManaged != includeManaged.Value)
+        // R11: absent (includeManaged null) leaves Solution untouched — guarded here rather than left
+        // to GetOrUpdateValue's own absent branch, since every other caller of GetOrUpdateSolution
+        // (drift, configure, push, generate's own solution resolution) passes includeManaged: null and
+        // would otherwise pick up an unrequested verbose echo on every run.
+        if (includeManaged.HasValue)
         {
-            AnsiConsole.Console.Warning($"{Solution.UniqueName} is already set to managed: {Solution.IncludeManaged}");
-
-            if (!AnsiConsole.Console.Confirm("Overwrite it?", false, settings, "config"))
-            {
-                AnsiConsole.Console.Verbose("Keeping solution config as-is");
-                return Solution;
-            }
-            AnsiConsole.Console.Ok("Solution config updated");
-            return AddOrUpdateSolution(new ProjectSolution
-            {
-                UniqueName = uniqueName,
-                IncludeManaged = includeManaged.Value,
-                Generate = Solution.Generate,
-                PluginPackageMode = Solution.PluginPackageMode,
-            });
+            GetOrUpdateValue(
+                includeManaged.Value.ToString(),
+                () => Solution.IncludeManaged.ToString(),
+                v => AddOrUpdateSolution(new ProjectSolution
+                {
+                    UniqueName = uniqueName,
+                    IncludeManaged = bool.Parse(v!),
+                    Generate = Solution.Generate,
+                    PluginPackageMode = Solution.PluginPackageMode,
+                }),
+                "Managed", "Solution.IncludeManaged", settings);
         }
 
         return Solution;

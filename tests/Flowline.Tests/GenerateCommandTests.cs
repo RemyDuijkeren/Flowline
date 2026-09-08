@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Reflection;
 using System.Text.Json;
 using Flowline.Commands;
 using Flowline.Config;
@@ -46,8 +48,12 @@ public class GenerateCommandParseTests
 public class GeneratorResolutionTests
 {
     // Mirrors the resolution expression in GenerateCommand.ExecuteFlowlineAsync:
-    //   var generator = settings.Generator ?? projectSln?.Generate?.Generator ?? GeneratorType.Pac;
-
+    //   var resolvedGeneratorType = projectSln?.Generate?.Generator ?? settings.Generator ?? GeneratorType.Pac;
+    // Config-first (U5/R11): ApplyPersistedGenerateSettings already merges a passed --generator into
+    // projectSln.Generate before this line runs, so config reflects the winning value whenever both are
+    // present — except a declined interactive overwrite, where config correctly keeps the old value
+    // instead of the declined one. settingsGenerator only matters here for standalone mode, where there's
+    // no projectSln to merge into.
     static GeneratorType Resolve(GeneratorType? settingsGenerator, GeneratorType? configGenerator)
     {
         var projectSln = configGenerator.HasValue
@@ -55,7 +61,7 @@ public class GeneratorResolutionTests
             : null;
 
         // Replicate the expression directly
-        return settingsGenerator ?? projectSln?.Generate?.Generator ?? GeneratorType.Pac;
+        return projectSln?.Generate?.Generator ?? settingsGenerator ?? GeneratorType.Pac;
     }
 
     [Fact]
@@ -91,12 +97,14 @@ public class GeneratorResolutionTests
     }
 
     [Fact]
-    public void Resolve_SettingsPac_ConfigXrmContext3_ReturnsPac()
+    public void Resolve_SettingsPac_ConfigXrmContext3_ReturnsConfigValue()
     {
-        // CLI flag wins over saved config
+        // Both present: config wins at this line. In the real command this only happens after a
+        // declined interactive overwrite prompt — ApplyPersistedGenerateSettings otherwise merges the
+        // flag into config first, so config already equals the flag by the time this expression runs.
         var result = Resolve(GeneratorType.Pac, configGenerator: GeneratorType.XrmContext3);
 
-        result.Should().Be(GeneratorType.Pac);
+        result.Should().Be(GeneratorType.XrmContext3);
     }
 
     [Fact]
@@ -509,5 +517,142 @@ public class GenerateCommandSolutionValidationTests
         act.Should().Throw<FlowlineException>()
             .Where(e => e.ExitCode == ExitCode.ValidationFailed
                 && e.Message.Contains("OtherSolution") && e.Message.Contains("ContosoCustomizations"));
+    }
+}
+
+// U5/R11: --namespace, --extra-tables, --generator, --output and --service-context-name each follow
+// the one write-on-first-use, ask-on-change rule via GenerateCommand.ApplyPersistedGenerateSettings.
+// Shares a collection with ProjectConfigTests — both swap the static AnsiConsole.Console via
+// ProjectConfigTests.WithSwappedConsole, and an unscoped pair races across parallel test classes.
+[Collection("ProjectConfigConsole")]
+public class GeneratePersistedSettingsApplicationTests
+{
+    const string RootFolder = @"C:\proj";
+
+    static ProjectSolution NewSolution(GenerateConfig? generate = null) =>
+        new() { UniqueName = "ContosoSales", Generate = generate };
+
+    [Fact]
+    public void Namespace_EmptyKey_SavesAndPrints()
+    {
+        var sln = NewSolution();
+        var settings = new GenerateCommand.Settings { Namespace = "Contoso.Models" };
+
+        var output = ProjectConfigTests.WithSwappedConsole(console =>
+        {
+            GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+            return console.Output;
+        });
+
+        output.Should().Contain("Saved to .flowline: Solution.Generate.Namespace");
+        sln.Generate!.Namespace.Should().Be("Contoso.Models");
+    }
+
+    [Fact]
+    public void Namespace_SameValue_PrintsNothing()
+    {
+        var sln = NewSolution(new GenerateConfig { Namespace = "Contoso.Models" });
+        var settings = new GenerateCommand.Settings { Namespace = "Contoso.Models" };
+
+        var output = ProjectConfigTests.WithSwappedConsole(console =>
+        {
+            GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+            return console.Output;
+        });
+
+        output.Should().BeEmpty();
+        sln.Generate!.Namespace.Should().Be("Contoso.Models");
+    }
+
+    [Fact]
+    public void ExtraTables_DifferentValue_NonInteractive_NoForce_ThrowsForceRequired()
+    {
+        var sln = NewSolution(new GenerateConfig { ExtraTables = ["account", "contact"] });
+        var settings = new GenerateCommand.Settings { ExtraTables = "contact" };
+
+        var act = () => GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ForceRequired
+            && e.Message.Contains("--force config"));
+        sln.Generate!.ExtraTables.Should().BeEquivalentTo(["account", "contact"]);
+    }
+
+    [Fact]
+    public void ExtraTables_DifferentValue_ForceConfig_ReplacesList()
+    {
+        var sln = NewSolution(new GenerateConfig { ExtraTables = ["account", "contact"] });
+        var settings = new GenerateCommand.Settings { ExtraTables = "contact", Force = ["config"] };
+
+        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+
+        sln.Generate!.ExtraTables.Should().BeEquivalentTo(["contact"]);
+    }
+
+    [Fact]
+    public void ExtraTables_SameValue_PrintsNothingAndKeepsList()
+    {
+        var sln = NewSolution(new GenerateConfig { ExtraTables = ["account", "contact"] });
+        var settings = new GenerateCommand.Settings { ExtraTables = "account,contact" };
+
+        var output = ProjectConfigTests.WithSwappedConsole(console =>
+        {
+            GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+            return console.Output;
+        });
+
+        output.Should().BeEmpty();
+        sln.Generate!.ExtraTables.Should().BeEquivalentTo(["account", "contact"]);
+    }
+
+    [Fact]
+    public void Generator_EmptyKey_SavesValue()
+    {
+        var sln = NewSolution();
+        var settings = new GenerateCommand.Settings { Generator = GeneratorType.XrmContext3 };
+
+        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+
+        sln.Generate!.Generator.Should().Be(GeneratorType.XrmContext3);
+    }
+
+    [Fact]
+    public void Output_EmptyKey_SavesPathRelativeToRoot()
+    {
+        var sln = NewSolution();
+        var settings = new GenerateCommand.Settings { Output = Path.Combine(RootFolder, "src", "Models") };
+
+        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+
+        sln.Generate!.OutputPath.Should().Be(Path.Combine("src", "Models"));
+    }
+
+    [Fact]
+    public void AbsentFlags_LeaveGenerateConfigUntouched()
+    {
+        var sln = NewSolution(new GenerateConfig { Namespace = "Existing.Models", Generator = GeneratorType.XrmContext });
+        var settings = new GenerateCommand.Settings();
+
+        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+
+        sln.Generate!.Namespace.Should().Be("Existing.Models");
+        sln.Generate!.Generator.Should().Be(GeneratorType.XrmContext);
+    }
+}
+
+// R12: every persisting flag's [Description] ends with the same wording.
+public class GeneratePersistingFlagDescriptionTests
+{
+    [Theory]
+    [InlineData(nameof(GenerateCommand.Settings.Namespace))]
+    [InlineData(nameof(GenerateCommand.Settings.ExtraTables))]
+    [InlineData(nameof(GenerateCommand.Settings.Generator))]
+    [InlineData(nameof(GenerateCommand.Settings.Output))]
+    [InlineData(nameof(GenerateCommand.Settings.ServiceContextName))]
+    public void PersistingFlag_DescriptionEndsWithSavedToFlowline(string propertyName)
+    {
+        var description = typeof(GenerateCommand.Settings).GetProperty(propertyName)!
+            .GetCustomAttribute<DescriptionAttribute>()!;
+
+        description.Description.Should().EndWith("(saved to .flowline)");
     }
 }
