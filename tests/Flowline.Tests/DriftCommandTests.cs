@@ -38,25 +38,43 @@ public class DriftCommandTests
 
     // ── Exit code selection ───────────────────────────────────────────────────
 
+    // KD8: drift is read-only, so a completed comparison exits 0 whether or not orphans were found —
+    // --exit-code is what turns "orphans found" into ChangesFound (22). These replace the old
+    // ValidationFailed(15)-on-findings contract.
+
     [Fact]
     public void SelectExitCode_ReturnsSuccess_WhenComparedAndNoDriftEntries()
     {
         var result = new CompareResult([]);
 
-        DriftCommand.SelectExitCode(result).Should().Be((int)ExitCode.Success);
+        DriftCommand.SelectExitCode(result, exitCodeOnChanges: false).Should().Be((int)ExitCode.Success);
+        DriftCommand.SelectExitCode(result, exitCodeOnChanges: true).Should().Be((int)ExitCode.Success);
     }
 
     [Theory]
     [InlineData(1)]
     [InlineData(5)]
-    public void SelectExitCode_ReturnsValidationFailed_WhenDriftEntriesFound(int entryCount)
+    public void SelectExitCode_ReturnsSuccess_WhenDriftEntriesFoundWithoutExitCodeFlag(int entryCount)
     {
         var entries = Enumerable.Range(0, entryCount)
             .Select(_ => new OrphanEntry(Guid.NewGuid(), 91, "SomeComponent", OrphanAction.Delete))
             .ToList();
         var result = new CompareResult(entries);
 
-        DriftCommand.SelectExitCode(result).Should().Be((int)ExitCode.ValidationFailed);
+        DriftCommand.SelectExitCode(result, exitCodeOnChanges: false).Should().Be((int)ExitCode.Success);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(5)]
+    public void SelectExitCode_ReturnsChangesFound_WhenDriftEntriesFoundWithExitCodeFlag(int entryCount)
+    {
+        var entries = Enumerable.Range(0, entryCount)
+            .Select(_ => new OrphanEntry(Guid.NewGuid(), 91, "SomeComponent", OrphanAction.Delete))
+            .ToList();
+        var result = new CompareResult(entries);
+
+        DriftCommand.SelectExitCode(result, exitCodeOnChanges: true).Should().Be((int)ExitCode.ChangesFound);
     }
 
     [Fact]
@@ -64,7 +82,8 @@ public class DriftCommandTests
     {
         var result = new CompareResult([], Skipped: true);
 
-        DriftCommand.SelectExitCode(result).Should().Be((int)ExitCode.Inconclusive);
+        DriftCommand.SelectExitCode(result, exitCodeOnChanges: false).Should().Be((int)ExitCode.Inconclusive);
+        DriftCommand.SelectExitCode(result, exitCodeOnChanges: true).Should().Be((int)ExitCode.Inconclusive);
     }
 
     [Fact]
