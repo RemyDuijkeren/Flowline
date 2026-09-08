@@ -187,6 +187,60 @@ public class DataverseConnectorTests
         await Assert.ThrowsAsync<ArgumentException>(() => _service.GetEnvironmentInfoAsync(profile, null!));
     }
 
+    // ── SendReachabilityProbeAsync (U6/R14) ─────────────────────────────────
+    // Exercises only the HTTP classification -- token acquisition (MSAL) isn't reachable through
+    // FakeHttpMessageHandler, so ProbeReachabilityAsync itself (which acquires the token first) is
+    // covered by ProfileResolutionServiceTests via its seam instead.
+
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.Unauthorized)]
+    [InlineData(System.Net.HttpStatusCode.Forbidden)]
+    [InlineData(System.Net.HttpStatusCode.NotFound)]
+    public async Task SendReachabilityProbeAsync_NonSuccessStatus_ReturnsUnauthorizedOrNotFound(System.Net.HttpStatusCode statusCode)
+    {
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(statusCode)));
+        var service = new DataverseConnector(new TestConsole(), new HttpClient(handler));
+
+        var result = await service.SendReachabilityProbeAsync("token", "https://contoso.crm4.dynamics.com", CancellationToken.None);
+
+        Assert.IsType<ProbeUnauthorizedOrNotFound>(result);
+    }
+
+    [Fact]
+    public async Task SendReachabilityProbeAsync_SuccessStatus_ReturnsReachable()
+    {
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)));
+        var service = new DataverseConnector(new TestConsole(), new HttpClient(handler));
+
+        var result = await service.SendReachabilityProbeAsync("token", "https://contoso.crm4.dynamics.com", CancellationToken.None);
+
+        Assert.IsType<ProbeReachable>(result);
+    }
+
+    [Fact]
+    public async Task SendReachabilityProbeAsync_HttpRequestException_ReturnsTransportFailure()
+    {
+        var handler = new FakeHttpMessageHandler((_, _) => throw new HttpRequestException("DNS failure"));
+        var service = new DataverseConnector(new TestConsole(), new HttpClient(handler));
+
+        var result = await service.SendReachabilityProbeAsync("token", "https://contoso.crm4.dynamics.com", CancellationToken.None);
+
+        var transportFailure = Assert.IsType<ProbeTransportFailure>(result);
+        Assert.IsType<HttpRequestException>(transportFailure.Exception);
+    }
+
+    [Fact]
+    public async Task SendReachabilityProbeAsync_TaskCanceled_ReturnsTransportFailure()
+    {
+        var handler = new FakeHttpMessageHandler((_, _) => throw new TaskCanceledException("timed out"));
+        var service = new DataverseConnector(new TestConsole(), new HttpClient(handler));
+
+        var result = await service.SendReachabilityProbeAsync("token", "https://contoso.crm4.dynamics.com", CancellationToken.None);
+
+        var transportFailure = Assert.IsType<ProbeTransportFailure>(result);
+        Assert.IsType<TaskCanceledException>(transportFailure.Exception);
+    }
+
     static string RetrieveCurrentOrganizationJson(string organizationType) => $$"""
         {
           "Detail": {

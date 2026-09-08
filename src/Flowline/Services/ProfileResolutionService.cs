@@ -29,6 +29,10 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     /// to a real pac.exe subprocess with no mocking seam of its own).</summary>
     internal Func<PacProfile, IReadOnlyList<PacProfile>, CancellationToken, Task>? SelectAuthProfileOverride { get; set; }
 
+    /// <summary>Seam for testing — set to override DataverseConnector.ProbeReachabilityAsync (which
+    /// acquires a real MSAL token and makes a live HTTP call, neither available under test).</summary>
+    internal Func<PacProfile, string, CancellationToken, Task<ReachabilityProbeResult>>? ProbeReachabilityOverride { get; set; }
+
     /// <summary>
     /// Resolves the environment a standalone run targets: the explicit <c>--dev</c> URL when given,
     /// otherwise the resource-specific PAC auth profile that is currently active. A universal profile
@@ -66,8 +70,8 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     async Task<PacProfile> HandleFound(PacProfile profile, string environmentUrl, CancellationToken cancellationToken)
     {
         console.Verbose($"Matched profile: {profile.DisplayName}, Kind: {profile.Kind}, URL: {profile.Resource}");
-        await EnsureActiveProfileAsync(profile, environmentUrl, cancellationToken);
-        return profile;
+        // R14: a URL match may still lose to PAC's currently active profile -- see EnsureActiveProfileAsync.
+        return await EnsureActiveProfileAsync(profile, environmentUrl, cancellationToken, preferReachableActiveProfile: true);
     }
 
     async Task<PacProfile> HandleAmbiguousAsync(IReadOnlyList<PacProfile> candidates, string environmentUrl, CancellationToken cancellationToken)
@@ -86,14 +90,16 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
 
         var selected = await console.PromptAsync(prompt, cancellationToken);
 
-        await EnsureActiveProfileAsync(selected, environmentUrl, cancellationToken);
-        return selected;
+        // R14 doesn't apply here: the user just explicitly picked `selected` from the ambiguity
+        // prompt, so silently substituting a different (merely reachable) active profile for their
+        // choice would be a bait-and-switch. preferReachableActiveProfile stays false (the default).
+        return await EnsureActiveProfileAsync(selected, environmentUrl, cancellationToken);
     }
 
     // R2/R3/R4/R5: guard the resolved profile against PAC CLI's globally active profile. Runs once
     // per ResolveAsync call (R8) — nothing is cached across calls, so a command resolving multiple
     // URLs re-checks independently each time.
-    async Task EnsureActiveProfileAsync(PacProfile profile, string environmentUrl, CancellationToken cancellationToken)
+    async Task<PacProfile> EnsureActiveProfileAsync(PacProfile profile, string environmentUrl, CancellationToken cancellationToken, bool preferReachableActiveProfile = false)
     {
         var isActive = IsProfileActiveOverride ?? dataverseConnector.IsProfileActive;
         var allProfiles = GetPacProfilesOverride?.Invoke() ?? dataverseConnector.GetPacProfiles().ToList();
@@ -102,14 +108,26 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
         if (isActive(profile))
         {
             EmitStatusLine(profile, index, environmentUrl);
-            return;
+            return profile;
+        }
+
+        // R14: before switching to (or prompting for) `profile`, check whether whatever profile is
+        // *currently* active can already reach the target -- if so, use it outright instead, no
+        // switch, no prompt, even though `profile` is the URL match. Only reached on a genuine
+        // mismatch (the fast path above already covers "active profile is the URL match"), so the
+        // common case pays no extra round-trip; a mismatch pays exactly one live probe call.
+        if (preferReachableActiveProfile)
+        {
+            var preferred = await TryUseReachableActiveProfileAsync(allProfiles, isActive, environmentUrl, cancellationToken);
+            if (preferred != null)
+                return preferred;
         }
 
         if (runtimeOptions.AutoSwitchProfile)
         {
             EmitStatusLine(profile, index, environmentUrl);
             await SwitchProfileAsync(profile, allProfiles, cancellationToken);
-            return;
+            return profile;
         }
 
         if (!IsInteractive())
@@ -129,6 +147,46 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
             throw BuildMismatchException(profile, allProfiles);
 
         await SwitchProfileAsync(profile, allProfiles, cancellationToken);
+        return profile;
+    }
+
+    // Only called when `profile` (the URL match) isn't active. Finds whichever profile IS currently
+    // active -- possibly a different Kind, possibly with no URL of its own (e.g. UNIVERSAL) -- and
+    // probes it against the target. An unauthorized/not-found answer falls through to today's
+    // switch/prompt chain unchanged; a transport failure surfaces as ConnectionFailed (or is rethrown
+    // as-is for a timeout/cancellation, so Program.cs's DataverseTimeout/Ctrl+C handling still
+    // applies) since no other profile would fare better against a dead network.
+    async Task<PacProfile?> TryUseReachableActiveProfileAsync(
+        IReadOnlyList<PacProfile> allProfiles, Func<PacProfile, bool> isActive, string environmentUrl, CancellationToken cancellationToken)
+    {
+        var activeProfile = allProfiles.FirstOrDefault(isActive);
+
+        // Nothing active at all, or (defensively) it's itself already the URL match -- FindBestProfile
+        // would already have returned it in that case, so this shouldn't be reachable in practice.
+        if (activeProfile is null || ProfileMatchesEnvironment(activeProfile, environmentUrl))
+            return null;
+
+        var probe = ProbeReachabilityOverride != null
+            ? await ProbeReachabilityOverride(activeProfile, environmentUrl, cancellationToken)
+            : await dataverseConnector.ProbeReachabilityAsync(activeProfile, environmentUrl, cancellationToken);
+
+        switch (probe)
+        {
+            case ProbeReachable:
+                EmitStatusLine(activeProfile, ProfileIndex(activeProfile, allProfiles), environmentUrl);
+                return activeProfile;
+            case ProbeTransportFailure transportFailure:
+                // A timeout or Ctrl+C is rethrown unwrapped so the top-level handler's existing
+                // DataverseTimeout/cancellation classification decides the exit code -- wrapping it
+                // here would report a user Ctrl+C as ExitCode.Timeout instead of ExitCode.Cancelled.
+                if (transportFailure.Exception is TimeoutException or OperationCanceledException)
+                    throw transportFailure.Exception;
+                throw new FlowlineException(ExitCode.ConnectionFailed,
+                    $"{environmentUrl.TrimEnd('/')} environment not found — check the URL or your PAC login.",
+                    transportFailure.Exception);
+            default: // ProbeUnauthorizedOrNotFound — fall through to today's switch/prompt chain
+                return null;
+        }
     }
 
     async Task SwitchProfileAsync(PacProfile profile, IReadOnlyList<PacProfile> allProfiles, CancellationToken cancellationToken)

@@ -198,6 +198,63 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         }
     }
 
+    /// <summary>
+    /// Probes whether <paramref name="profile"/> can reach <paramref name="environmentUrl"/>, without
+    /// needing to parse the environment's details — used by ProfileResolutionService to check PAC's
+    /// active profile before falling back to URL-based profile matching. Shares
+    /// GetEnvironmentInfoAsync's token acquisition and Web API call, but reports the three-way
+    /// outcome resolution actually needs instead of a parsed EnvironmentInfo: a credentials problem
+    /// (401/403/404 — try another profile) must be distinguishable from a transport failure (nothing
+    /// answered — no other profile would fare better either), which GetEnvironmentInfoAsync's null
+    /// return collapses into one case for its own callers.
+    /// </summary>
+    public async Task<ReachabilityProbeResult> ProbeReachabilityAsync(
+        PacProfile profile,
+        string environmentUrl,
+        CancellationToken cancellationToken = default)
+    {
+        if (profile == null) throw new ArgumentNullException(nameof(profile));
+        if (string.IsNullOrWhiteSpace(environmentUrl))
+            throw new ArgumentException("Environment URL is required for probing reachability.", nameof(environmentUrl));
+
+        var resourceUrl = environmentUrl.TrimEnd('/');
+        var authority = ResolveAuthority(profile);
+        var cacheHelper = await GetOrCreateMsalCacheHelperAsync();
+
+        // Token acquisition failures (session expired, tenant mismatch, ...) are left to surface as
+        // their own FlowlineException — those already carry an actionable, specific message; this
+        // probe's transport classification is only for the HTTP call itself.
+        var accessToken = profile.IsServicePrincipal
+            ? (await AcquireServicePrincipalTokenAsync(profile, authority, cacheHelper, resourceUrl, cancellationToken)).Token.AccessToken
+            : (await AcquireUserTokenAsync(profile, authority, cacheHelper, resourceUrl, cancellationToken)).Token.AccessToken;
+
+        return await SendReachabilityProbeAsync(accessToken, resourceUrl, cancellationToken);
+    }
+
+    // Split out from ProbeReachabilityAsync so tests can exercise the HTTP classification (via
+    // FakeHttpMessageHandler) without a real PAC token cache -- token acquisition above talks to
+    // MSAL, which no test double here stands in for.
+    internal async Task<ReachabilityProbeResult> SendReachabilityProbeAsync(string accessToken, string resourceUrl, CancellationToken cancellationToken)
+    {
+        var requestUrl = $"{resourceUrl}/api/data/v9.2/RetrieveCurrentOrganization(AccessType=Microsoft.Dynamics.CRM.EndpointAccessType'Default')";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        try
+        {
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            return response.IsSuccessStatusCode
+                ? new ProbeReachable()
+                : new ProbeUnauthorizedOrNotFound();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return new ProbeTransportFailure(ex);
+        }
+    }
+
     // Shared by ConnectUserAsync (which additionally wraps the result in a ServiceClient renewal
     // callback) and GetEnvironmentInfoAsync (which only needs Token.AccessToken).
     //
