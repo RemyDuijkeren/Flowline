@@ -211,7 +211,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             else if (!await AnsiConsole.Console.ConfirmAsync(BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged), false, settings, "first-import", cancellationToken))
             {
                 Console.Info("Deploy cancelled. Re-run with --force first-import to skip this confirmation.");
-                return (int)ExitCode.Cancelled;
+                return (int)ExitCode.ForceRequired;
             }
         }
 

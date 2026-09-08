@@ -37,8 +37,8 @@ public enum ExitCode
 
     /// <summary>
     /// Version conflict with target environment. Add --force to overwrite.
-    /// Reserved: no throw site yet, but published as part of the agent-facing exit-code contract
-    /// (wiki 11-AI-Agents, plugin/skills/flowline/SKILL.md), so the value stays allocated.
+    /// Reserved: published in the agent-facing exit-code contract (wiki 11-AI-Agents,
+    /// plugin/skills/flowline/SKILL.md) so the value stays allocated, but never thrown.
     /// </summary>
     VersionConflict = 14,
 
@@ -74,7 +74,7 @@ public enum ExitCode
     /// Changes were found. <b>Not a failure</b> — the command ran to completion and the comparison
     /// succeeded. Only returned when the caller opts in with <c>--exit-code</c>, so a run without that
     /// option reports changes and still exits <see cref="Success"/>. Gate on this to branch on "is there
-    /// anything to sync/deploy" without parsing output.
+    /// anything to sync/deploy/drift" without parsing output. Shared by <c>diff</c> and <c>drift</c>.
     /// </summary>
     ChangesFound = 22,
 

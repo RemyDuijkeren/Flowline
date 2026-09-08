@@ -26,6 +26,10 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         [CommandOption("--path <zip>")]
         [Description("Compare this pre-built solution zip against the target instead of your local checkout")]
         public string? Path { get; set; }
+
+        [CommandOption("--exit-code")]
+        [Description("Exit 22 when changes were found, 0 when there were none (like 'git diff --exit-code'). Failures keep their own code")]
+        public bool ExitCodeOnChanges { get; set; }
     }
 
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
@@ -105,7 +109,7 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
                     tmpUnpackDir, service, artifactSln.UniqueName, env.EnvironmentUrl!, RunMode.NoDelete, cancellationToken,
                     noDeleteHint: null, checkoutSolutionSrcRoot: null);
 
-                return SelectExitCode(artifactResult);
+                return SelectExitCode(artifactResult, settings.ExitCodeOnChanges);
             }, Logger);
         }
 
@@ -127,7 +131,7 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         // PostDeployContext directly because it also carries PackagePath/RunMode from its own packing step).
         var result = await orphanCleanupService.CompareAsync(dataverseSolutionFolder, service, projectSln.UniqueName, env.EnvironmentUrl!, cancellationToken, noDeleteHint: null);
 
-        return SelectExitCode(result);
+        return SelectExitCode(result, settings.ExitCodeOnChanges);
     }
 
     // R15: pure so the wording is unit-testable without a live PAC CLI or Dataverse connection, mirroring
@@ -193,10 +197,14 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         _      => null
     };
 
-    internal static int SelectExitCode(CompareResult result) => result switch
+    // KD8: drift is read-only, so a completed comparison is not itself a failure — it exits 0 whether or
+    // not orphans were found. Only --exit-code turns "orphans found" into a distinct code (22, shared with
+    // diff/sync's ChangesFound), for callers that want to branch on the result without parsing output. A
+    // skipped comparison is a different signal (inconclusive, not "no drift") and stays 19 either way.
+    internal static int SelectExitCode(CompareResult result, bool exitCodeOnChanges) => result switch
     {
-        { Skipped: true }             => (int)ExitCode.Inconclusive,
-        { Entries.Count: 0 }          => (int)ExitCode.Success,
-        _                             => (int)ExitCode.ValidationFailed
+        { Skipped: true }                                  => (int)ExitCode.Inconclusive,
+        { Entries.Count: > 0 } when exitCodeOnChanges       => (int)ExitCode.ChangesFound,
+        _                                                   => (int)ExitCode.Success
     };
 }
