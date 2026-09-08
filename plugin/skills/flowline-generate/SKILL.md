@@ -16,7 +16,7 @@ there is no manual entity list to maintain.
 references generated classes and the schema changed, or on a fresh clone where `Models/` isn't
 committed.
 
-**It does not write `DATAVERSE_CONTEXT.md`.** That file comes from `sync` (and `clone`/`init`). A
+**It does not write `DATAVERSE_CONTEXT.md`.** That file comes from `pull` (and `clone`/`init`). A
 stale schema doc is not a reason to run `generate`.
 
 ## Where output lands
@@ -51,7 +51,7 @@ sets project-wide defaults.
 - Extra tables are for standard tables a plugin reads but the solution doesn't own — `account`,
   `contact`, `systemuser`.
 
-Standalone mode (no `.flowline`) requires solution name, `--dev`, and `-o` explicitly, and saves
+Standalone mode (no `.flowline`) requires solution name, `--env`, and `-o` explicitly, and saves
 nothing.
 
 ## Generators
