@@ -78,7 +78,29 @@ public class FlowlineSettingsTests
     {
         typeof(PushCommand.Settings).GetProperty(nameof(DataverseSettings.NoCache)).Should().NotBeNull();
         typeof(PushCommand.Settings).GetProperty(nameof(DataverseSettings.AutoSwitchProfile)).Should().NotBeNull();
-        typeof(PushCommand.Settings).GetProperty(nameof(DataverseSettings.Env)).Should().NotBeNull();
+        typeof(PushCommand.Settings).GetProperty(nameof(EnvironmentSettings.Env)).Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(typeof(SyncCommand.Settings))]
+    [InlineData(typeof(GenerateCommand.Settings))]
+    [InlineData(typeof(InitCommand.Settings))]
+    [InlineData(typeof(CloneCommand.Settings))]
+    public void FlagAddressedCommands_ExposeEnv(Type settings)
+    {
+        settings.GetProperty(nameof(EnvironmentSettings.Env)).Should().NotBeNull();
+    }
+
+    // KD1/R2: the target-is-the-point commands keep their positional and never show --env.
+    [Theory]
+    [InlineData(typeof(DeployCommand.Settings))]
+    [InlineData(typeof(DriftCommand.Settings))]
+    [InlineData(typeof(ConfigureCommand.Settings))]
+    [InlineData(typeof(ProvisionCommand.Settings))]
+    public void PositionalTargetCommands_DoNotExposeEnv(Type settings)
+    {
+        settings.GetProperty(nameof(EnvironmentSettings.Env)).Should().BeNull();
+        settings.GetProperty(nameof(DataverseSettings.NoCache)).Should().NotBeNull();
     }
 
     [Fact]
