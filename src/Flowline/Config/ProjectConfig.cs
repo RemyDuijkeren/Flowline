@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Infrastructure;
@@ -20,30 +21,64 @@ public class ProjectConfig
     public ProjectSolution? Solution { get; set; }
 
     public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(inputUatUrl, () => UatUrl, v => UatUrl = v, "UAT", settings);
+        GetOrUpdateUrl(inputUatUrl, () => UatUrl, v => UatUrl = v, "UAT", "UatUrl", settings);
 
     public string? GetOrUpdateTestUrl(string? inputTestUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(inputTestUrl, () => TestUrl, v => TestUrl = v, "Test", settings);
+        GetOrUpdateUrl(inputTestUrl, () => TestUrl, v => TestUrl = v, "Test", "TestUrl", settings);
 
     public string? GetOrUpdateDevUrl(string? inputDevUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(inputDevUrl, () => DevUrl, v => DevUrl = v, "Dev", settings);
+        GetOrUpdateUrl(inputDevUrl, () => DevUrl, v => DevUrl = v, "Dev", "DevUrl", settings);
 
     public string? GetOrUpdateProdUrl(string? inputProdUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(inputProdUrl, () => ProdUrl, v => ProdUrl = v, "Prod", settings);
+        GetOrUpdateUrl(inputProdUrl, () => ProdUrl, v => ProdUrl = v, "Prod", "ProdUrl", settings);
+
+    // Read-only role-keyed accessor — lets a caller (EnvironmentTargetResolver) look up or compare
+    // against a role's URL without switching on EnvironmentRole itself.
+    public string? GetUrl(EnvironmentRole role) => role switch
+    {
+        EnvironmentRole.Prod => ProdUrl,
+        EnvironmentRole.Uat  => UatUrl,
+        EnvironmentRole.Test => TestUrl,
+        EnvironmentRole.Dev  => DevUrl,
+        _ => throw new ArgumentOutOfRangeException(nameof(role))
+    };
+
+    // Role-keyed sibling of the four GetOrUpdate*Url wrappers, for callers that only have an
+    // EnvironmentRole (EnvironmentTargetResolver's save flow) — same four branches, same saveReason
+    // support, just picked by role instead of by name.
+    public string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl, FlowlineSettings? settings = null, string? saveReason = null) => role switch
+    {
+        EnvironmentRole.Prod => GetOrUpdateUrl(inputUrl, () => ProdUrl, v => ProdUrl = v, "Prod", "ProdUrl", settings, saveReason),
+        EnvironmentRole.Uat  => GetOrUpdateUrl(inputUrl, () => UatUrl, v => UatUrl = v, "UAT", "UatUrl", settings, saveReason),
+        EnvironmentRole.Test => GetOrUpdateUrl(inputUrl, () => TestUrl, v => TestUrl = v, "Test", "TestUrl", settings, saveReason),
+        EnvironmentRole.Dev  => GetOrUpdateUrl(inputUrl, () => DevUrl, v => DevUrl = v, "Dev", "DevUrl", settings, saveReason),
+        _ => throw new ArgumentOutOfRangeException(nameof(role))
+    };
 
     // Properties can't be passed by ref, so the four environment URLs share this via get/set delegates.
+    // key is the .flowline JSON property name (e.g. "DevUrl") — printed on first save, distinct from
+    // label (e.g. "Dev"), which reads better in the overwrite prompt. saveReason, when given, is
+    // appended to the first-save line as "(inferred from <reason>)" — EnvironmentTargetResolver's only
+    // caller of that parameter; every other call site leaves it null.
     static string? GetOrUpdateUrl(
         string? input,
         Func<string?> get,
         Action<string?> set,
         string label,
-        FlowlineSettings? settings)
+        string key,
+        FlowlineSettings? settings,
+        string? saveReason = null)
     {
         input = input?.Trim();
 
         if (string.IsNullOrWhiteSpace(get()))
         {
             set(input);
+            if (!string.IsNullOrWhiteSpace(input))
+            {
+                var reasonSuffix = string.IsNullOrWhiteSpace(saveReason) ? "" : $" (inferred from {saveReason})";
+                AnsiConsole.Console.Ok($"Saved to .flowline: {key}{reasonSuffix}");
+            }
             return string.IsNullOrWhiteSpace(input) ? null : input;
         }
 

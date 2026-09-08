@@ -1,0 +1,315 @@
+using Flowline.Commands;
+using Flowline.Config;
+using Flowline.Core;
+using Flowline.Core.Models;
+using Flowline.Services;
+using FluentAssertions;
+using Spectre.Console;
+using Spectre.Console.Testing;
+
+namespace Flowline.Tests.Services;
+
+public class EnvironmentTargetResolverTests
+{
+    const string DevUrl = "https://contoso-dev.crm4.dynamics.com/";
+    const string TestUrl = "https://contoso-test.crm4.dynamics.com/";
+
+    static (EnvironmentTargetResolver Resolver, TestConsole Console) MakeResolver(bool interactive = false)
+    {
+        var console = new TestConsole();
+        if (interactive) console.Interactive();
+        return (new EnvironmentTargetResolver(console), console);
+    }
+
+    static Func<string, CancellationToken, Task<EnvironmentInfo?>> EnvInfo(string? type) =>
+        (url, _) => Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, Type = type });
+
+    static Func<string, CancellationToken, Task<EnvironmentInfo?>> NotCalled() =>
+        (_, _) => throw new InvalidOperationException("env-info delegate should not have been called for this path");
+
+    // ProjectConfig's "Saved to .flowline" line goes through the static AnsiConsole.Console, not the
+    // resolver's own injected console — swap it for the duration of the awaited call so the restore in
+    // `finally` can't run ahead of ResolveAsync's own (synchronous, but still awaited) work.
+    static async Task<(EnvironmentTargetResult Result, string Output)> RunWithSwappedConsoleAsync(
+        Func<Task<EnvironmentTargetResult>> act)
+    {
+        var original = AnsiConsole.Console;
+        var testConsole = new TestConsole();
+        AnsiConsole.Console = testConsole;
+        try
+        {
+            var result = await act();
+            return (result, testConsole.Output);
+        }
+        finally
+        {
+            AnsiConsole.Console = original;
+        }
+    }
+
+    // ── R5: role keyword ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ResolveAsync_Keyword_EmptyKey_ThrowsConfigInvalid_NamingKeyAndEnvFlag()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig();
+
+        var act = () => resolver.ResolveAsync("test", config, devOnly: false, isInteractive: false,
+            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ConfigInvalid)
+            .Which.Message.Should().Contain("TestUrl").And.Contain("--env <url>");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Keyword_ConfiguredKey_ReturnsUrl_NoSave_NoEnvInfoCall()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig { DevUrl = DevUrl };
+
+        var result = await resolver.ResolveAsync("dev", config, devOnly: false, isInteractive: false,
+            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+
+        result.Url.Should().Be(DevUrl);
+        result.Role.Should().Be(EnvironmentRole.Dev);
+        result.Saved.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_DefaultsToDev_WhenEnvOptionIsNullOrEmpty()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig { DevUrl = DevUrl };
+
+        var result = await resolver.ResolveAsync(null, config, devOnly: false, isInteractive: false,
+            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+
+        result.Role.Should().Be(EnvironmentRole.Dev);
+    }
+
+    // ── URL already saved under a role — normalised compare, no save, no env-info call ────
+
+    [Fact]
+    public async Task ResolveAsync_UrlEqualsDevUrl_TrailingSlashAndCaseDiffer_ResolvesToDev_NoSave_NoEnvInfoCall()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig { DevUrl = "https://contoso-dev.crm4.dynamics.com/" };
+
+        var result = await resolver.ResolveAsync("HTTPS://CONTOSO-DEV.crm4.dynamics.com", config, devOnly: false,
+            isInteractive: false, new FlowlineSettings(), NotCalled(), CancellationToken.None);
+
+        result.Role.Should().Be(EnvironmentRole.Dev);
+        result.Saved.Should().BeFalse();
+        result.Url.Should().Be(config.DevUrl);
+    }
+
+    // ── AE2: non-interactive new URL, empty DevUrl, suffix-inferred ────────────
+
+    [Fact]
+    public async Task ResolveAsync_AE2_NewDevSuffixedUrl_NonInteractive_EmptyDevUrl_SavesAndPrints()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig();
+
+        var (result, output) = await RunWithSwappedConsoleAsync(() =>
+            resolver.ResolveAsync(DevUrl, config, devOnly: false, isInteractive: false,
+                new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None));
+
+        result.Saved.Should().BeTrue();
+        result.Role.Should().Be(EnvironmentRole.Dev);
+        result.Url.Should().Be(DevUrl);
+        config.DevUrl.Should().Be(DevUrl);
+        output.Should().Contain("Saved to .flowline: DevUrl (inferred from URL suffix)");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_AE2_SecondResolveWithNoEnvOption_UsesSavedDevUrlSilently()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig();
+        await resolver.ResolveAsync(DevUrl, config, devOnly: false, isInteractive: false,
+            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+
+        var result = await resolver.ResolveAsync(null, config, devOnly: false, isInteractive: false,
+            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+
+        result.Url.Should().Be(DevUrl);
+        result.Saved.Should().BeFalse();
+    }
+
+    // ── AE3: non-interactive new Production-type URL, DEV-only command ─────────
+
+    [Fact]
+    public async Task ResolveAsync_AE3_NewProductionUrl_DevOnly_Refused_NothingSaved()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig();
+        const string url = "https://contoso.crm4.dynamics.com/";
+
+        var act = () => resolver.ResolveAsync(url, config, devOnly: true, isInteractive: false,
+            new FlowlineSettings(), EnvInfo("Production"), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
+        config.DevUrl.Should().BeNull();
+        config.ProdUrl.Should().BeNull();
+    }
+
+    // ── AE4: DevUrl already holds a different URL, non-interactive ─────────────
+
+    [Fact]
+    public async Task ResolveAsync_AE4_DevUrlHoldsAnotherUrl_NonInteractive_ThrowsForceRequired_NamingForceConfig()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig { DevUrl = "https://contoso-dev-old.crm4.dynamics.com/" };
+
+        var act = () => resolver.ResolveAsync(DevUrl, config, devOnly: false, isInteractive: false,
+            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ForceRequired)
+            .Which.Message.Should().Contain("--force config");
+        config.DevUrl.Should().Be("https://contoso-dev-old.crm4.dynamics.com/");
+    }
+
+    // ── AE12: non-interactive Sandbox URL with no suffix — can't infer ─────────
+
+    [Fact]
+    public async Task ResolveAsync_AE12_SandboxNoSuffix_NonInteractive_ThrowsValidationFailed_NamingFlowlineKey_NothingSaved()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig();
+        const string url = "https://contoso.crm4.dynamics.com/";
+
+        var act = () => resolver.ResolveAsync(url, config, devOnly: false, isInteractive: false,
+            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Which.Message.Should().Contain("DevUrl").And.Contain("TestUrl").And.Contain("UatUrl");
+        config.DevUrl.Should().BeNull();
+        config.TestUrl.Should().BeNull();
+        config.UatUrl.Should().BeNull();
+    }
+
+    // ── Interactive: pre-selected inferred role, Enter saves; decline uses once ─
+
+    [Fact]
+    public async Task ResolveAsync_Interactive_NewUrl_InferredRolePreselected_EnterSaves()
+    {
+        var (resolver, console) = MakeResolver(interactive: true);
+        var config = new ProjectConfig();
+        console.Input.PushKey(ConsoleKey.Enter); // role picker: inferred role (Dev) listed first
+
+        var result = await resolver.ResolveAsync(DevUrl, config, devOnly: false, isInteractive: true,
+            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+
+        result.Role.Should().Be(EnvironmentRole.Dev);
+        result.Saved.Should().BeTrue();
+        config.DevUrl.Should().Be(DevUrl);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Interactive_NewUrl_Declining_UsesUrlOnce_NothingSaved()
+    {
+        var (resolver, console) = MakeResolver(interactive: true);
+        var config = new ProjectConfig();
+        // Choices for a non-devOnly, non-Prod-inferred URL: Dev (inferred, first), Test, Uat,
+        // "use once" (last) — Prod isn't offered here (Prod only appears when it's the inferred role).
+        console.Input.PushKey(ConsoleKey.DownArrow);
+        console.Input.PushKey(ConsoleKey.DownArrow);
+        console.Input.PushKey(ConsoleKey.DownArrow);
+        console.Input.PushKey(ConsoleKey.Enter);
+
+        var result = await resolver.ResolveAsync(DevUrl, config, devOnly: false, isInteractive: true,
+            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+
+        result.Role.Should().BeNull();
+        result.Saved.Should().BeFalse();
+        result.Url.Should().Be(DevUrl);
+        config.DevUrl.Should().BeNull();
+    }
+
+    // ── Interactive + devOnly: the picker must not offer a role the gate already refused ──
+
+    [Fact]
+    public async Task ResolveAsync_Interactive_DevOnly_NewSandboxUrl_PickerOffersOnlyDevAndUseOnce()
+    {
+        var (resolver, console) = MakeResolver(interactive: true);
+        var config = new ProjectConfig();
+        console.Input.PushKey(ConsoleKey.Enter); // Dev is the only role choice, listed first
+
+        var result = await resolver.ResolveAsync(DevUrl, config, devOnly: true, isInteractive: true,
+            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+
+        result.Role.Should().Be(EnvironmentRole.Dev);
+        console.Output.Should().Contain("DEV").And.NotContain("TEST").And.NotContain("UAT").And.NotContain("PROD");
+    }
+
+    // ── A value that's neither a role keyword nor a URL fails before any lookup ─
+
+    [Fact]
+    public async Task ResolveAsync_NotAKeywordNorAUrl_ThrowsValidationFailed_NoEnvInfoCall()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig();
+
+        var act = () => resolver.ResolveAsync("staging", config, devOnly: false, isInteractive: false,
+            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
+    }
+
+    // ── Gate: DEV-only commands refuse anything but DEV, before connecting ─────
+
+    [Fact]
+    public async Task ResolveAsync_Gate_KeywordProd_DevOnly_ThrowsValidationFailed_NoEnvInfoCall()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig { ProdUrl = "https://contoso.crm4.dynamics.com/" };
+
+        var act = () => resolver.ResolveAsync("prod", config, devOnly: true, isInteractive: false,
+            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Gate_UrlEqualsConfiguredTestUrl_DevOnly_ThrowsValidationFailed_NoEnvInfoCall()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig { TestUrl = TestUrl };
+
+        var act = () => resolver.ResolveAsync(TestUrl, config, devOnly: true, isInteractive: false,
+            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Gate_NewProductionTypedUrl_DevOnly_ThrowsValidationFailed()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig();
+        const string url = "https://contoso.crm4.dynamics.com/";
+
+        var act = () => resolver.ResolveAsync(url, config, devOnly: true, isInteractive: false,
+            new FlowlineSettings(), EnvInfo("Production"), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Gate_SandboxUrlWithDevSuffix_DevOnly_Passes()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig();
+
+        var result = await resolver.ResolveAsync(DevUrl, config, devOnly: true, isInteractive: false,
+            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+
+        result.Role.Should().Be(EnvironmentRole.Dev);
+        result.Saved.Should().BeTrue();
+    }
+}

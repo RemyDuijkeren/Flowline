@@ -1,7 +1,10 @@
 using System.Text.Json;
+using Flowline.Commands;
 using Flowline.Config;
 using Flowline.Core;
 using FluentAssertions;
+using Spectre.Console;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -234,6 +237,117 @@ public class ProjectConfigTests : IDisposable
 
         result.Should().Be("https://contoso.crm.dynamics.com/");
         config.ProdUrl.Should().Be("https://contoso.crm.dynamics.com/");
+    }
+
+    // KTD6: generic setter — first-save line, silent same-value, and the role-keyed accessors.
+
+    static T WithSwappedConsole<T>(Func<TestConsole, T> act)
+    {
+        var original = AnsiConsole.Console;
+        var testConsole = new TestConsole();
+        AnsiConsole.Console = testConsole;
+        try
+        {
+            return act(testConsole);
+        }
+        finally
+        {
+            AnsiConsole.Console = original;
+        }
+    }
+
+    [Fact]
+    public void GetOrUpdateDevUrl_EmptyKey_PrintsSavedLine()
+    {
+        var output = WithSwappedConsole(console =>
+        {
+            new ProjectConfig().GetOrUpdateDevUrl("https://contoso-dev.crm4.dynamics.com/");
+            return console.Output;
+        });
+
+        output.Should().Contain("Saved to .flowline: DevUrl");
+    }
+
+    [Fact]
+    public void GetOrUpdateDevUrl_SameValue_PrintsNothing()
+    {
+        var output = WithSwappedConsole(console =>
+        {
+            var config = new ProjectConfig { DevUrl = "https://contoso-dev.crm4.dynamics.com/" };
+            config.GetOrUpdateDevUrl("https://contoso-dev.crm4.dynamics.com/");
+            return console.Output;
+        });
+
+        output.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetOrUpdateDevUrl_DifferentValue_NonInteractive_NoForce_ThrowsForceRequired()
+    {
+        var config = new ProjectConfig { DevUrl = "https://contoso-dev.crm4.dynamics.com/" };
+
+        var act = () => config.GetOrUpdateDevUrl("https://contoso-dev2.crm4.dynamics.com/", new FlowlineSettings());
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ForceRequired);
+        config.DevUrl.Should().Be("https://contoso-dev.crm4.dynamics.com/");
+    }
+
+    [Theory]
+    [InlineData(EnvironmentRole.Dev, nameof(ProjectConfig.DevUrl))]
+    [InlineData(EnvironmentRole.Test, nameof(ProjectConfig.TestUrl))]
+    [InlineData(EnvironmentRole.Uat, nameof(ProjectConfig.UatUrl))]
+    [InlineData(EnvironmentRole.Prod, nameof(ProjectConfig.ProdUrl))]
+    public void GetUrl_ReturnsTheConfiguredRoleUrl(EnvironmentRole role, string property)
+    {
+        var config = new ProjectConfig();
+        typeof(ProjectConfig).GetProperty(property)!.SetValue(config, "https://contoso.crm4.dynamics.com/");
+
+        config.GetUrl(role).Should().Be("https://contoso.crm4.dynamics.com/");
+    }
+
+    [Fact]
+    public void GetUrl_NoValueConfigured_ReturnsNull()
+    {
+        new ProjectConfig().GetUrl(EnvironmentRole.Dev).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(EnvironmentRole.Dev, nameof(ProjectConfig.DevUrl))]
+    [InlineData(EnvironmentRole.Test, nameof(ProjectConfig.TestUrl))]
+    [InlineData(EnvironmentRole.Uat, nameof(ProjectConfig.UatUrl))]
+    [InlineData(EnvironmentRole.Prod, nameof(ProjectConfig.ProdUrl))]
+    public void GetOrUpdateUrl_ByRole_EmptyKey_SetsOnlyThatRolesUrl(EnvironmentRole role, string property)
+    {
+        var config = new ProjectConfig();
+
+        var result = config.GetOrUpdateUrl(role, "https://contoso.crm4.dynamics.com/");
+
+        result.Should().Be("https://contoso.crm4.dynamics.com/");
+        typeof(ProjectConfig).GetProperty(property)!.GetValue(config).Should().Be("https://contoso.crm4.dynamics.com/");
+    }
+
+    [Fact]
+    public void GetOrUpdateUrl_ByRole_EmptyKey_WithSaveReason_PrintsInferredSuffix()
+    {
+        var output = WithSwappedConsole(console =>
+        {
+            new ProjectConfig().GetOrUpdateUrl(EnvironmentRole.Dev, "https://contoso-dev.crm4.dynamics.com", null, "URL suffix");
+            return console.Output;
+        });
+
+        output.Should().Contain("Saved to .flowline: DevUrl (inferred from URL suffix)");
+    }
+
+    [Fact]
+    public void GetOrUpdateUrl_ByRole_EmptyKey_NoSaveReason_PrintsPlainLine()
+    {
+        var output = WithSwappedConsole(console =>
+        {
+            new ProjectConfig().GetOrUpdateUrl(EnvironmentRole.Test, "https://contoso-test.crm4.dynamics.com");
+            return console.Output;
+        });
+
+        output.Should().Contain("Saved to .flowline: TestUrl").And.NotContain("inferred from");
     }
 
     [Fact]
