@@ -79,6 +79,7 @@ services.AddSingleton<SubprocessCapture>();
 services.AddSingleton<ProjectScaffolder>();
 services.AddSingleton<SolutionCreateService>();
 services.AddSingleton<CreateEnvironmentResolver>();
+services.AddSingleton<EnvironmentTargetResolver>();
 
 Serilog.ILogger? serilogLogger = null;
 try
@@ -167,9 +168,9 @@ app.Configure(config =>
 
     // init = create a brand-new publisher + empty unmanaged solution in DEV, then scaffold the repo
     config.AddCommand<InitCommand>("init")
-          .WithDescription("Create an empty unmanaged solution and optional a new publisher in a DEV environment, then scaffold the repo around it. Front door for greenfield — no Dataverse solution exists yet.")
+          .WithDescription("Create an empty unmanaged solution and optional a new publisher in a DEV environment, then scaffold the repo around it. Front door for greenfield — no Dataverse solution exists yet. Targets DEV only, via --env dev or a DEV environment URL.")
           .WithExample("init", "MySolution")
-          .WithExample("init", "MySolution", "--dev", "https://contoso-dev.crm4.dynamics.com", "--publisher-prefix", "contoso");
+          .WithExample("init", "MySolution", "--env", "https://contoso-dev.crm4.dynamics.com", "--publisher-prefix", "contoso");
 
     // clone = Clone solution from environment to local folder
     config.AddCommand<CloneCommand>("clone") // init (new repo) or clone (existing repo)
@@ -179,18 +180,18 @@ app.Configure(config =>
 
     // Push assets to dev environment (upload and push assets to environment: plugins, webresources, pcf controls, etc.)
     config.AddCommand<PushCommand>("push")
-        .WithDescription("Build and register plugin assembly and web resources directly to DEV — skips pack/import. Reads [[Step]] attributes to create or update plugin registrations. Run after plugin or web resource changes.")
+        .WithDescription("Build and register plugin assembly and web resources directly to DEV — skips pack/import. Reads [[Step]] attributes to create or update plugin registrations. Run after plugin or web resource changes. Targets DEV only, via --env dev or a DEV environment URL.")
         .WithExample("push")
         .WithExample("push", "ContosoCustomizations --scope webresources")
         .WithExample("push", "ContosoCustomizations --pluginFile ./bin/Release/Plugins.dll --webresources ./dist");
 
     // Sync changes to local repo (export solution and unpack)
     config.AddCommand<SyncCommand>("sync")
-          .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in the unpacked solution source. Alias: pull")
+          .WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in the unpacked solution source. Targets DEV only, via --env dev or a DEV environment URL. Alias: pull")
           .WithAlias("pull")
           .WithExample("sync")
           .WithExample("sync", "--managed", "--bump", "minor")
-          .WithExample("pull", "--dev", "https://contoso-dev.crm4.dynamics.com");
+          .WithExample("pull", "--env", "https://contoso-dev.crm4.dynamics.com");
 
     // Deploy (pack and import solution into environment)
     config.AddCommand<DeployCommand>("deploy")

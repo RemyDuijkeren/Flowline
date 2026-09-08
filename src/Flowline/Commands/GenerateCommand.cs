@@ -20,7 +20,7 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions runtimeOptions,
-    IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService, SecretResolver secretResolver, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient)
+    IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService, SecretResolver secretResolver, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient, EnvironmentTargetResolver environmentTargetResolver)
     : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
     public sealed class Settings : EnvironmentSettings
@@ -40,10 +40,6 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         [CommandOption("--extra-tables <TABLES>")]
         [Description("Comma-separated extra tables to include; replaces the saved list")]
         public string? ExtraTables { get; set; }
-
-        [CommandOption("--dev <URL>")]
-        [Description("Dev environment URL")]
-        public string? DevUrl { get; set; }
 
         [CommandOption("-o|--output <PATH>")]
         [Description("Output folder for generated types — saved to .flowline (required outside a Flowline project)")]
@@ -98,6 +94,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         string[] extraTables;
         bool namespaceWasDerived = false;
         ProjectSolution? projectSln = null;
+        EnvironmentRole? resolvedRole = null;
 
         if (standaloneMode)
         {
@@ -107,7 +104,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 throw new FlowlineException(ExitCode.ValidationFailed, "Output folder is required in standalone mode — use -o <PATH> or --output <PATH>.");
 
             solutionName = settings.Solution.Trim();
-            devUrl = ProfileResolutionService.ResolveStandaloneEnvironmentUrl(settings.DevUrl);
+            EnvironmentTargetResolver.EnsureUsableStandaloneEnv(settings.Env);
+            devUrl = ProfileResolutionService.ResolveStandaloneEnvironmentUrl(settings.Env);
             modelsFolder = Path.GetFullPath(settings.Output);
             extraTables = settings.ExtraTables?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
             modelNamespace = !string.IsNullOrWhiteSpace(settings.Namespace)
@@ -125,10 +123,15 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             if (projectSln == null)
                 throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as an argument or configure a single solution in .flowline.");
 
-            var resolvedDevUrl = Config!.GetOrUpdateDevUrl(settings.DevUrl, settings);
-            if (string.IsNullOrEmpty(resolvedDevUrl))
-                throw new FlowlineException(ExitCode.ConfigInvalid, "No DEV environment configured — run 'flowline provision' or pass --dev <URL>.");
-            devUrl = resolvedDevUrl;
+            // KTD8: generate accepts any role (incl. Production) — devOnly:false, and the type guard is
+            // skipped below when the environment is actually checked. Any URL the resolver saves lands
+            // in Config in-memory here; the existing end-of-run Config!.Save(RootFolder) (ShouldPersistSettings,
+            // below) is what actually flushes it once generation succeeds — matching how projectSln's own
+            // mutations above are already deferred to that one save.
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, devOnly: false, IsInteractive(), settings,
+                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+            devUrl = target.Url;
+            resolvedRole = target.Role;
 
             solutionName = projectSln.UniqueName;
 
@@ -223,7 +226,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         }
         else
         {
-            var (devEnv, _) = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, devUrl, settings, cancellationToken, resolvedProfile);
+            // KTD8: skipTypeGuard — generate reads types, never mutates, so it accepts any role incl. Production.
+            var (devEnv, _) = await GetAndCheckEnvironmentAsync(devUrl, resolvedRole, settings, cancellationToken, resolvedProfile, skipTypeGuard: true);
             (_, remoteSln) = await GetAndCheckSolutionAsync(solutionName, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
         }
 
@@ -292,6 +296,8 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
     private bool IsStandaloneMode() =>
         !File.Exists(Path.Combine(RootFolder, ProjectConfig.s_configFileName));
+
+    bool IsInteractive() => Console.Profile.Capabilities.Interactive;
 
     /// <summary>
     /// Whether a completed run writes what it resolved back to <c>.flowline</c>: project mode with a

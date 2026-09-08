@@ -14,15 +14,11 @@ namespace Flowline.Commands;
 
 public enum BumpComponent { Patch, Minor, Major, None }
 
-public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) :
+public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient, EnvironmentTargetResolver environmentTargetResolver) :
     FlowlineCommand<SyncCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
     public sealed class Settings : EnvironmentSettings
     {
-        [CommandOption("--dev <URL>")]
-        [Description("Development environment URL")]
-        public string? DevUrl { get; set; }
-
         [CommandOption("--managed [false]")]
         [Description("Include managed artifacts (--managed false resets to default)")]
         [DefaultValue(true)]
@@ -44,8 +40,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        // Dev URL is required
-        var (devEnv, _) = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
+        // R3: DEV-only — refused before any PAC profile resolve, connect, or .flowline write.
+        var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, devOnly: true, IsInteractive(), settings,
+            (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+        var (devEnv, _) = await GetAndCheckEnvironmentAsync(target.Url, target.Role, settings, cancellationToken);
 
         // Solution is the single one configured in .flowline — sync is project-mode only
         var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(null, devEnv.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
@@ -55,7 +53,10 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Logger.LogInformation("target={EnvironmentUrl} solution={SolutionName} bump={Bump}", devEnv.EnvironmentUrl, projectSln.UniqueName, settings.Bump);
 
         Config!.Save();
-        Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}");
+        // KTD6: the resolver's own setter already prints "Saved to .flowline: DevUrl" when it actually
+        // saved something — this line only adds noise when nothing changed.
+        if (target.Saved)
+            Console.Verbose($"Project configuration saved to {ProjectConfig.s_configFileName}");
 
         // Validate that we have an initialized project
         var slnFolder = RootFolder;
@@ -167,6 +168,8 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         return 0;
     }
+
+    bool IsInteractive() => Console.Profile.Capabilities.Interactive;
 
     internal static string BumpVersion(string version, BumpComponent component)
     {

@@ -1001,4 +1001,42 @@ public class PushCommandTests : IDisposable
             return 0;
         }
     }
+
+    // -- R1/R10: --env replaces --dev (U3) --
+
+    [Fact]
+    public void CommandApp_EnvRoleKeyword_BindsEnv()
+    {
+        PushCommand.Settings? captured = null;
+        var app = new CommandApp();
+        app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
+        CapturingPushSettingsCommand.OnExecute = s => captured = s;
+
+        var exitCode = app.Run(["push", "--env", "dev"]);
+
+        exitCode.Should().Be(0);
+        captured!.Env.Should().Be("dev");
+    }
+
+    [Fact]
+    public void CommandApp_EnvShortFlagWithUrl_BindsEnv()
+    {
+        PushCommand.Settings? captured = null;
+        var app = new CommandApp();
+        app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
+        CapturingPushSettingsCommand.OnExecute = s => captured = s;
+
+        var exitCode = app.Run(["push", "-e", "https://contoso-dev.crm4.dynamics.com"]);
+
+        exitCode.Should().Be(0);
+        captured!.Env.Should().Be("https://contoso-dev.crm4.dynamics.com");
+    }
+
+    [Fact]
+    public void Settings_HasNoDevUrlProperty_TheOldFlagIsGone()
+    {
+        // R10/KD5: --dev is removed with no alias — asserted on the settings shape rather than a parse
+        // outcome, since this repo's parser doesn't reject an unrecognized flag.
+        typeof(PushCommand.Settings).GetProperty("DevUrl").Should().BeNull();
+    }
 }

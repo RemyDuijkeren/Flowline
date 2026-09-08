@@ -2,12 +2,46 @@ using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Utils;
+using Spectre.Console.Cli;
 using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
 public class SyncCommandTests
 {
+    // -- R1/R10: --env replaces --dev (U3) --
+
+    sealed class CapturingSyncSettingsCommand : Command<SyncCommand.Settings>
+    {
+        public static Action<SyncCommand.Settings>? OnExecute;
+
+        protected override int Execute(CommandContext context, SyncCommand.Settings settings, CancellationToken cancellationToken)
+        {
+            OnExecute?.Invoke(settings);
+            return 0;
+        }
+    }
+
+    [Fact]
+    public void CommandApp_EnvRoleKeyword_BindsEnv()
+    {
+        SyncCommand.Settings? captured = null;
+        var app = new CommandApp();
+        app.Configure(c => c.AddCommand<CapturingSyncSettingsCommand>("sync").WithAlias("pull"));
+        CapturingSyncSettingsCommand.OnExecute = s => captured = s;
+
+        var exitCode = app.Run(["pull", "--env", "dev"]);
+
+        exitCode.Should().Be(0);
+        captured!.Env.Should().Be("dev");
+    }
+
+    [Fact]
+    public void Settings_HasNoDevUrlProperty_TheOldFlagIsGone()
+    {
+        typeof(SyncCommand.Settings).GetProperty("DevUrl").Should().BeNull();
+    }
+
     [Fact]
     public void Settings_Force_ShouldDefaultToEmpty()
     {

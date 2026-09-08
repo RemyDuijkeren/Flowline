@@ -376,4 +376,50 @@ public class EnvironmentTargetResolverTests
         result.Role.Should().Be(EnvironmentRole.Dev);
         result.Saved.Should().BeTrue();
     }
+
+    // ── IsRoleKeyword / EnsureUsableStandaloneEnv (U3): standalone push/generate have no ProjectConfig,
+    // so a bare role keyword has nothing to resolve against and must be refused rather than silently
+    // treated as a literal URL. ──
+
+    [Theory]
+    [InlineData("dev")]
+    [InlineData("DEV")]
+    [InlineData("test")]
+    [InlineData("uat")]
+    [InlineData("prod")]
+    public void IsRoleKeyword_RecognizedRoleNames_ReturnsTrue(string value) =>
+        EnvironmentTargetResolver.IsRoleKeyword(value).Should().BeTrue();
+
+    [Theory]
+    [InlineData("https://contoso-dev.crm4.dynamics.com/")]
+    [InlineData("staging")]
+    [InlineData("")]
+    public void IsRoleKeyword_UrlOrUnrecognizedValue_ReturnsFalse(string value) =>
+        EnvironmentTargetResolver.IsRoleKeyword(value).Should().BeFalse();
+
+    [Fact]
+    public void EnsureUsableStandaloneEnv_RoleKeyword_ThrowsNamingEnvUrl()
+    {
+        var act = () => EnvironmentTargetResolver.EnsureUsableStandaloneEnv("dev");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Where(e => e.Message.Contains("--env <url>"));
+    }
+
+    [Fact]
+    public void EnsureUsableStandaloneEnv_Url_DoesNotThrow()
+    {
+        var act = () => EnvironmentTargetResolver.EnsureUsableStandaloneEnv(DevUrl);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void EnsureUsableStandaloneEnv_NullOrEmpty_DoesNotThrow()
+    {
+        var act = () => EnvironmentTargetResolver.EnsureUsableStandaloneEnv(null);
+
+        act.Should().NotThrow();
+    }
 }

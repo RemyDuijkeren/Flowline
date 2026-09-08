@@ -259,6 +259,28 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         if (string.IsNullOrEmpty(url))
             throw new FlowlineException(ExitCode.ConfigInvalid, $"{label} URL is required — use {flag} <URL>.");
 
+        return await GetAndCheckEnvironmentAsync(url, role, settings, cancellationToken, resolvedProfile, skipTypeGuard);
+    }
+
+    // Non-persisting sibling of GetAndCheckEnvironmentInfoAsync above — for a caller (EnvironmentTargetResolver's
+    // consumers: push/sync/generate/init) that has already resolved its target URL and must not route it
+    // back through a GetOrUpdate*Url setter, which would save it into .flowline for an empty key even on a
+    // "use this URL once" result. role is nullable to cover exactly that use-once case (KD3) — skipTypeGuard
+    // is forced on whenever role is null, since there is then no role to check the environment's type against.
+    protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironmentAsync(
+        string url, EnvironmentRole? role, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
+        bool skipTypeGuard = false)
+    {
+        var label = role switch
+        {
+            EnvironmentRole.Prod => "Prod",
+            EnvironmentRole.Uat  => "UAT",
+            EnvironmentRole.Test => "Test",
+            EnvironmentRole.Dev  => "Dev",
+            null => "Environment",
+            _ => throw new ArgumentOutOfRangeException(nameof(role))
+        };
+
         // Resolved before opening the status spinner — ProfileResolutionService.ResolveAsync can prompt
         // interactively on an ambiguous match, and Spectre.Console throws if a prompt runs while a
         // Status/Live display is active ("Trying to run one or more interactive functions concurrently").
@@ -270,12 +292,12 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
 
-        if (!skipTypeGuard)
+        if (!skipTypeGuard && role is { } r)
         {
-            if (role == EnvironmentRole.Prod && env.Type != "Production")
+            if (r == EnvironmentRole.Prod && env.Type != "Production")
                 throw new FlowlineException(ExitCode.ValidationFailed, "That environment isn't Production type — verify the URL in .flowline points to a Production environment.");
 
-            if (role != EnvironmentRole.Prod && env.Type == "Production")
+            if (r != EnvironmentRole.Prod && env.Type == "Production")
                 throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
         }
 
