@@ -500,7 +500,6 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
     internal async Task SetupPluginsProjectAsync(string slnFolder, string slnFilePath, string solutionName, SolutionFileLayout layout, CancellationToken cancellationToken)
     {
         var pluginsFolder = Path.Combine(slnFolder, "Plugins");
-        var pluginsCsproj = Path.Combine(pluginsFolder, PluginsProjectFileName(solutionName));
 
         // Any plugin project already in the folder, or already registered elsewhere in the solution file,
         // means clone has nothing to add: a fresh scaffold, a resumed clone, the pre-rename
@@ -522,15 +521,63 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
                 "A 'Plugins' folder is here but holds no project — Flowline scaffolds the plugin project there. " +
                 "Remove or rename the empty folder, then run clone again.");
 
-        // pac plugin init takes no --name: it reads PackageId and the generated namespaces off its working
-        // directory, and writes neither <AssemblyName> nor <RootNamespace>, so both follow the .csproj
-        // filename. Init therefore runs in <SolutionName>.Plugins/ and only the *folder* is renamed —
-        // renaming the file too would drop the assembly back to "Plugins" while PackageId and the namespaces
-        // stayed prefixed, leaving three identities disagreeing with nothing to signal it.
-        var initFolder = Path.Combine(slnFolder, $"{solutionName}.Plugins");
+        await ScaffoldPluginsProjectAsync(pluginsFolder, PluginsProjectFileName(solutionName), slnFilePath, cancellationToken);
+    }
+
+    /// <summary>The project file name <c>scaffold</c> writes when there is no solution to name it after.</summary>
+    /// <remarks>
+    /// Mirrors <see cref="StandaloneWebResourcesProjectFileName"/>: a folder produced by a stand-alone
+    /// scaffold holds this generic name instead of a solution-derived one.
+    /// </remarks>
+    internal const string StandalonePluginsProjectFileName = "Plugins.csproj";
+
+    /// <summary>Runs <c>pac plugin init</c> into <paramref name="pluginsFolder"/>, adds the NuGet packages
+    /// every Flowline plugin project needs, and registers it in <paramref name="slnFilePath"/> if there is
+    /// one.</summary>
+    /// <remarks>
+    /// The leaf both <c>clone</c>/<c>init</c> (through <see cref="SetupPluginsProjectAsync"/>) and the
+    /// <c>scaffold plugins</c> command reach, so a project scaffolded by either is indistinguishable. Neither
+    /// the folder nor the project file name is derived here, for the same reason <see cref="ScaffoldWebResourcesProjectAsync"/>
+    /// takes them as parameters: <c>scaffold</c> can be pointed at another folder and given another name,
+    /// and <c>clone</c> cannot, so the naming rule stays with the caller that has one.
+    ///
+    /// <paramref name="slnFilePath"/> is nullable because a folder with no solution file is a legitimate
+    /// scaffold target — there is simply nothing to register into.
+    ///
+    /// <c>pac plugin init</c> takes no --name: it reads PackageId and the generated namespaces off its
+    /// working directory, and writes neither <c>&lt;AssemblyName&gt;</c> nor <c>&lt;RootNamespace&gt;</c>,
+    /// so both follow the .csproj filename. When that filename disagrees with <paramref name="pluginsFolder"/>'s
+    /// own name — the solution-named case, e.g. project <c>Contoso.Plugins.csproj</c> landing in folder
+    /// <c>Plugins</c> — init runs in a temporary folder named after the project instead, and only that
+    /// folder is renamed afterwards; renaming the file too would drop the assembly back to the generic name
+    /// while PackageId and the namespaces stayed prefixed, leaving three identities disagreeing with nothing
+    /// to signal it. When the two names already agree — the generic and <c>--name</c> cases — init runs
+    /// directly in <paramref name="pluginsFolder"/>: a temporary folder sharing that exact name could not be
+    /// moved onto it.
+    /// </remarks>
+    internal async Task ScaffoldPluginsProjectAsync(string pluginsFolder, string projectFileName, string? slnFilePath, CancellationToken cancellationToken)
+    {
+        var root = Path.GetDirectoryName(pluginsFolder)!;
+        var pluginsCsproj = Path.Combine(pluginsFolder, projectFileName);
+        var folderLeaf = Path.GetFileName(pluginsFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var baseName = Path.GetFileNameWithoutExtension(projectFileName);
+
+        // Only the solution-named case needs the rename: "Contoso.Plugins" (init folder) to "Plugins"
+        // (final folder). The generic and --name cases name the folder after the project already
+        // ("Plugins"/"Plugins.csproj", "Extra"/"Extra.csproj"), so init runs straight in pluginsFolder —
+        // a temp folder sharing that exact name can't be moved onto it (IOException: same path).
+        var needsRename = !string.Equals(baseName, folderLeaf, StringComparison.OrdinalIgnoreCase);
+        var initFolder = needsRename ? Path.Combine(root, baseName) : pluginsFolder;
+
+        // pac plugin init needs initFolder empty, and the move below needs it clear of anything already
+        // named that — a pre-existing folder there (an unrelated project, an spkl-era layout) would have
+        // init write into someone else's source, or fail the move onto pluginsFolder outright.
+        if (needsRename && Directory.Exists(initFolder))
+            throw new FlowlineException(ExitCode.WriteTargetOccupied,
+                $"{Path.GetFileName(initFolder)} is already here, and 'pac plugin init' needs to create it fresh. Move it aside and run this again.");
 
         await console.Status().FlowlineSpinner().StartAsync(
-            "Setting up Plugins project...", async ctx =>
+            $"Setting up {folderLeaf} project...", async ctx =>
             {
                 Directory.CreateDirectory(initFolder);
 
@@ -545,8 +592,11 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
                          .ExecuteAsync(cancellationToken);
                 DeleteScaffoldedGitignore(initFolder); // superseded by the project-root .gitignore
 
-                Directory.Move(initFolder, pluginsFolder);
-                console.Verbose($"Moved {Path.GetFileName(initFolder)} to {Path.GetFileName(pluginsFolder)}");
+                if (needsRename)
+                {
+                    Directory.Move(initFolder, pluginsFolder);
+                    console.Verbose($"Moved {Path.GetFileName(initFolder)} to {Path.GetFileName(pluginsFolder)}");
+                }
 
                 // Add Flowline.Attributes NuGet package
                 await Cli.Wrap("dotnet")
@@ -570,7 +620,9 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
                          .WithCapture(capture)
                          .ExecuteAsync(cancellationToken);
 
-                // Add Plugins.csproj to the solution. Named explicitly rather than left to the working
+                if (slnFilePath is null) return;
+
+                // Add the project to the solution. Named explicitly rather than left to the working
                 // directory: `dotnet sln` picks the folder's one solution file, and a root can now hold a
                 // .sln and a .slnx side by side (what `dotnet sln migrate` leaves behind), where that
                 // guess fails outright. `dotnet sln add` takes a .csproj into either format — verified.
@@ -580,12 +632,12 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
                                                 .Add(slnFilePath)
                                                 .Add("add")
                                                 .Add(pluginsCsproj))
-                         .WithWorkingDirectory(slnFolder)
+                         .WithWorkingDirectory(root)
                          .WithCapture(capture)
                          .ExecuteAsync(cancellationToken);
             });
 
-        console.Ok("Plugins project ready");
+        console.Ok($"{folderLeaf} project ready");
     }
 
     /// <summary>The WebResources project file clone scaffolds for a solution.</summary>

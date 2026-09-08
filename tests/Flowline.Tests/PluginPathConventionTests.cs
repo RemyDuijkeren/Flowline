@@ -30,6 +30,9 @@ public class PluginPathConventionTests
         ["src/Flowline/Services/ProjectScaffolder.cs"] =
             "scaffolding: creates the Plugins project, so it picks the name rather than discovering it " +
             "(moved out of CloneCommand.cs in U1 — clone and init share this scaffold service)",
+        ["src/Flowline/Commands/ScaffoldCommand.cs"] =
+            "scaffolding: 'flowline scaffold plugins' picks the default folder name rather than " +
+            "discovering it, same reasoning as ProjectScaffolder.cs above (U10)",
         ["src/Flowline/Commands/GenerateCommand.cs"] =
             "Plugins/Models is the default early-bound output path, not plugin-project discovery",
         ["src/Flowline/Program.cs"] =

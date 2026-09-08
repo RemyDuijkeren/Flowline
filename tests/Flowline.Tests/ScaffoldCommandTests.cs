@@ -53,16 +53,28 @@ public class ScaffoldCommandTests
         act.Should().NotThrow();
     }
 
+    [Theory]
+    [InlineData("plugins")]
+    [InlineData("Plugins")]
+    [InlineData("PLUGINS")]
+    public void ValidatePart_AcceptsPlugins_RegardlessOfCasing(string part)
+    {
+        var act = () => ScaffoldCommand.ValidatePart(part);
+
+        act.Should().NotThrow();
+    }
+
     /// <summary>Covers AE5. The error names what is accepted, because that is how an agent reading a failed
     /// run discovers the vocabulary.</summary>
     [Fact]
     public void ValidatePart_RejectsAnUnknownPart_NamingWhatIsAccepted()
     {
-        var act = () => ScaffoldCommand.ValidatePart("plugins");
+        var act = () => ScaffoldCommand.ValidatePart("reports");
 
         act.Should().Throw<FlowlineException>()
            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
-           .And.Message.Should().Contain("webresources");
+           .And.Message.Should().Contain("webresources")
+           .And.Contain("plugins");
     }
 
     // ---- name and root resolution -------------------------------------------------------------
@@ -100,6 +112,39 @@ public class ScaffoldCommandTests
 
         folderName.Should().Be("Scripts");
         projectFileName.Should().Be("Scripts.csproj");
+    }
+
+    /// <summary>Mirrors ResolveNames_WithNoSolutionFile_IsTheGenericProjectNameInTheDefaultFolder for the
+    /// plugins part (R29, KTD7).</summary>
+    [Fact]
+    public void ResolvePluginsNames_WithNoSolutionFile_IsTheGenericProjectNameInTheDefaultFolder()
+    {
+        var (folderName, projectFileName) = ScaffoldCommand.ResolvePluginsNames(name: null, solutionFilePath: null);
+
+        folderName.Should().Be("Plugins");
+        projectFileName.Should().Be("Plugins.csproj");
+    }
+
+    /// <summary>Mirrors ResolveNames_WithASolutionFile_NamesTheProjectAfterIt for the plugins part.</summary>
+    [Theory]
+    [InlineData("Contoso.slnx")]
+    [InlineData("Contoso.sln")]
+    public void ResolvePluginsNames_WithASolutionFile_NamesTheProjectAfterIt(string solutionFileName)
+    {
+        var (folderName, projectFileName) = ScaffoldCommand.ResolvePluginsNames(name: null, solutionFilePath: Path.Combine("C:", "repo", solutionFileName));
+
+        folderName.Should().Be("Plugins");
+        projectFileName.Should().Be("Contoso.Plugins.csproj");
+    }
+
+    /// <summary>Mirrors ResolveNames_WithAName_NamesBothTheFolderAndTheProjectFile for the plugins part.</summary>
+    [Fact]
+    public void ResolvePluginsNames_WithAName_NamesBothTheFolderAndTheProjectFile()
+    {
+        var (folderName, projectFileName) = ScaffoldCommand.ResolvePluginsNames("Extra", Path.Combine("C:", "repo", "Contoso.slnx"));
+
+        folderName.Should().Be("Extra");
+        projectFileName.Should().Be("Extra.csproj");
     }
 
     /// <summary>Covers AE16. A project file ending in Test or Tests is eliminated by the WebResources
@@ -493,10 +538,68 @@ public class ScaffoldCommandTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    // ---- plugins: folder collision --------------------------------------------------------------
+
+    /// <summary>Covers R29. Plugin project files come from <c>pac plugin init</c>, not a fixed template
+    /// list, so any file already in the target folder is a collision — unlike
+    /// <see cref="EnsureNoTemplateCollision"/>, there is no per-file allowlist to check against.</summary>
+    [Fact]
+    public void EnsureNoPluginsFolderCollision_WithAStrayFile_RefusesNamingTheFolder()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var plugins = Path.Combine(root, "Plugins");
+            Directory.CreateDirectory(plugins);
+            File.WriteAllText(Path.Combine(plugins, "notes.txt"), "not ours");
+
+            var act = () => ScaffoldCommand.EnsureNoPluginsFolderCollision(plugins);
+
+            act.Should().Throw<FlowlineException>()
+               .Where(e => e.ExitCode == ExitCode.WriteTargetOccupied)
+               .And.Message.Should().Contain("delete Plugins");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void EnsureNoPluginsFolderCollision_WithAnEmptyFolder_Passes()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var plugins = Path.Combine(root, "Plugins");
+            Directory.CreateDirectory(plugins);
+
+            var act = () => ScaffoldCommand.EnsureNoPluginsFolderCollision(plugins);
+
+            act.Should().NotThrow();
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void EnsureNoPluginsFolderCollision_WithNoFolder_Passes()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var act = () => ScaffoldCommand.EnsureNoPluginsFolderCollision(Path.Combine(root, "Plugins"));
+
+            act.Should().NotThrow();
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     // ---- registration -------------------------------------------------------------------------
 
     const string CdsprojXml = """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
     const string WebResourcesXml = """<Project Sdk="Microsoft.Build.NoTargets/3.7.134"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
+
+    /// <summary>A minimal fixture a plugin project passes <see cref="Flowline.Core.Plugins.PluginProjectResolver.DescribePreFilterSkip"/>
+    /// with — no <c>&lt;TargetFramework&gt;</c> and a <c>Flowline.Attributes</c> reference — without running
+    /// <c>pac plugin init</c> for real.</summary>
+    const string PluginsXml = """<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="Flowline.Attributes" Version="0.1.0" /></ItemGroup></Project>""";
 
     /// <summary>Writes a project fixture: a .cdsproj plus a solution file that references it.</summary>
     static async Task<string> CreateProjectFixtureAsync(string root, params (string RelativePath, string Xml)[] extraProjects)
@@ -749,6 +852,145 @@ public class ScaffoldCommandTests
             exitCode.Should().Be((int)ExitCode.Success);
             console.Output.Should().Contain("Contoso.WebResources.csproj");
             File.Exists(Path.Combine(root, "WebResources", "WebResources.csproj")).Should().BeTrue();
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    // ---- plugins: decisions that never reach `pac plugin init` ---------------------------------
+    //
+    // These cover the branches ScaffoldPluginsAsync resolves before calling
+    // ProjectScaffolder.ScaffoldPluginsProjectAsync, so they run without the real `pac`/`dotnet`
+    // subprocess calls that back the actual write. ProjectScaffolderPluginsTests covers the write itself.
+
+    /// <summary>Covers R29/KTD7. A solution that already has a plugin project under a name this run didn't
+    /// ask for needs --name to say which project this is — plugin projects are plural, so this is not a
+    /// flat refusal the way a second WebResources project is.</summary>
+    [Fact]
+    public async Task ScaffoldPlugins_WhenTheSolutionAlreadyHasADifferentPluginProject_RequiresAName()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            await CreateProjectFixtureAsync(root,
+                (Path.Combine("src", "Legacy", "Legacy.Plugins.csproj"), PluginsXml));
+            var (command, _) = MakeCommand();
+
+            var act = async () => await command.ScaffoldPluginsAsync(Target(root), name: null, CancellationToken.None);
+
+            (await act.Should().ThrowAsync<FlowlineException>())
+                .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+                .And.Message.Should().Contain("--name");
+            Directory.Exists(Path.Combine(root, "Plugins")).Should().BeFalse();
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    /// <summary>Covers R29. Re-running the default scaffold against the exact project the solution file
+    /// already records is a reporting no-op, not the --name refusal above.</summary>
+    [Fact]
+    public async Task ScaffoldPlugins_RunAgain_SkipsTheProjectItAlreadyRecords()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            await CreateProjectFixtureAsync(root,
+                (Path.Combine("Plugins", "Contoso.Plugins.csproj"), PluginsXml));
+            var (command, console) = MakeCommand();
+
+            var exitCode = await command.ScaffoldPluginsAsync(Target(root), name: null, CancellationToken.None);
+
+            exitCode.Should().Be((int)ExitCode.Success);
+            console.Output.Should().Contain("already there");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    /// <summary>Covers R29. <c>--name</c> asks for one specific project, so an existing file under that
+    /// exact name is a skip without consulting the solution file at all.</summary>
+    [Fact]
+    public async Task ScaffoldPlugins_WithAName_WhenThatProjectAlreadyExists_Skips()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "Extra"));
+            File.WriteAllText(Path.Combine(root, "Extra", "Extra.csproj"), PluginsXml);
+            var (command, console) = MakeCommand();
+
+            var exitCode = await command.ScaffoldPluginsAsync(Target(root), "Extra", CancellationToken.None);
+
+            exitCode.Should().Be((int)ExitCode.Success);
+            console.Output.Should().Contain("Extra.csproj already there");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    /// <summary>Covers R29. Plugin project files come from <c>pac plugin init</c>, so a folder already
+    /// holding files refuses before that runs — the same recovery <see cref="EnsureNoTemplateCollision"/>
+    /// gives WebResources.</summary>
+    [Fact]
+    public async Task ScaffoldPlugins_WithFilesAlreadyInTheTargetFolder_RefusesWithWriteTargetOccupied()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var plugins = Path.Combine(root, "Plugins");
+            Directory.CreateDirectory(plugins);
+            File.WriteAllText(Path.Combine(plugins, "notes.txt"), "not ours");
+            var (command, _) = MakeCommand();
+
+            var act = async () => await command.ScaffoldPluginsAsync(Target(root), name: null, CancellationToken.None);
+
+            (await act.Should().ThrowAsync<FlowlineException>())
+                .Where(e => e.ExitCode == ExitCode.WriteTargetOccupied);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    // ---- plugins: the real write, end to end -----------------------------------------------------
+    //
+    // These run the real `pac plugin init`/`dotnet` subprocesses ProjectScaffolderPluginsTests covers at
+    // the scaffolder level, but through the full command — name derivation, registration, and the
+    // "already there" report included. Skipped for the same reason: no pac CLI on the CI runner.
+
+    /// <summary>Covers R29's headline scenario end to end: next to a solution file, with no --name, the
+    /// project is named after it and added to it.</summary>
+    [Fact(Skip = "Requires the pac CLI on PATH — not available in CI; run locally to verify the real write")]
+    public async Task ScaffoldPlugins_WithASolutionFile_WritesTheProjectAndAddsItToIt()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var slnPath = await CreateProjectFixtureAsync(root);
+            var (command, console) = MakeCommand();
+
+            var exitCode = await command.ScaffoldPluginsAsync(Target(root), name: null, CancellationToken.None);
+
+            exitCode.Should().Be((int)ExitCode.Success);
+            File.Exists(Path.Combine(root, "Plugins", "Contoso.Plugins.csproj")).Should().BeTrue();
+            File.ReadAllText(slnPath).Should().Contain("Contoso.Plugins.csproj");
+            console.Output.Should().Contain("Contoso.Plugins.csproj added to Contoso.slnx");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    /// <summary>Covers KTD7's positive half: a solution that already has a plugin project doesn't block
+    /// <c>--name</c> — it proceeds and writes the named one alongside it.</summary>
+    [Fact(Skip = "Requires the pac CLI on PATH — not available in CI; run locally to verify the real write")]
+    public async Task ScaffoldPlugins_WithAName_WhenTheSolutionAlreadyHasAPluginProject_WritesTheNamedProject()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var slnPath = await CreateProjectFixtureAsync(root,
+                (Path.Combine("Plugins", "Contoso.Plugins.csproj"), PluginsXml));
+            var (command, _) = MakeCommand();
+
+            var exitCode = await command.ScaffoldPluginsAsync(Target(root), "Extra", CancellationToken.None);
+
+            exitCode.Should().Be((int)ExitCode.Success);
+            File.Exists(Path.Combine(root, "Extra", "Extra.csproj")).Should().BeTrue();
+            File.ReadAllText(slnPath).Should().Contain("Extra.csproj");
         }
         finally { Directory.Delete(root, recursive: true); }
     }

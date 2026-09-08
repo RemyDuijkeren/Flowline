@@ -34,7 +34,7 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "<part>")]
-        [Description("What to scaffold. Only 'webresources' today")]
+        [Description("What to scaffold: 'webresources' or 'plugins'")]
         public string Part { get; set; } = null!;
 
         [CommandOption("-o|--output <PATH>")]
@@ -42,12 +42,12 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
         public string? Output { get; set; }
 
         [CommandOption("--name <NAME>")]
-        [Description("Name the project folder and its .csproj (default: 'WebResources', with the project file named after the solution file when there is one)")]
+        [Description("Name the project folder and its .csproj (default: 'WebResources' or 'Plugins', with the project file named after the solution file when there is one)")]
         public string? Name { get; set; }
     }
 
-    /// <summary>The values <c>&lt;part&gt;</c> accepts. One today; the argument shape absorbs more without changing.</summary>
-    static readonly string[] s_parts = ["webresources"];
+    /// <summary>The values <c>&lt;part&gt;</c> accepts. The argument shape absorbs more without changing.</summary>
+    static readonly string[] s_parts = ["webresources", "plugins"];
 
     /// <summary>The project file name written when no solution file names it.</summary>
     /// <remarks>
@@ -59,6 +59,13 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
 
     /// <summary>The folder the project lands in when <c>--name</c> does not name another.</summary>
     internal const string WebResourcesFolderName = "WebResources";
+
+    /// <summary>The project file name <c>scaffold plugins</c> writes when no solution file names it.</summary>
+    /// <remarks>Mirrors <see cref="StandaloneProjectFileName"/> for the plugins part.</remarks>
+    internal const string StandalonePluginsProjectFileName = ProjectScaffolder.StandalonePluginsProjectFileName;
+
+    /// <summary>The folder the plugins project lands in when <c>--name</c> does not name another.</summary>
+    internal const string PluginsFolderName = "Plugins";
 
     protected override bool RequiresFlowlineProject => false;
 
@@ -83,7 +90,11 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
 
         // --output is just "the folder I am standing in", so it needs no special case: the project is
         // written there either way, and the solution-file search starts there either way.
-        return ScaffoldWebResourcesAsync(ResolveTarget(ResolveRoot(settings.Output)), settings.Name, cancellationToken);
+        var target = ResolveTarget(ResolveRoot(settings.Output));
+
+        return settings.Part.Equals("plugins", StringComparison.OrdinalIgnoreCase)
+            ? ScaffoldPluginsAsync(target, settings.Name, cancellationToken)
+            : ScaffoldWebResourcesAsync(target, settings.Name, cancellationToken);
     }
 
     /// <summary>The folder the scaffold lands in, and the solution file it is added to if there is one.</summary>
@@ -114,6 +125,121 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
 
         Console.Done("Scaffolded! Use 'push' to send them to Dataverse. ᕦ(ò_óˇ)ᕤ");
         return (int)ExitCode.Success;
+    }
+
+    /// <summary>Writes the plugin project into <paramref name="target"/>, adding it to the solution file when it has one.</summary>
+    /// <remarks>
+    /// Mirrors <see cref="ScaffoldWebResourcesAsync"/> with one difference: Flowline resolves one WebResources
+    /// project per solution but several plugin projects (<see cref="Flowline.Core.Plugins.PluginProjectResolver.EnumerateCandidates"/>),
+    /// so a solution that already has a plugin project doesn't refuse a second one outright — it requires
+    /// <c>--name</c> to say which one this is (KTD7).
+    /// </remarks>
+    internal async Task<int> ScaffoldPluginsAsync(ScaffoldTarget target, string? name, CancellationToken cancellationToken)
+    {
+        var (root, solutionFilePath) = target;
+        var (folderName, projectFileName) = ResolvePluginsNames(name, solutionFilePath);
+
+        var pluginsFolder = Path.Combine(root, folderName);
+        var projectPath = Path.Combine(pluginsFolder, projectFileName);
+
+        if (await PluginsAlreadyScaffoldedAsync(projectPath, solutionFilePath, name, cancellationToken))
+            return (int)ExitCode.Success;
+
+        EnsureNoPluginsFolderCollision(pluginsFolder);
+
+        await projectScaffolder.ScaffoldPluginsProjectAsync(pluginsFolder, projectFileName, solutionFilePath, cancellationToken);
+
+        ReportSolutionFileEntry(projectFileName, solutionFilePath);
+
+        Console.Done("Scaffolded! Use 'push' to send them to Dataverse. ᕦ(ò_óˇ)ᕤ");
+        return (int)ExitCode.Success;
+    }
+
+    /// <summary>Says whether the plugin project the run would write is already there.</summary>
+    /// <remarks>
+    /// Unlike <see cref="AlreadyScaffoldedAsync"/>, a solution already having a plugin project is not by
+    /// itself "already there" — plugin projects are plural, so a different one already being registered means
+    /// the caller needs <c>--name</c> to disambiguate, not that this run is a no-op.
+    /// </remarks>
+    async Task<bool> PluginsAlreadyScaffoldedAsync(string projectPath, string? solutionFilePath, string? name, CancellationToken cancellationToken)
+    {
+        // --name names one specific project, so that project's own path is what "already there" means —
+        // and plurality means a solution already holding a different plugin project is not a refusal here.
+        if (name is not null)
+        {
+            if (File.Exists(projectPath))
+            {
+                Console.Skip($"{Path.GetFileName(projectPath)} already there — skipping");
+                return true;
+            }
+
+            return false;
+        }
+
+        if (solutionFilePath is null)
+        {
+            if (!File.Exists(projectPath)) return false;
+
+            Console.Skip("Plugins project already there — skipping");
+            return true;
+        }
+
+        var layout = await LoadLayoutAsync(solutionFilePath, cancellationToken);
+        var fullProjectPath = Path.GetFullPath(projectPath);
+
+        if (layout.PluginProjects.Any(p => string.Equals(p.ProjectPath, fullProjectPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.Skip("Plugins project already there — skipping");
+            return true;
+        }
+
+        // A folder that already holds a .csproj under some other name is the project scaffolded before this
+        // repo had a solution file (or renamed since) — not yet registered, but not a collision to refuse
+        // either. Mirrors ProjectScaffolder.PluginsProjectAlreadyRegistered's own-folder check; without this,
+        // a solution file appearing after a standalone scaffold would send that folder into
+        // EnsureNoPluginsFolderCollision, which tells the user to delete a project that is already there.
+        var pluginsFolder = Path.GetDirectoryName(projectPath)!;
+        if (Directory.Exists(pluginsFolder) && Directory.EnumerateFiles(pluginsFolder, "*.csproj").Any())
+        {
+            Console.Skip("Plugins project already there — skipping");
+            return true;
+        }
+
+        EnsureNoSecondPluginsProjectWithoutAName(root: Path.GetDirectoryName(solutionFilePath)!, layout);
+
+        return false;
+    }
+
+    /// <summary>Refuses to add another plugin project without <c>--name</c> to say which one this is.</summary>
+    /// <remarks>
+    /// Unlike <see cref="EnsureNoSecondWebResourcesProject"/>, this never blocks the request outright —
+    /// plugin projects are plural, so the fix is <c>--name</c>, not "remove or rename that one first".
+    /// </remarks>
+    static void EnsureNoSecondPluginsProjectWithoutAName(string root, SolutionFileLayout layout)
+    {
+        if (layout.PluginProjects.Count == 0) return;
+
+        var existing = ConsolePath.FormatRelativePath(layout.PluginProjects[0].ProjectPath, root, markup: false);
+        throw new FlowlineException(ExitCode.ValidationFailed,
+            $"{existing} is already a plugin project in this solution, and Flowline resolves plugin projects by name — pass --name to scaffold another.");
+    }
+
+    /// <summary>Refuses to write over a folder <c>pac plugin init</c> needs empty.</summary>
+    /// <remarks>
+    /// Plugin project files come from <c>pac plugin init</c>, not a fixed template list, so there is no
+    /// per-file check to run the way <see cref="EnsureNoTemplateCollision"/> runs for WebResources — any file
+    /// already in the target folder is a collision. There is deliberately no <c>--force</c>, for the same
+    /// reason <see cref="EnsureNoTemplateCollision"/> has none.
+    /// </remarks>
+    internal static void EnsureNoPluginsFolderCollision(string pluginsFolder)
+    {
+        if (!Directory.Exists(pluginsFolder) || !Directory.EnumerateFileSystemEntries(pluginsFolder).Any()) return;
+
+        var folderName = Path.GetFileName(pluginsFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+        throw new FlowlineException(ExitCode.WriteTargetOccupied,
+            $"{folderName} is already here and holds files scaffold won't write over. " +
+            $"If an earlier scaffold was interrupted, delete {folderName} and run this again — otherwise move the files aside, or scaffold somewhere else.");
     }
 
     /// <summary>Says whether the project reached the solution file, without needing <c>--verbose</c>.</summary>
@@ -262,6 +388,19 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
                 solutionFilePath is null
                     ? StandaloneProjectFileName
                     : ProjectScaffolder.WebResourcesProjectFileName(Path.GetFileNameWithoutExtension(solutionFilePath)));
+    }
+
+    /// <summary>Picks the folder and project file name for <c>scaffold plugins</c> — same order of
+    /// preference as <see cref="ResolveNames"/>.</summary>
+    internal static (string FolderName, string ProjectFileName) ResolvePluginsNames(string? name, string? solutionFilePath)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+            return (name, $"{name}.csproj");
+
+        return (PluginsFolderName,
+                solutionFilePath is null
+                    ? StandalonePluginsProjectFileName
+                    : ProjectScaffolder.PluginsProjectFileName(Path.GetFileNameWithoutExtension(solutionFilePath)));
     }
 
     /// <summary>Refuses to write over a file the template would land on.</summary>
