@@ -59,16 +59,25 @@
       <PackageReference Include="MinVer" PrivateAssets="All" />
     </ItemGroup>
 
-    <ItemGroup Label="EbgRuntimeData">
-      <!-- EBG reads these from disk, not from the assembly. NuGet ships only assemblies out of lib/,
-           so copy them next to the tool: the dictionary is mandatory (CamelCaser throws without it),
-           the alphabets are optional and only affect transliteration of non-Latin option labels.
-           EbgGenerator pins both paths absolutely, so the layout here is ours to choose. -->
-      <None Include="$(PkgDLaB_Xrm_EarlyBoundGeneratorV2_Api)\lib\net10.0\DLaB.Dictionary.txt"
-            CopyToOutputDirectory="PreserveNewest" Visible="false" />
-      <None Include="$(PkgDLaB_Xrm_EarlyBoundGeneratorV2_Api)\contentFiles\any\any\DLaB.EarlyBoundGeneratorV2\alphabets\*.json"
-            CopyToOutputDirectory="PreserveNewest" Visible="false" Link="alphabets\%(Filename)%(Extension)" />
-    </ItemGroup>
+    <!-- EBG reads these from disk, not from the assembly. NuGet ships only assemblies out of lib/,
+         so copy them next to the tool: the dictionary is mandatory (CamelCaser throws without it),
+         the alphabets are optional and only affect transliteration of non-Latin option labels.
+         EbgGenerator pins both paths absolutely, so the layout here is ours to choose.
+         Declared in a target rather than a plain ItemGroup: Rider renders linked items at project
+         root and ignores Visible="false". Items created inside a target are invisible to project-load
+         evaluation, so the tree stays clean. BeforeTargets="AssignTargetPaths" keeps both the build
+         output and the packed tool getting them. -->
+    <Target Name="AddEbgRuntimeData" BeforeTargets="AssignTargetPaths">
+      <ItemGroup>
+        <None Include="$(PkgDLaB_Xrm_EarlyBoundGeneratorV2_Api)\lib\net10.0\DLaB.Dictionary.txt"
+              CopyToOutputDirectory="PreserveNewest" />
+        <!-- Two items because %(Filename) only expands when the Include batches over an item list;
+             on a bare glob inside a target every file collapses onto one Link. -->
+        <_EbgAlphabet Include="$(PkgDLaB_Xrm_EarlyBoundGeneratorV2_Api)\contentFiles\any\any\DLaB.EarlyBoundGeneratorV2\alphabets\*.json" />
+        <None Include="@(_EbgAlphabet)"
+              CopyToOutputDirectory="PreserveNewest" Link="alphabets\%(Filename)%(Extension)" />
+      </ItemGroup>
+    </Target>
 
     <ItemGroup>
       <ProjectReference Include="..\Flowline.Core\Flowline.Core.csproj" />
