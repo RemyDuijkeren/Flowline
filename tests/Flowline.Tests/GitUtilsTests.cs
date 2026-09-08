@@ -410,6 +410,37 @@ public class GitUtilsTests : IDisposable
         afterSolutionChangeSha.Should().NotBe(initialSha); // a Solution/ change must invalidate it
     }
 
+    // ── GetMergeBaseAsync (R28) ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetMergeBaseAsync_WithASharedAncestor_ReturnsItsSha()
+    {
+        CreateAndCommitFile("first.txt");
+        var baseSha = ReadGitOutput("rev-parse", "HEAD");
+        var trunk = ReadGitOutput("rev-parse", "--abbrev-ref", "HEAD");
+        RunGit("branch", "feature");
+        CreateAndCommitFile("main-only.txt");
+        RunGit("checkout", "feature");
+        CreateAndCommitFile("feature-only.txt");
+
+        var mergeBase = await GitUtils.GetMergeBaseAsync(trunk, "feature", _root);
+
+        mergeBase.Should().Be(baseSha);
+    }
+
+    [Fact]
+    public async Task GetMergeBaseAsync_WithNoSharedHistory_ReturnsNull()
+    {
+        CreateAndCommitFile("first.txt");
+        var trunk = ReadGitOutput("rev-parse", "--abbrev-ref", "HEAD");
+        RunGit("checkout", "--orphan", "unrelated");
+        RunGit("commit", "--allow-empty", "-m", "unrelated root");
+
+        var mergeBase = await GitUtils.GetMergeBaseAsync(trunk, "unrelated", _root);
+
+        mergeBase.Should().BeNull();
+    }
+
     // ── AssertGitRepoAsync: the repository has to be usable, not just present on disk ──────────
 
     static SubprocessCapture Capture() => new(Spectre.Console.AnsiConsole.Console);

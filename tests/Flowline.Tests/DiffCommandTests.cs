@@ -57,6 +57,20 @@ public class DiffCommandTests : IDisposable
         p.WaitForExit();
     }
 
+    // git's default initial-branch name follows the caller's global config, so the merge-base fixtures
+    // below read it back instead of assuming "master" or "main".
+    string CurrentBranch()
+    {
+        var psi = new ProcessStartInfo("git") { WorkingDirectory = _root, RedirectStandardOutput = true, RedirectStandardError = true };
+        psi.ArgumentList.Add("rev-parse");
+        psi.ArgumentList.Add("--abbrev-ref");
+        psi.ArgumentList.Add("HEAD");
+        using var p = Process.Start(psi)!;
+        var output = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        return output.Trim();
+    }
+
     /// <summary>A repo holding a solution file, a .cdsproj, and an unpacked source folder — the shape every
     /// command after <c>clone</c> resolves against.</summary>
     async Task<string> CreateSolutionRepoAsync(string solutionName = "Contoso")
@@ -121,15 +135,94 @@ public class DiffCommandTests : IDisposable
         to.IsWorkingTree.Should().BeFalse();
     }
 
-    /// <summary>R5/R13. The refusal names the option that is missing, because that is the corrective action.</summary>
+    // ---- ref-spec parsing (R28) -----------------------------------------------------------------
+
+    /// <summary>No args: HEAD against the working tree, same as ResolveSides' own default.</summary>
     [Fact]
-    public void ResolveSides_WithToButNoFrom_IsRejectedAsInvalidInput_NamingFrom()
+    public void ParseRefSpec_WithNoArgs_IsHeadAgainstTheWorkingTree()
     {
-        var act = () => DiffCommand.ResolveSides(null, "main");
+        var spec = DiffCommand.ParseRefSpec(null, null);
+
+        spec.From.Should().Be("HEAD");
+        spec.To.Should().BeNull();
+        spec.MergeBase.Should().BeFalse();
+    }
+
+    /// <summary>One ref: that ref against the working tree.</summary>
+    [Fact]
+    public void ParseRefSpec_WithOneArg_IsThatRefAgainstTheWorkingTree()
+    {
+        var spec = DiffCommand.ParseRefSpec("v1.2.0", null);
+
+        spec.From.Should().Be("v1.2.0");
+        spec.To.Should().BeNull();
+        spec.MergeBase.Should().BeFalse();
+    }
+
+    /// <summary>Two refs compare the refs, and neither is a merge-base comparison.</summary>
+    [Fact]
+    public void ParseRefSpec_WithTwoArgs_ComparesBothRefsDirectly()
+    {
+        var spec = DiffCommand.ParseRefSpec("v1.2.0", "v1.3.0");
+
+        spec.From.Should().Be("v1.2.0");
+        spec.To.Should().Be("v1.3.0");
+        spec.MergeBase.Should().BeFalse();
+    }
+
+    /// <summary>'A..B' is shorthand for 'A B' — a plain two-ref comparison, not a merge base.</summary>
+    [Fact]
+    public void ParseRefSpec_WithTwoDotRange_SplitsIntoTheSameTwoRefs()
+    {
+        var spec = DiffCommand.ParseRefSpec("v1.2.0..v1.3.0", null);
+
+        spec.From.Should().Be("v1.2.0");
+        spec.To.Should().Be("v1.3.0");
+        spec.MergeBase.Should().BeFalse();
+    }
+
+    /// <summary>'A...B' names a merge-base comparison — resolved to an actual SHA later, not here.</summary>
+    [Fact]
+    public void ParseRefSpec_WithThreeDotRange_SplitsIntoBothRefsAndFlagsMergeBase()
+    {
+        var spec = DiffCommand.ParseRefSpec("v1.2.0...v1.3.0", null);
+
+        spec.From.Should().Be("v1.2.0");
+        spec.To.Should().Be("v1.3.0");
+        spec.MergeBase.Should().BeTrue();
+    }
+
+    /// <summary>A range positional plus a second positional names the right side twice — refused.</summary>
+    [Fact]
+    public void ParseRefSpec_WithARangeAndASecondArg_IsRejectedAsInvalidInput()
+    {
+        var act = () => DiffCommand.ParseRefSpec("A..B", "C");
 
         act.Should().Throw<FlowlineException>()
            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
-           .And.Message.Should().Contain("--from");
+           .And.Message.Should().Contain("A..B").And.Contain("C");
+    }
+
+    /// <summary>'..B' has no left side — refused, naming the missing side.</summary>
+    [Fact]
+    public void ParseRefSpec_WithATwoDotRangeMissingTheLeftSide_IsRejectedNamingIt()
+    {
+        var act = () => DiffCommand.ParseRefSpec("..B", null);
+
+        act.Should().Throw<FlowlineException>()
+           .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+           .And.Message.Should().Contain("before");
+    }
+
+    /// <summary>'A..' has no right side — refused, naming the missing side.</summary>
+    [Fact]
+    public void ParseRefSpec_WithATwoDotRangeMissingTheRightSide_IsRejectedNamingIt()
+    {
+        var act = () => DiffCommand.ParseRefSpec("A..", null);
+
+        act.Should().Throw<FlowlineException>()
+           .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+           .And.Message.Should().Contain("after");
     }
 
     // ---- preconditions ------------------------------------------------------------------------
@@ -248,6 +341,50 @@ public class DiffCommandTests : IDisposable
         exitCode.Should().Be((int)ExitCode.Success);
         console.Output.Should().Contain("Account");
         console.Output.Should().NotContain("Contact");
+    }
+
+    /// <summary>AE10. A three-dot range reports only the changes made after the two branches' shared base —
+    /// not the change that landed on the base branch after they split.</summary>
+    [Fact]
+    public async Task DiffAsync_WithThreeDotRange_ReportsOnlyChangesAfterTheMergeBase()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        var trunk = CurrentBranch();
+        RunGit("branch", "release");
+        RunGit("checkout", "release");
+        await WriteComponentAsync(srcFolder, "Entities/Contact/Entity.xml", "<entity/>");
+        RunGit("add", ".");
+        RunGit("commit", "-m", "release-only change");
+        RunGit("checkout", trunk);
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        RunGit("add", ".");
+        RunGit("commit", "-m", "main-only change");
+        var (command, console) = MakeCommand();
+
+        var exitCode = await command.DiffAsync(_root, from: $"{trunk}...release", to: null, writeTo: null,
+            verbose: false, exitCodeOnChanges: false, CancellationToken.None);
+
+        exitCode.Should().Be((int)ExitCode.Success);
+        console.Output.Should().Contain("Contact");
+        console.Output.Should().NotContain("Account");
+    }
+
+    /// <summary>AE10. Two refs sharing no common history fail, naming both refs.</summary>
+    [Fact]
+    public async Task DiffAsync_WithThreeDotRangeAndNoCommonBase_FailsNamingBothRefs()
+    {
+        await CreateSolutionRepoAsync();
+        var trunk = CurrentBranch();
+        RunGit("checkout", "--orphan", "unrelated");
+        RunGit("commit", "--allow-empty", "-m", "unrelated root");
+        var (command, _) = MakeCommand();
+
+        var act = () => command.DiffAsync(_root, from: $"{trunk}...unrelated", to: null, writeTo: null,
+            verbose: false, exitCodeOnChanges: false, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .And.Message.Should().Contain(trunk).And.Contain("unrelated");
     }
 
     /// <summary>R13. An unknown ref fails as a missing resource, with the command that lists the real ones.</summary>
@@ -594,6 +731,29 @@ public class DiffCommandTests : IDisposable
     [Fact]
     public void WriteFlag_Absent_BindsAsNotSet() => BindDiff().Write.IsSet.Should().BeFalse();
 
+    // ---- positional binding (R28/R10) ----------------------------------------------------------
+    // Goes through real Spectre binding, same as the --write probes above: only the parser can say
+    // whether [CommandArgument(0/1)] actually wires up two positionals rather than options.
+
+    [Fact]
+    public void Positionals_WithTwoRefs_BindFromAndTo()
+    {
+        var settings = BindDiff("v1.2.0", "v1.3.0");
+
+        settings.From.Should().Be("v1.2.0");
+        settings.To.Should().Be("v1.3.0");
+    }
+
+    /// <summary>A range stays one token at the binding layer — ParseRefSpec is what splits it later.</summary>
+    [Fact]
+    public void Positionals_WithAThreeDotRange_BindsItWholeAsFrom()
+    {
+        var settings = BindDiff("v1.2.0...v1.3.0");
+
+        settings.From.Should().Be("v1.2.0...v1.3.0");
+        settings.To.Should().BeNull();
+    }
+
     // ---- --exit-code --------------------------------------------------------------------------
 
     /// <summary>R11. Without --exit-code, finding changes is not a failure — the run exits 0.</summary>
@@ -619,6 +779,22 @@ public class DiffCommandTests : IDisposable
         var (command, _) = MakeCommand();
 
         var exitCode = await command.DiffAsync(_root, from: null, to: null, writeTo: null, verbose: false,
+            exitCodeOnChanges: true, CancellationToken.None);
+
+        exitCode.Should().Be((int)ExitCode.ChangesFound);
+    }
+
+    /// <summary>R11/R28. --exit-code still applies when both sides are given as positionals.</summary>
+    [Fact]
+    public async Task DiffAsync_WithTwoPositionalsAndExitCodeOption_ExitsChangesFound()
+    {
+        var srcFolder = await CreateSolutionRepoAsync();
+        await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
+        RunGit("add", ".");
+        RunGit("commit", "-m", "account");
+        var (command, _) = MakeCommand();
+
+        var exitCode = await command.DiffAsync(_root, from: "HEAD~1", to: "HEAD", writeTo: null, verbose: false,
             exitCodeOnChanges: true, CancellationToken.None);
 
         exitCode.Should().Be((int)ExitCode.ChangesFound);
