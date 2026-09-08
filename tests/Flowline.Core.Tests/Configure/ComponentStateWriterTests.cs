@@ -12,7 +12,7 @@ namespace Flowline.Core.Tests.Configure;
 public class ComponentStateWriterTests
 {
     static InventoryComponent Flow(bool enabled) =>
-        new(ConfigurableComponentKind.Flow, "order_processing", Guid.NewGuid(), enabled);
+        new(ConfigurableComponentKind.CloudFlow, "order_processing", Guid.NewGuid(), enabled);
 
     static InventoryComponent Step(bool enabled) =>
         new(ConfigurableComponentKind.PluginStep, "Contoso: Create of account", Guid.NewGuid(), enabled);

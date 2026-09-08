@@ -1,4 +1,4 @@
-using Flowline.Core.OrphanCleanup;
+﻿using Flowline.Core.OrphanCleanup;
 using Flowline.Core.Services;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
@@ -6,7 +6,7 @@ using Microsoft.Xrm.Sdk.Query;
 
 namespace Flowline.Core.Configure;
 
-/// <summary>The four component classes a settings file can declare.</summary>
+/// <summary>The five component classes a settings file can declare.</summary>
 public enum ConfigurableComponentKind
 {
     /// <summary>Environment variable value, addressed by the definition's schema name.</summary>
@@ -15,8 +15,11 @@ public enum ConfigurableComponentKind
     /// <summary>Connection reference, addressed by its logical name.</summary>
     ConnectionReference,
 
-    /// <summary>Cloud flow or classic workflow, addressed by <c>workflow.uniquename</c>.</summary>
-    Flow,
+    /// <summary>Power Automate cloud flow, addressed by <c>workflow.uniquename</c>.</summary>
+    CloudFlow,
+
+    /// <summary>Classic Dataverse workflow, addressed by <c>workflow.uniquename</c>.</summary>
+    Workflow,
 
     /// <summary>Plugin step, addressed by its step name.</summary>
     PluginStep,
@@ -42,7 +45,7 @@ public enum ConfigurableComponentKind
 /// pull one verbatim and must not pull any other.
 /// </param>
 /// <param name="Suspended">
-/// Whether a flow was Suspended rather than Draft. <see cref="Enabled"/> flattens both to not-active, so this
+/// Whether a cloud flow or classic workflow was Suspended rather than Draft. <see cref="Enabled"/> flattens both to not-active, so this
 /// is the only way an apply can tell a flow that stopped itself from one that was never started (KTD8).
 /// Always <c>false</c> for a plugin step, whose table has no third state.
 /// </param>
@@ -107,8 +110,35 @@ public sealed record InventoryMatch(InventoryComponent? Component, IReadOnlyList
 /// </remarks>
 public static class SolutionComponentInventory
 {
-    /// <summary><c>solutioncomponent.componenttype</c> for a workflow or cloud flow.</summary>
+    /// <summary><c>solutioncomponent.componenttype</c> for anything in the Process family.</summary>
+    /// <remarks>
+    /// One component type covers seven unrelated things, so it is never enough on its own — see
+    /// <see cref="ManagedWorkflowCategories"/>.
+    /// </remarks>
     public const int WorkflowComponentType = 29;
+
+    /// <summary><c>workflow.category</c> for a classic Dataverse workflow.</summary>
+    public const int WorkflowCategoryClassic = 0;
+
+    /// <summary><c>workflow.category</c> for a Power Automate cloud flow.</summary>
+    public const int WorkflowCategoryModernFlow = 5;
+
+    /// <summary>The only two Process categories a settings file manages.</summary>
+    /// <remarks>
+    /// <c>workflow.category</c>: 0 Workflow, 1 Dialog, 2 Business Rule, 3 Action, 4 Business Process Flow,
+    /// 5 Modern Flow, 6 Desktop Flow, 7 AI Flow (Dynamics 365 adds 9000, Web Client API Flow).
+    /// <see href="https://learn.microsoft.com/power-apps/developer/data-platform/reference/entities/workflow"/>
+    ///
+    /// All eight are <c>workflow</c> rows carrying a <c>statecode</c>, so an unfiltered read hands the state
+    /// writer a business rule or a business process flow and a pull writes it into the file as an ordinary
+    /// component. Applying that file then deactivates it. Narrowing here rather than at the writer keeps the
+    /// rows out of the inventory entirely, so <c>configure</c> can neither report nor touch them.
+    ///
+    /// Business process flows are deliberately outside this set. They are legitimately per-environment
+    /// state, but they are not flows in the Power Automate sense and belong in a section of their own if
+    /// anyone asks for one.
+    /// </remarks>
+    public static readonly int[] ManagedWorkflowCategories = [WorkflowCategoryClassic, WorkflowCategoryModernFlow];
 
     /// <summary><c>solutioncomponent.componenttype</c> for a plugin step.</summary>
     public const int SdkMessageProcessingStepComponentType = 92;
@@ -170,16 +200,24 @@ public static class SolutionComponentInventory
 
         var query = new QueryExpression("workflow")
         {
-            ColumnSet = new ColumnSet("workflowid", "uniquename", "name", "statecode"),
+            ColumnSet = new ColumnSet("workflowid", "uniquename", "name", "statecode", "category"),
             NoLock = true,
         };
         query.Criteria.AddCondition("workflowid", ConditionOperator.In, ids.Cast<object>().ToArray());
+        // Filtered in the query rather than in LINQ afterwards, so the rows never come back at all.
+        query.Criteria.AddCondition("category", ConditionOperator.In, ManagedWorkflowCategories.Cast<object>().ToArray());
 
         var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
 
         return entities
+            // Checked again on the way out, not because the query is unreliable, but because KindOf has no
+            // way to reject a row: a category it does not recognise would silently become a classic
+            // workflow. Dropping an unmanaged row here is what keeps a business process flow out of the
+            // settings file if the condition above is ever loosened.
+            .Where(e => ManagedWorkflowCategories.Contains(
+                e.GetAttributeValue<OptionSetValue>("category")?.Value ?? -1))
             .Select(e => new InventoryComponent(
-                ConfigurableComponentKind.Flow,
+                KindOf(e),
                 // uniquename is stable across renames and is what a settings file keys on; name is the
                 // renameable display label and is only a fallback for a row that has no unique name.
                 e.GetAttributeValue<string>("uniquename") ?? e.GetAttributeValue<string>("name") ?? string.Empty,
@@ -189,6 +227,16 @@ public static class SolutionComponentInventory
             .Where(c => c.Name.Length > 0)
             .ToList();
     }
+
+    /// <summary>Which settings-file section a Process row belongs to.</summary>
+    /// <remarks>
+    /// The query already narrows to the two managed categories, so anything that is not a modern flow here
+    /// is a classic workflow.
+    /// </remarks>
+    static ConfigurableComponentKind KindOf(Entity workflow) =>
+        workflow.GetAttributeValue<OptionSetValue>("category")?.Value == WorkflowCategoryModernFlow
+            ? ConfigurableComponentKind.CloudFlow
+            : ConfigurableComponentKind.Workflow;
 
     /// <summary>
     /// <c>workflow.statecode</c>: 0 Draft, 1 Activated, 2 Suspended.

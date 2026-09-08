@@ -10,7 +10,7 @@ public class SettingsFileMergerTests
     {
         var document = new SettingsDocument();
         foreach (var (name, enabled) in flows)
-            document.Flows.Add(new ComponentStateEntry(name, enabled));
+            document.CloudFlows.Add(new ComponentStateEntry(name, enabled));
         return document;
     }
 
@@ -23,7 +23,7 @@ public class SettingsFileMergerTests
         var existing = Existing(("Order Processing", false));
         var live = new[] { new ComponentStateEntry("Order Processing", false), new ComponentStateEntry("New Flow", false) };
 
-        var result = SettingsFileMerger.MergeStates(existing.Flows, live);
+        var result = SettingsFileMerger.MergeStates(existing.CloudFlows, live);
 
         result.Merged.Select(e => e.Name).Should().Contain("New Flow");
         result.Added.Should().ContainSingle().Which.Should().Be("New Flow");
@@ -37,7 +37,7 @@ public class SettingsFileMergerTests
         var existing = Existing(("Order Processing", true));
         var live = new[] { new ComponentStateEntry("Order Processing", false) };
 
-        var result = SettingsFileMerger.MergeStates(existing.Flows, live);
+        var result = SettingsFileMerger.MergeStates(existing.CloudFlows, live);
 
         result.Merged.Should().ContainSingle().Which.Enabled.Should().BeTrue();
         result.Added.Should().BeEmpty();
@@ -49,7 +49,7 @@ public class SettingsFileMergerTests
         var existing = Existing(("Order Processing", false), ("Retired Flow", false));
         var live = new[] { new ComponentStateEntry("Order Processing", false) };
 
-        var result = SettingsFileMerger.MergeStates(existing.Flows, live);
+        var result = SettingsFileMerger.MergeStates(existing.CloudFlows, live);
 
         result.Vanished.Should().ContainSingle().Which.Should().Be("Retired Flow");
         result.Merged.Select(e => e.Name).Should().Contain("Retired Flow",
@@ -67,7 +67,7 @@ public class SettingsFileMergerTests
             new ComponentStateEntry("C flow", false),
         };
 
-        var result = SettingsFileMerger.MergeStates(existing.Flows, live);
+        var result = SettingsFileMerger.MergeStates(existing.CloudFlows, live);
 
         result.Merged.Select(e => e.Name).Should().ContainInOrder("B flow", "A flow", "C flow");
     }
@@ -92,7 +92,7 @@ public class SettingsFileMergerTests
         var existing = Existing(("Order Processing", true));
 
         var result = SettingsFileMerger.MergeStates(
-            existing.Flows,
+            existing.CloudFlows,
             live: [],
             presentNames: ["Order Processing"]);
 
@@ -106,7 +106,7 @@ public class SettingsFileMergerTests
         var existing = Existing(("Deleted flow", false));
 
         var result = SettingsFileMerger.MergeStates(
-            existing.Flows,
+            existing.CloudFlows,
             live: [],
             presentNames: ["Something else"]);
 

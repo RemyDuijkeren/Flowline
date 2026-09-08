@@ -1,4 +1,4 @@
----
+﻿---
 name: flowline
 description: Dataverse ALM via the Flowline CLI — greenfield solution creation, plugin registration, web resource sync, and solution deploy for Git-tracked Dataverse solutions. Use when the repo has a `.flowline` file at its root, when the user mentions Dataverse plugins, web resources, Custom APIs, or solution deploy, or when spkl/PAC plugin registration workflows come up.
 ---
@@ -72,9 +72,10 @@ routine post-deploy step.
    labeled backup, then stops before importing; it ends with `Dry run complete`.
 
 6. `flowline configure <env>` after a deploy, when the environment needs values or component state a
-   deploy can't carry: environment variable values, connection reference bindings, and flows or plugin
-   steps that must be off. It reads `Solution/deploymentSettings.<env>.json` and touches only what that
-   file names. Re-running it changes nothing, so it is safe on every pipeline run; `--dry-run` reports
+   deploy can't carry: environment variable values, connection reference bindings, and the cloud flows,
+   classic workflows or plugin steps that must be off. It reads `Solution/deploymentSettings.<env>.json`
+   and touches only what that file names — `CloudFlows`, `Workflows` and `PluginSteps` are name-to-boolean
+   maps, and business process flows and business rules are outside its reach entirely. Re-running it changes nothing, so it is safe on every pipeline run; `--dry-run` reports
    the change set and writes nothing. `flowline configure <env> --pull` writes the file from the
    environment instead — use it to create the first one, then commit it.
 

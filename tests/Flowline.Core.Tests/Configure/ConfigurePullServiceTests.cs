@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Flowline.Core.Configure;
 using Flowline.Core.Models;
 using Microsoft.PowerPlatform.Dataverse.Client;
@@ -35,10 +35,13 @@ public class ConfigurePullServiceTests
         new(ConfigurableComponentKind.ConnectionReference, name, Guid.NewGuid(), null, CurrentValue: connectionId);
 
     static InventoryComponent Flow(string name, bool enabled) =>
-        new(ConfigurableComponentKind.Flow, name, Guid.NewGuid(), enabled);
+        new(ConfigurableComponentKind.CloudFlow, name, Guid.NewGuid(), enabled);
 
     static InventoryComponent Step(string name, bool enabled) =>
         new(ConfigurableComponentKind.PluginStep, name, Guid.NewGuid(), enabled);
+
+    static InventoryComponent ClassicWorkflow(string name, bool enabled) =>
+        new(ConfigurableComponentKind.Workflow, name, Guid.NewGuid(), enabled);
 
     // The skeleton is what a real `pac solution create-settings` run emits: values empty, ConnectorId
     // present, and a third section beyond the two the published parameter docs list.
@@ -162,14 +165,14 @@ public class ConfigurePullServiceTests
     public async Task Build_FlowEntryWhoseComponentLeftTheSolution_IsKeptAndReported()
     {
         var existing = Doc("""
-            { "Flows": [ { "Name": "Deleted flow", "Enabled": false } ] }
+            { "CloudFlows": { "Deleted flow": false } }
             """);
 
         var result = await new ConfigurePullService().BuildAsync(
             Service(), Doc(PacSkeleton), existing, new SolutionInventory([]), CancellationToken.None);
 
         result.Vanished.Should().Contain(v => v.Contains("Deleted flow"));
-        result.Document.Flows.Should().ContainSingle().Which.Name.Should().Be("Deleted flow");
+        result.Document.CloudFlows.Should().ContainSingle().Which.Name.Should().Be("Deleted flow");
     }
 
     // The counterpart: a flow the file declares that is simply switched on is still in the solution, and
@@ -178,7 +181,7 @@ public class ConfigurePullServiceTests
     public async Task Build_FlowEntryWhoseComponentIsOn_IsNotReportedAsVanished()
     {
         var existing = Doc("""
-            { "Flows": [ { "Name": "Order Processing", "Enabled": true } ] }
+            { "CloudFlows": { "Order Processing": true } }
             """);
 
         var result = await new ConfigurePullService().BuildAsync(
@@ -186,7 +189,7 @@ public class ConfigurePullServiceTests
             new SolutionInventory([Flow("Order Processing", true)]), CancellationToken.None);
 
         result.Vanished.Should().BeEmpty();
-        result.Document.Flows.Should().ContainSingle().Which.Enabled.Should().BeTrue();
+        result.Document.CloudFlows.Should().ContainSingle().Which.Enabled.Should().BeTrue();
     }
 
     // ── Determinism (R12c) ───────────────────────────────────────────────────
@@ -244,7 +247,7 @@ public class ConfigurePullServiceTests
         var result = await new ConfigurePullService().BuildAsync(
             Service(), Doc(PacSkeleton), null, inventory, CancellationToken.None);
 
-        result.Document.Flows.Should().ContainSingle().Which.Name.Should().Be("nightly_sync");
+        result.Document.CloudFlows.Should().ContainSingle().Which.Name.Should().Be("nightly_sync");
         result.Document.PluginSteps.Should().ContainSingle().Which.Name.Should().Be("audit_step");
     }
 
@@ -254,14 +257,14 @@ public class ConfigurePullServiceTests
     public async Task Build_AnOnComponentTheFileAlreadyDeclares_KeepsItsLine()
     {
         var existing = Doc("""
-            { "EnvironmentVariables": [], "Flows": [ { "Name": "order_processing", "Enabled": true } ] }
+            { "EnvironmentVariables": [], "CloudFlows": { "order_processing": true } }
             """);
 
         var result = await new ConfigurePullService().BuildAsync(
             Service(), Doc(PacSkeleton), existing,
             new SolutionInventory([Flow("order_processing", true)]), CancellationToken.None);
 
-        result.Document.Flows.Should().ContainSingle()
+        result.Document.CloudFlows.Should().ContainSingle()
             .Which.Should().Be(new ComponentStateEntry("order_processing", true));
     }
 
@@ -426,5 +429,23 @@ public class ConfigurePullServiceTests
         outcome.Unchanged.Should().Be(1);
         outcome.Applied.Should().Be(0);
         await applyService.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    // Dataverse keeps cloud flows and classic workflows in one table, so an inventory that did not separate
+    // them wrote both into one section. Whoever edits the file cares about the difference.
+    [Fact]
+    public async Task Build_ClassicWorkflowsAndCloudFlows_LandInSeparateSections()
+    {
+        var inventory = new SolutionInventory(
+        [
+            Flow("Order Processing", false),
+            ClassicWorkflow("Escalate case", false),
+        ]);
+
+        var result = await new ConfigurePullService().BuildAsync(
+            Service(), Doc(PacSkeleton), null, inventory, CancellationToken.None);
+
+        result.Document.CloudFlows.Should().ContainSingle().Which.Name.Should().Be("Order Processing");
+        result.Document.Workflows.Should().ContainSingle().Which.Name.Should().Be("Escalate case");
     }
 }

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Flowline.Core.Configure;
@@ -21,12 +21,18 @@ public sealed record ComponentStateEntry(string Name, bool Enabled);
 /// drop whatever arrives next, so every top-level property Flowline does not own is kept as a raw node and
 /// written back untouched (KTD on PAC-generated sections, R12a).
 ///
-/// The two Flowline-owned sections are typed, because Flowline is the thing that reads them.
+/// The three Flowline-owned sections are typed, because Flowline is the thing that reads them. They are
+/// name-to-boolean maps rather than arrays of objects: a solution runs to dozens of flows, and four lines per
+/// entry buries the handful that carry a deliberate exception. PAC's own sections keep their array shape,
+/// because PAC writes them.
 /// </remarks>
 public sealed class SettingsDocument
 {
-    /// <summary>Top-level property name holding declared flow and classic workflow state.</summary>
-    public const string FlowsProperty = "Flows";
+    /// <summary>Top-level property name holding declared cloud flow state.</summary>
+    public const string CloudFlowsProperty = "CloudFlows";
+
+    /// <summary>Top-level property name holding declared classic workflow state.</summary>
+    public const string WorkflowsProperty = "Workflows";
 
     /// <summary>Top-level property name holding declared plugin step state.</summary>
     public const string PluginStepsProperty = "PluginSteps";
@@ -34,8 +40,15 @@ public sealed class SettingsDocument
     /// <summary>Every top-level property Flowline does not own, in the order the source file carried them.</summary>
     public IDictionary<string, JsonNode?> PassThrough { get; init; } = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
 
-    /// <summary>Declared state for cloud flows and classic workflows, keyed by <c>workflow.uniquename</c> (KTD9).</summary>
-    public IList<ComponentStateEntry> Flows { get; init; } = [];
+    /// <summary>Declared state for Power Automate cloud flows, keyed by <c>workflow.uniquename</c> (KTD9).</summary>
+    public IList<ComponentStateEntry> CloudFlows { get; init; } = [];
+
+    /// <summary>Declared state for classic Dataverse workflows, keyed by <c>workflow.uniquename</c> (KTD9).</summary>
+    /// <remarks>
+    /// Separate from <see cref="CloudFlows"/> because they are separate things to the person editing the
+    /// file, even though Dataverse keeps both in the <c>workflow</c> table.
+    /// </remarks>
+    public IList<ComponentStateEntry> Workflows { get; init; } = [];
 
     /// <summary>Declared state for plugin steps, keyed by step unique name (KTD9).</summary>
     public IList<ComponentStateEntry> PluginSteps { get; init; } = [];

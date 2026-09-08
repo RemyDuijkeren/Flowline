@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Flowline.Core;
 using Flowline.Core.Configure;
 using Flowline.Core.Models;
@@ -21,10 +21,10 @@ public class ConfigureApplyServiceTests
     }
 
     static InventoryComponent Flow(string name, bool enabled) =>
-        new(ConfigurableComponentKind.Flow, name, Guid.NewGuid(), enabled);
+        new(ConfigurableComponentKind.CloudFlow, name, Guid.NewGuid(), enabled);
 
     static InventoryComponent SuspendedFlow(string name) =>
-        new(ConfigurableComponentKind.Flow, name, Guid.NewGuid(), false, Suspended: true);
+        new(ConfigurableComponentKind.CloudFlow, name, Guid.NewGuid(), false, Suspended: true);
 
     static InventoryComponent Variable(string name) =>
         new(ConfigurableComponentKind.EnvironmentVariable, name, Guid.NewGuid(), null);
@@ -46,7 +46,7 @@ public class ConfigureApplyServiceTests
 
         var document = DocumentWith("""
             {
-              "Flows": [ { "Name": "order_processing", "Enabled": true } ],
+              "CloudFlows": { "order_processing": true },
               "ConnectionReferences": [ { "LogicalName": "cr_dataverse", "ConnectionId": "abc123" } ]
             }
             """);
@@ -71,7 +71,7 @@ public class ConfigureApplyServiceTests
         var document = DocumentWith("""
             {
               "ConnectionReferences": [ { "LogicalName": "cr_dataverse", "ConnectionId": "abc123" } ],
-              "Flows": [ { "Name": "order_processing", "Enabled": true } ]
+              "CloudFlows": { "order_processing": true }
             }
             """);
 
@@ -87,7 +87,7 @@ public class ConfigureApplyServiceTests
     [Fact]
     public async Task Apply_DeclaredComponentAbsentFromTheTarget_IsSkipped()
     {
-        var document = DocumentWith("""{ "Flows": [ { "Name": "missing_flow", "Enabled": true } ] }""");
+        var document = DocumentWith("""{ "CloudFlows": { "missing_flow": true } }""");
 
         var outcome = await new ConfigureApplyService()
             .ApplyAsync(Service(), document, new SolutionInventory([]), RunMode.Normal, CancellationToken.None);
@@ -102,7 +102,7 @@ public class ConfigureApplyServiceTests
     [Fact]
     public async Task Apply_AllSkippedUnderDryRun_IsStillInconclusive()
     {
-        var document = DocumentWith("""{ "Flows": [ { "Name": "missing_flow", "Enabled": true } ] }""");
+        var document = DocumentWith("""{ "CloudFlows": { "missing_flow": true } }""");
 
         var outcome = await new ConfigureApplyService()
             .ApplyAsync(Service(), document, new SolutionInventory([]), RunMode.DryRun, CancellationToken.None);
@@ -120,7 +120,7 @@ public class ConfigureApplyServiceTests
         var service = Service();
         var document = DocumentWith("""
             {
-              "Flows": [ { "Name": "order_processing", "Enabled": true } ],
+              "CloudFlows": { "order_processing": true },
               "ConnectionReferences": [ { "LogicalName": "cr_dataverse", "ConnectionId": "abc123" } ]
             }
             """);
@@ -144,10 +144,10 @@ public class ConfigureApplyServiceTests
     {
         var document = DocumentWith("""
             {
-              "Flows": [
-                { "Name": "already_on", "Enabled": true },
-                { "Name": "currently_off", "Enabled": true }
-              ]
+              "CloudFlows": {
+                "already_on": true,
+                "currently_off": true
+              }
             }
             """);
 
@@ -166,7 +166,7 @@ public class ConfigureApplyServiceTests
     public async Task Apply_DryRun_ReportsChangesAndIssuesNoWrite()
     {
         var service = Service();
-        var document = DocumentWith("""{ "Flows": [ { "Name": "order_processing", "Enabled": true } ] }""");
+        var document = DocumentWith("""{ "CloudFlows": { "order_processing": true } }""");
         var inventory = new SolutionInventory([Flow("order_processing", false)]);
 
         var outcome = await new ConfigureApplyService()
@@ -182,7 +182,7 @@ public class ConfigureApplyServiceTests
     public async Task Apply_UndeclaredComponent_IsReportedAndNotTouched()
     {
         var service = Service();
-        var document = DocumentWith("""{ "Flows": [ { "Name": "declared_flow", "Enabled": true } ] }""");
+        var document = DocumentWith("""{ "CloudFlows": { "declared_flow": true } }""");
         var inventory = new SolutionInventory([Flow("declared_flow", false), Flow("other_flow", false)]);
 
         var outcome = await new ConfigureApplyService()
@@ -195,7 +195,7 @@ public class ConfigureApplyServiceTests
     [Fact]
     public async Task Apply_AmbiguousName_IsSkippedNamingTheCount()
     {
-        var document = DocumentWith("""{ "Flows": [ { "Name": "shared", "Enabled": true } ] }""");
+        var document = DocumentWith("""{ "CloudFlows": { "shared": true } }""");
         var inventory = new SolutionInventory([Flow("shared", false), Flow("shared", false)]);
 
         var outcome = await new ConfigureApplyService()
@@ -264,8 +264,8 @@ public class ConfigureApplyServiceTests
             {
               "EnvironmentVariables": [ { "SchemaName": "cr123_Url", "Value": "https://api.contoso.com" } ],
               "ConnectionReferences": [ { "LogicalName": "cr123_dataverse", "ConnectionId": "{{connectionId}}" } ],
-              "Flows": [ { "Name": "Nightly reconciliation", "Enabled": false } ],
-              "PluginSteps": [ { "Name": "Contoso.Plugins.OnCreate: Create of account", "Enabled": false } ]
+              "CloudFlows": { "Nightly reconciliation": false },
+              "PluginSteps": { "Contoso.Plugins.OnCreate: Create of account": false }
             }
             """);
 
@@ -324,7 +324,7 @@ public class ConfigureApplyServiceTests
     {
         var service = Service();
         var document = DocumentWith("""
-            { "Flows": [ { "Name": "Nightly reconciliation", "Enabled": false } ] }
+            { "CloudFlows": { "Nightly reconciliation": false } }
             """);
 
         var outcome = await new ConfigureApplyService().ApplyAsync(
@@ -343,7 +343,7 @@ public class ConfigureApplyServiceTests
     {
         var service = Service();
         var document = DocumentWith("""
-            { "Flows": [ { "Name": "Nightly reconciliation", "Enabled": true } ] }
+            { "CloudFlows": { "Nightly reconciliation": true } }
             """);
 
         var outcome = await new ConfigureApplyService().ApplyAsync(
@@ -360,7 +360,7 @@ public class ConfigureApplyServiceTests
     {
         var service = Service();
         var document = DocumentWith("""
-            { "Flows": [ { "Name": "Nightly reconciliation", "Enabled": false } ] }
+            { "CloudFlows": { "Nightly reconciliation": false } }
             """);
 
         var outcome = await new ConfigureApplyService().ApplyAsync(
@@ -384,10 +384,10 @@ public class ConfigureApplyServiceTests
 
         var document = DocumentWith("""
             {
-              "Flows": [
-                { "Name": "First", "Enabled": true },
-                { "Name": "Second", "Enabled": true }
-              ]
+              "CloudFlows": {
+                "First": true,
+                "Second": true
+              }
             }
             """);
 
@@ -413,7 +413,7 @@ public class ConfigureApplyServiceTests
             .Returns<Task>(_ => throw new InvalidOperationException("client is broken"));
 
         var document = DocumentWith("""
-            { "Flows": [ { "Name": "Nightly reconciliation", "Enabled": true } ] }
+            { "CloudFlows": { "Nightly reconciliation": true } }
             """);
 
         var act = async () => await new ConfigureApplyService().ApplyAsync(
@@ -421,5 +421,43 @@ public class ConfigureApplyServiceTests
             RunMode.Normal, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    // The Workflows section reaches the same writer and the same table as CloudFlows, but only if the apply
+    // walks it. Leaving it out would silently ignore every classic workflow the file declares.
+    [Fact]
+    public async Task Apply_WorkflowsSection_IsAppliedLikeCloudFlows()
+    {
+        var service = Substitute.For<IOrganizationServiceAsync2>();
+        var document = DocumentWith("""{ "Workflows": { "Escalate case": true } }""");
+        var inventory = new SolutionInventory(
+        [
+            new InventoryComponent(ConfigurableComponentKind.Workflow, "Escalate case", Guid.NewGuid(), false),
+        ]);
+
+        var outcome = await new ConfigureApplyService().ApplyAsync(
+            service, document, inventory, RunMode.Normal, CancellationToken.None);
+
+        outcome.Components.Should().ContainSingle()
+            .Which.Outcome.Should().Be(ComponentOutcomeKind.Applied);
+        await service.Received(1).UpdateAsync(
+            Arg.Is<Entity>(e => e.LogicalName == "workflow"), Arg.Any<CancellationToken>());
+    }
+
+    // A cloud flow named in the Workflows section addresses nothing, because Match is scoped by kind. That is
+    // the point of two sections: a name in the wrong one is reported, not applied to whatever shares it.
+    [Fact]
+    public async Task Apply_CloudFlowDeclaredUnderWorkflows_IsSkippedRatherThanMatched()
+    {
+        var service = Substitute.For<IOrganizationServiceAsync2>();
+        var document = DocumentWith("""{ "Workflows": { "Order Processing": true } }""");
+        var inventory = new SolutionInventory([Flow("Order Processing", false)]);
+
+        var outcome = await new ConfigureApplyService().ApplyAsync(
+            service, document, inventory, RunMode.Normal, CancellationToken.None);
+
+        outcome.Components.Should().ContainSingle()
+            .Which.Outcome.Should().Be(ComponentOutcomeKind.Skipped);
+        await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
     }
 }

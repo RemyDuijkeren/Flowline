@@ -1,4 +1,4 @@
-# Flowline
+﻿# Flowline
 
 <table>
 <tr>
@@ -163,7 +163,7 @@ export function onChangeCreditlimit(executionContext) { ... }
 | [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/10-Generate-Early-Bound-Types)         | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)          |
 | [`drift <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#drift)                 | Compare committed source, or a pre-built zip with `--path`, against a live environment; read-only. Use `diff` for the git-history axis |
 | [`diff`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#diff)                            | Report which solution components changed between two points in git history; no Dataverse connection, no auth, no network. The git-axis counterpart to `drift` |
-| [`configure <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#configure)       | Apply a settings file to an environment — environment variable values, connection references, flow and plugin step state; `--pull` captures one instead |
+| [`configure <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#configure)       | Apply a settings file to an environment — environment variable values, connection references, cloud flow, workflow and plugin step state; `--pull` captures one instead |
 | [`scaffold <part>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#scaffold)             | Write a project template into this folder and add it to the nearest solution file. No Dataverse, no auth, no network. Alias: `new` |
 | [`status`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#status)                        | Show environment info, Flowline version, and PAC CLI status                                  |
 | [`sln add <path>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#sln-add)               | Add a `.cdsproj` to the solution file — `dotnet sln add` refuses those. Runs standalone      |

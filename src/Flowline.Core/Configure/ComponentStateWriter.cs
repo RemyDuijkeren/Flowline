@@ -1,4 +1,4 @@
-using System.ServiceModel;
+﻿using System.ServiceModel;
 using Flowline.Core.Models;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
@@ -27,7 +27,7 @@ public enum ComponentOutcomeKind
 /// <param name="Outcome">What happened.</param>
 /// <param name="Detail">Why, for a skip or a failure. Never carries a component value (R10a).</param>
 /// <param name="WasSuspended">
-/// Set when a flow was in the Suspended state before being activated, so KTD8's report can say so and a
+/// Set when a cloud flow or classic workflow was in the Suspended state before being activated, so KTD8's report can say so and a
 /// re-suspension by the platform stays visible.
 /// </param>
 public sealed record ComponentOutcome(
@@ -37,7 +37,7 @@ public sealed record ComponentOutcome(
     string? Detail = null,
     bool WasSuspended = false);
 
-/// <summary>Turns flows, classic workflows and plugin steps on or off (R7, KTD7, KTD8).</summary>
+/// <summary>Turns cloud flows, classic workflows and plugin steps on or off (R7, KTD7, KTD8).</summary>
 /// <remarks>
 /// State is written by updating <c>statecode</c> and <c>statuscode</c> directly, following
 /// <c>OrphanCleanupService.TryDeactivateWorkflowAsync</c>. Nothing in this codebase uses
@@ -106,7 +106,9 @@ public static class ComponentStateWriter
     /// <summary>Builds the state update for a component, or <c>null</c> for a class with no state.</summary>
     internal static Entity? BuildStateUpdate(InventoryComponent component, bool enabled) => component.Kind switch
     {
-        ConfigurableComponentKind.Flow => new Entity("workflow", component.Id)
+        // Both sections write the same table: a classic workflow and a cloud flow are both `workflow` rows,
+        // separated only by category, which the inventory has already read.
+        ConfigurableComponentKind.CloudFlow or ConfigurableComponentKind.Workflow => new Entity("workflow", component.Id)
         {
             ["statecode"] = new OptionSetValue(enabled ? WorkflowStateActivated : WorkflowStateDraft),
             ["statuscode"] = new OptionSetValue(enabled ? WorkflowStatusActivated : WorkflowStatusDraft),

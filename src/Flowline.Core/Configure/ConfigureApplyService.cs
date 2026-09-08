@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Flowline.Core.Models;
 using Microsoft.PowerPlatform.Dataverse.Client;
 
@@ -92,16 +92,23 @@ public sealed class ConfigureApplyService
                 .ConfigureAwait(false));
         }
 
-        // Tier 2 — flow and workflow state.
-        foreach (var entry in document.Flows)
+        // Tier 2 — cloud flow and classic workflow state.
+        foreach (var (kind, entries) in new[]
+                 {
+                     (ConfigurableComponentKind.CloudFlow, document.CloudFlows),
+                     (ConfigurableComponentKind.Workflow, document.Workflows),
+                 })
         {
-            declaredNames.Add((ConfigurableComponentKind.Flow, entry.Name));
-            outcomes.Add(await ApplyOneAsync(inventory, ConfigurableComponentKind.Flow, entry.Name,
-                // Suspended is neither on nor off, so the writer needs to be told: a suspended flow the file
-                // declares off is not already off, and has to reach Draft (KTD8).
-                component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct,
-                    currentlySuspended: component.Suspended))
-                .ConfigureAwait(false));
+            foreach (var entry in entries)
+            {
+                declaredNames.Add((kind, entry.Name));
+                outcomes.Add(await ApplyOneAsync(inventory, kind, entry.Name,
+                    // Suspended is neither on nor off, so the writer needs to be told: a suspended flow the
+                    // file declares off is not already off, and has to reach Draft (KTD8).
+                    component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct,
+                        currentlySuspended: component.Suspended))
+                    .ConfigureAwait(false));
+            }
         }
 
         // Tier 3 — plugin step state.

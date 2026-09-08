@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Microsoft.PowerPlatform.Dataverse.Client;
 
 namespace Flowline.Core.Configure;
@@ -230,8 +230,10 @@ public sealed class ConfigurePullService
         List<string> added,
         List<string> vanished)
     {
-        AppendState(document.Flows, existing?.Flows, inventory,
-            ConfigurableComponentKind.Flow, added, vanished);
+        AppendState(document.CloudFlows, existing?.CloudFlows, inventory,
+            ConfigurableComponentKind.CloudFlow, added, vanished);
+        AppendState(document.Workflows, existing?.Workflows, inventory,
+            ConfigurableComponentKind.Workflow, added, vanished);
         AppendState(document.PluginSteps, existing?.PluginSteps, inventory,
             ConfigurableComponentKind.PluginStep, added, vanished);
     }

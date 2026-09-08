@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Flowline.Core.Configure;
@@ -48,8 +48,11 @@ public static class SettingsFileReader
 
             switch (property.Key)
             {
-                case SettingsDocument.FlowsProperty:
-                    ReadStateEntries(value, property.Key, document.Flows);
+                case SettingsDocument.CloudFlowsProperty:
+                    ReadStateEntries(value, property.Key, document.CloudFlows);
+                    break;
+                case SettingsDocument.WorkflowsProperty:
+                    ReadStateEntries(value, property.Key, document.Workflows);
                     break;
                 case SettingsDocument.PluginStepsProperty:
                     ReadStateEntries(value, property.Key, document.PluginSteps);
@@ -81,8 +84,11 @@ public static class SettingsFileReader
         foreach (var pair in document.PassThrough)
             obj[pair.Key] = pair.Value?.DeepClone();
 
-        if (document.Flows.Count > 0)
-            obj[SettingsDocument.FlowsProperty] = WriteStateEntries(document.Flows);
+        if (document.CloudFlows.Count > 0)
+            obj[SettingsDocument.CloudFlowsProperty] = WriteStateEntries(document.CloudFlows);
+
+        if (document.Workflows.Count > 0)
+            obj[SettingsDocument.WorkflowsProperty] = WriteStateEntries(document.Workflows);
 
         if (document.PluginSteps.Count > 0)
             obj[SettingsDocument.PluginStepsProperty] = WriteStateEntries(document.PluginSteps);
@@ -127,41 +133,45 @@ public static class SettingsFileReader
         }
     }
 
+    /// <summary>Reads one Flowline-owned section: a map of component name to true or false.</summary>
+    /// <remarks>
+    /// A map rather than an array of <c>{ Name, Enabled }</c> objects, because this is the half of the file
+    /// people hand-edit and a solution runs to dozens of flows.
+    ///
+    /// Duplicate keys are the one thing the map shape gives up over an array, and `JsonNode.Parse` resolves
+    /// them silently before this method sees the object. That is the same last-one-wins a duplicated key gets
+    /// in every other JSON config, so it is left alone rather than guarded against with a re-parse.
+    /// </remarks>
     static void ReadStateEntries(JsonNode? node, string section, IList<ComponentStateEntry> into)
     {
         if (node is null)
             return;
 
-        if (node is not JsonArray array)
+        if (node is not JsonObject map)
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"The settings file's '{section}' section must be an array.");
+                $"The settings file's '{section}' section must map each name to true or false.");
 
-        foreach (var element in array)
+        foreach (var (name, value) in map)
         {
-            if (element is not JsonObject entry)
-                throw new FlowlineException(ExitCode.ConfigInvalid,
-                    $"Every entry in '{section}' must be an object with a Name and an Enabled value.");
-
-            var name = entry["Name"]?.GetValue<string>();
             if (string.IsNullOrWhiteSpace(name))
                 throw new FlowlineException(ExitCode.ConfigInvalid,
-                    $"An entry in '{section}' is missing its Name.");
+                    $"An entry in '{section}' has no name.");
 
-            if (entry["Enabled"] is not JsonValue enabled || !enabled.TryGetValue<bool>(out var isEnabled))
+            if (value is not JsonValue state || !state.TryGetValue<bool>(out var isEnabled))
                 throw new FlowlineException(ExitCode.ConfigInvalid,
-                    $"Entry '{name}' in '{section}' needs an Enabled value of true or false.");
+                    $"'{name}' in '{section}' needs a value of true or false.");
 
             into.Add(new ComponentStateEntry(name, isEnabled));
         }
     }
 
-    static JsonArray WriteStateEntries(IEnumerable<ComponentStateEntry> entries)
+    static JsonObject WriteStateEntries(IEnumerable<ComponentStateEntry> entries)
     {
-        var array = new JsonArray();
+        var map = new JsonObject();
 
         foreach (var entry in entries)
-            array.Add(new JsonObject { ["Name"] = entry.Name, ["Enabled"] = entry.Enabled });
+            map[entry.Name] = entry.Enabled;
 
-        return array;
+        return map;
     }
 }

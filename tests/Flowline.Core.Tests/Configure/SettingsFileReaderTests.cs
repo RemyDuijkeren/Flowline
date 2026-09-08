@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Flowline.Core;
 using Flowline.Core.Configure;
 using Xunit;
@@ -93,7 +93,7 @@ public class SettingsFileReaderTests
     [Fact]
     public void Write_DocumentWithNoSourceFile_UsesLf()
     {
-        var document = new SettingsDocument { Flows = { new ComponentStateEntry("order_processing", false) } };
+        var document = new SettingsDocument { CloudFlows = { new ComponentStateEntry("order_processing", false) } };
 
         SettingsFileReader.Write(document).Should().NotContain("\r");
     }
@@ -125,19 +125,19 @@ public class SettingsFileReaderTests
         var json = """
             {
               "EnvironmentVariables": [],
-              "Flows": [ { "Name": "Order Processing", "Enabled": false } ],
-              "PluginSteps": [ { "Name": "Contoso.Plugins.OnCreate: Create of account", "Enabled": false } ]
+              "CloudFlows": { "Order Processing": false },
+              "PluginSteps": { "Contoso.Plugins.OnCreate: Create of account": false }
             }
             """;
 
         var document = SettingsFileReader.Parse(json);
 
-        document.Flows.Should().ContainSingle()
+        document.CloudFlows.Should().ContainSingle()
             .Which.Should().Be(new ComponentStateEntry("Order Processing", false));
         document.PluginSteps.Should().ContainSingle()
             .Which.Name.Should().Be("Contoso.Plugins.OnCreate: Create of account");
         document.PassThrough.Should().ContainKey("EnvironmentVariables");
-        document.PassThrough.Should().NotContainKey(SettingsDocument.FlowsProperty);
+        document.PassThrough.Should().NotContainKey(SettingsDocument.CloudFlowsProperty);
     }
 
     // R12c: a second pull against an unchanged environment must produce a byte-identical file, or every run
@@ -151,7 +151,7 @@ public class SettingsFileReaderTests
             {
               "ConnectionReferences": [],
               "EnvironmentVariables": [],
-              "Flows": [ { "Name": "B flow", "Enabled": false }, { "Name": "A flow", "Enabled": false } ]
+              "CloudFlows": { "B flow": false, "A flow": false }
             }
             """));
 
@@ -240,5 +240,68 @@ public class SettingsFileReaderTests
         {
             Directory.Delete(folder, recursive: true);
         }
+    }
+
+    // The shape people hand-edit. An array of { Name, Enabled } objects cost four lines per entry, which
+    // buried the handful of deliberate exceptions a state section exists to carry.
+    [Fact]
+    public void Write_StateSections_AreNameToBooleanMaps()
+    {
+        var document = new SettingsDocument
+        {
+            CloudFlows = { new ComponentStateEntry("Order Processing", false) },
+            Workflows = { new ComponentStateEntry("Escalate case", false) },
+        };
+
+        SettingsFileReader.Write(document).Should().Be(
+            """
+            {
+              "CloudFlows": {
+                "Order Processing": false
+              },
+              "Workflows": {
+                "Escalate case": false
+              }
+            }
+            """.ReplaceLineEndings("\n"));
+    }
+
+    // Cloud flows and classic workflows are both workflow rows in Dataverse but separate things to whoever
+    // edits the file, so each keeps its own section and neither leaks into the other.
+    [Fact]
+    public void Parse_CloudFlowsAndWorkflows_AreKeptApart()
+    {
+        var document = SettingsFileReader.Parse("""
+            {
+              "CloudFlows": { "Order Processing": false },
+              "Workflows": { "Escalate case": true }
+            }
+            """);
+
+        document.CloudFlows.Should().ContainSingle().Which.Name.Should().Be("Order Processing");
+        document.Workflows.Should().ContainSingle()
+            .Which.Should().Be(new ComponentStateEntry("Escalate case", true));
+    }
+
+    [Fact]
+    public void Parse_StateSectionWrittenAsAnArray_IsRejected()
+    {
+        var act = () => SettingsFileReader.Parse(
+            """{ "CloudFlows": [ { "Name": "Order Processing", "Enabled": false } ] }""");
+
+        act.Should().Throw<FlowlineException>()
+            .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
+    }
+
+    [Theory]
+    [InlineData("""{ "CloudFlows": { "Order Processing": "false" } }""")]
+    [InlineData("""{ "CloudFlows": { "Order Processing": null } }""")]
+    [InlineData("""{ "CloudFlows": { "Order Processing": 0 } }""")]
+    public void Parse_StateValueThatIsNotABoolean_IsRejected(string json)
+    {
+        var act = () => SettingsFileReader.Parse(json);
+
+        act.Should().Throw<FlowlineException>()
+            .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
     }
 }

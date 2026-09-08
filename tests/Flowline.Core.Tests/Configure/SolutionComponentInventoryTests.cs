@@ -1,6 +1,9 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Flowline.Core.Configure;
+using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+using NSubstitute;
 using Xunit;
 
 namespace Flowline.Core.Tests.Configure;
@@ -70,14 +73,14 @@ public class SolutionComponentInventoryTests
     static SolutionInventory Inventory(params InventoryComponent[] components) => new(components);
 
     static InventoryComponent Flow(string name) =>
-        new(ConfigurableComponentKind.Flow, name, Guid.NewGuid(), false);
+        new(ConfigurableComponentKind.CloudFlow, name, Guid.NewGuid(), false);
 
     [Fact]
     public void Match_SingleName_ReturnsTheComponent()
     {
         var inventory = Inventory(Flow("order_processing"), Flow("welcome_email"));
 
-        var match = inventory.Match(ConfigurableComponentKind.Flow, "order_processing");
+        var match = inventory.Match(ConfigurableComponentKind.CloudFlow, "order_processing");
 
         match.Component!.Name.Should().Be("order_processing");
         match.Ambiguous.Should().BeEmpty();
@@ -89,7 +92,7 @@ public class SolutionComponentInventoryTests
     {
         var inventory = Inventory(Flow("order_processing"));
 
-        inventory.Match(ConfigurableComponentKind.Flow, "ORDER_PROCESSING").Component.Should().NotBeNull();
+        inventory.Match(ConfigurableComponentKind.CloudFlow, "ORDER_PROCESSING").Component.Should().NotBeNull();
     }
 
     [Fact]
@@ -97,7 +100,7 @@ public class SolutionComponentInventoryTests
     {
         var inventory = Inventory(Flow("order_processing"));
 
-        var match = inventory.Match(ConfigurableComponentKind.Flow, "missing_flow");
+        var match = inventory.Match(ConfigurableComponentKind.CloudFlow, "missing_flow");
 
         match.NotFound.Should().BeTrue();
         match.Component.Should().BeNull();
@@ -110,7 +113,7 @@ public class SolutionComponentInventoryTests
     {
         var inventory = Inventory(Flow("shared_name"), Flow("shared_name"), Flow("other"));
 
-        var match = inventory.Match(ConfigurableComponentKind.Flow, "shared_name");
+        var match = inventory.Match(ConfigurableComponentKind.CloudFlow, "shared_name");
 
         match.Component.Should().BeNull();
         match.Ambiguous.Should().HaveCount(2);
@@ -124,7 +127,7 @@ public class SolutionComponentInventoryTests
             Flow("shared_name"),
             new InventoryComponent(ConfigurableComponentKind.PluginStep, "shared_name", Guid.NewGuid(), true));
 
-        inventory.Match(ConfigurableComponentKind.Flow, "shared_name").Component.Should().NotBeNull();
+        inventory.Match(ConfigurableComponentKind.CloudFlow, "shared_name").Component.Should().NotBeNull();
         inventory.Match(ConfigurableComponentKind.PluginStep, "shared_name").Component.Should().NotBeNull();
     }
 
@@ -137,5 +140,103 @@ public class SolutionComponentInventoryTests
 
         inventory.OfKind(ConfigurableComponentKind.EnvironmentVariable).Should().ContainSingle()
             .Which.Enabled.Should().BeNull("a value class carries no state");
+    }
+
+    // componenttype 29 is the whole Process family, not just flows: business rules, business process flows,
+    // dialogs, actions and desktop flows are all `workflow` rows carrying a statecode. An unfiltered read
+    // handed every one of them to the state writer, so a pull wrote them into the settings file and an apply
+    // of that file deactivated them. The narrowing has to happen in the query, not after it.
+    [Fact]
+    public async Task ReadAsync_AsksDataverseForOnlyTheTwoManagedCategories()
+    {
+        QueryExpression? workflowQuery = null;
+        var service = Substitute.For<IOrganizationServiceAsync2>();
+        service.RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var query = call.Arg<QueryExpression>();
+                if (query.EntityName == "solutioncomponent")
+                    return Task.FromResult(new EntityCollection([SolutionComponent(Guid.NewGuid())]));
+                if (query.EntityName == "workflow") workflowQuery = query;
+                return Task.FromResult(new EntityCollection([]));
+            });
+
+        await SolutionComponentInventory.ReadAsync(service, "Contoso", CancellationToken.None);
+
+        var category = workflowQuery!.Criteria.Conditions.Single(c => c.AttributeName == "category");
+        category.Operator.Should().Be(ConditionOperator.In);
+        category.Values.Should().BeEquivalentTo([0, 5],
+            "0 is a classic workflow and 5 a cloud flow — 2 business rule and 4 business process flow must never come back");
+    }
+
+    // Both sections write the same table, so the category is the only thing that puts a row in one section
+    // rather than the other. A cloud flow landing under Workflows would still apply correctly but would move
+    // between sections on the next pull, churning the file.
+    [Theory]
+    [InlineData(5, ConfigurableComponentKind.CloudFlow)]
+    [InlineData(0, ConfigurableComponentKind.Workflow)]
+    public async Task ReadAsync_SplitsProcessRowsByCategory(int category, ConfigurableComponentKind expected)
+    {
+        var id = Guid.NewGuid();
+        var service = Substitute.For<IOrganizationServiceAsync2>();
+        service.RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var query = call.Arg<QueryExpression>();
+                if (query.EntityName == "solutioncomponent")
+                    return Task.FromResult(new EntityCollection([SolutionComponent(id)]));
+                if (query.EntityName == "workflow")
+                    return Task.FromResult(new EntityCollection([WorkflowRow(id, "order_processing", category)]));
+                return Task.FromResult(new EntityCollection([]));
+            });
+
+        var inventory = await SolutionComponentInventory.ReadAsync(service, "Contoso", CancellationToken.None);
+
+        inventory.Components.Should().ContainSingle().Which.Kind.Should().Be(expected);
+    }
+
+    // The user-visible bug: a business process flow showed up in a pulled settings file. Proves the row
+    // cannot reach the inventory even when Dataverse hands it back, which asserting the query condition
+    // alone does not.
+    [Theory]
+    [InlineData(4)] // Business Process Flow
+    [InlineData(2)] // Business Rule
+    [InlineData(1)] // Dialog
+    [InlineData(6)] // Desktop Flow
+    public async Task ReadAsync_UnmanagedProcessCategory_NeverReachesTheInventory(int category)
+    {
+        var id = Guid.NewGuid();
+        var service = Substitute.For<IOrganizationServiceAsync2>();
+        service.RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var query = call.Arg<QueryExpression>();
+                if (query.EntityName == "solutioncomponent")
+                    return Task.FromResult(new EntityCollection([SolutionComponent(id)]));
+                if (query.EntityName == "workflow")
+                    return Task.FromResult(new EntityCollection([WorkflowRow(id, "msdyn_bpf_d3d97bac", category)]));
+                return Task.FromResult(new EntityCollection([]));
+            });
+
+        var inventory = await SolutionComponentInventory.ReadAsync(service, "Contoso", CancellationToken.None);
+
+        inventory.Components.Should().BeEmpty();
+    }
+
+    static Entity SolutionComponent(Guid objectId)
+    {
+        var e = new Entity("solutioncomponent", Guid.NewGuid());
+        e["objectid"] = objectId;
+        e["componenttype"] = new OptionSetValue(SolutionComponentInventory.WorkflowComponentType);
+        return e;
+    }
+
+    static Entity WorkflowRow(Guid id, string uniqueName, int category)
+    {
+        var e = new Entity("workflow", id);
+        e["uniquename"] = uniqueName;
+        e["statecode"] = new OptionSetValue(1);
+        e["category"] = new OptionSetValue(category);
+        return e;
     }
 }

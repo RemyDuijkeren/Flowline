@@ -8,7 +8,7 @@ namespace Flowline.Core.Tests.Configure;
 public class ApplyExitCodeTests
 {
     static ComponentOutcome Outcome(ComponentOutcomeKind kind, string name = "c") =>
-        new(ConfigurableComponentKind.Flow, name, kind);
+        new(ConfigurableComponentKind.CloudFlow, name, kind);
 
     static ApplyOutcome Result(params ComponentOutcome[] outcomes) => new(outcomes, []);
 
