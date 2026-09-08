@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Reflection;
 using Flowline.Commands;
 using Spectre.Console.Cli;
 using Xunit;
@@ -114,6 +116,28 @@ public class ManagedFlagBindingTests
         Assert.NotNull(SyncProbeCommand.Captured!.IncludeManaged);
         Assert.True(SyncProbeCommand.Captured!.IncludeManaged.IsSet);
         Assert.True(SyncProbeCommand.Captured!.IncludeManaged.Value);
+    }
+
+    // R13: --managed keeps its optional value; the placeholder renders as [TRUE|FALSE] (Spectre
+    // upper-cases ValueName), not the old bool-literal [FALSE].
+    [Fact]
+    public void Sync_ManagedOption_TemplateUsesTrueFalsePlaceholder()
+    {
+        var option = typeof(SyncCommand.Settings).GetProperty(nameof(SyncCommand.Settings.IncludeManaged))!
+            .GetCustomAttribute<CommandOptionAttribute>()!;
+
+        Assert.True(option.ValueIsOptional);
+        Assert.Equal("TRUE|FALSE", option.ValueName);
+    }
+
+    // R12: every persisting flag's description ends with the same wording.
+    [Fact]
+    public void Sync_ManagedOption_DescriptionEndsWithSavedToFlowline()
+    {
+        var description = typeof(SyncCommand.Settings).GetProperty(nameof(SyncCommand.Settings.IncludeManaged))!
+            .GetCustomAttribute<DescriptionAttribute>()!;
+
+        Assert.EndsWith("(saved to .flowline)", description.Description);
     }
 
     // Regression: --pull is a FlagValue<string> and carried [DefaultValue(false)], copied from the

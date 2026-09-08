@@ -30,23 +30,23 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         public string? Solution { get; set; }
 
         [CommandOption("--namespace <NS>")]
-        [Description("Model namespace — saved to .flowline for future runs")]
+        [Description("Model namespace (saved to .flowline)")]
         public string? Namespace { get; set; }
 
         [CommandOption("--service-context-name <NAME>")]
-        [Description("Name of the generated OrganizationServiceContext class (default: XrmContext) — saved to .flowline")]
+        [Description("Name of the generated OrganizationServiceContext class, default: XrmContext (saved to .flowline)")]
         public string? ServiceContextName { get; set; }
 
         [CommandOption("--extra-tables <TABLES>")]
-        [Description("Comma-separated extra tables to include; replaces the saved list")]
+        [Description("Comma-separated extra tables to include; replaces the saved list (saved to .flowline)")]
         public string? ExtraTables { get; set; }
 
         [CommandOption("-o|--output <PATH>")]
-        [Description("Output folder for generated types — saved to .flowline (required outside a Flowline project)")]
+        [Description("Output folder for generated types, required outside a Flowline project (saved to .flowline)")]
         public string? Output { get; set; }
 
         [CommandOption("--generator")]
-        [Description("Model builder generator to use (pac|xrmcontext3|xrmcontext|ebg), default: pac")]
+        [Description("Model builder generator to use (pac|xrmcontext3|xrmcontext|ebg), default: pac (saved to .flowline)")]
         public GeneratorType? Generator { get; set; }
 
         [CommandOption("--client-id <ID>")]
@@ -135,32 +135,10 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
 
             solutionName = projectSln.UniqueName;
 
-            // Apply --namespace (R7)
-            if (!string.IsNullOrWhiteSpace(settings.Namespace))
-            {
-                projectSln.Generate ??= new GenerateConfig();
-                projectSln.Generate.Namespace = settings.Namespace.Trim();
-            }
-
-            // Apply --extra-tables (R8): replaces full list; empty value clears the list
-            if (settings.ExtraTables != null)
-            {
-                projectSln.Generate ??= new GenerateConfig();
-                var tables = settings.ExtraTables.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                projectSln.Generate.ExtraTables = tables.Length > 0 ? tables : null;
-            }
-
-            if (!string.IsNullOrWhiteSpace(settings.ServiceContextName))
-            {
-                projectSln.Generate ??= new GenerateConfig();
-                projectSln.Generate.ServiceContextName = settings.ServiceContextName.Trim();
-            }
-
-            if (!string.IsNullOrWhiteSpace(settings.Output))
-            {
-                projectSln.Generate ??= new GenerateConfig();
-                projectSln.Generate.OutputPath = Path.GetRelativePath(RootFolder, Path.GetFullPath(settings.Output));
-            }
+            // Apply --namespace, --extra-tables, --generator, --output, --service-context-name (R7, R8,
+            // R11): each one write-on-first-use, ask-on-change against .flowline, via the same core the
+            // environment URLs use.
+            ApplyPersistedGenerateSettings(projectSln, settings, RootFolder);
 
             var slnFolder = RootFolder;
 
@@ -182,10 +160,10 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             // instead of stranding them in a composed Plugins/Models/ that nothing compiles. Only when no
             // plugin project is on disk does it fall back to the conventional Plugins/Models.
             var savedOutputPath = projectSln.Generate?.OutputPath;
-            modelsFolder = !string.IsNullOrWhiteSpace(settings.Output)
-                ? Path.GetFullPath(settings.Output)
-                : !string.IsNullOrWhiteSpace(savedOutputPath)
-                    ? Path.GetFullPath(Path.Combine(RootFolder, savedOutputPath))
+            modelsFolder = !string.IsNullOrWhiteSpace(savedOutputPath)
+                ? Path.GetFullPath(Path.Combine(RootFolder, savedOutputPath))
+                : !string.IsNullOrWhiteSpace(settings.Output)
+                    ? Path.GetFullPath(settings.Output)
                     : primaryPluginProject != null
                         ? Path.Combine(Path.GetDirectoryName(primaryPluginProject)!, "Models")
                         : Path.Combine(slnFolder, "Plugins", "Models");
@@ -201,8 +179,12 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             }
         }
 
-        var resolvedGeneratorType = settings.Generator ?? projectSln?.Generate?.Generator ?? GeneratorType.Pac;
-        var serviceContextName = settings.ServiceContextName ?? projectSln?.Generate?.ServiceContextName;
+        // Config-first: ApplyPersistedGenerateSettings already merged the passed flag into projectSln.Generate
+        // when it was accepted (or the value already matched); reading config first, not the raw flag,
+        // is what makes a declined overwrite prompt actually stick for the rest of this run. settings.X
+        // only matters here in standalone mode, where projectSln is null and there's no config to read.
+        var resolvedGeneratorType = projectSln?.Generate?.Generator ?? settings.Generator ?? GeneratorType.Pac;
+        var serviceContextName = projectSln?.Generate?.ServiceContextName ?? settings.ServiceContextName;
         Logger.LogInformation("solution={SolutionName} devUrl={DevUrl} generator={Generator} output={Output}", solutionName, devUrl, resolvedGeneratorType, modelsFolder);
 
         // --- Connect and validate ---
@@ -279,13 +261,16 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         // --- Shared tail (all generators) ---
         ReplaceModelsFolderWithGenerated(tempFolder, modelsFolder);
 
-        // Save to .flowline — project mode only
+        // Save to .flowline — project mode only. The five flags applied by ApplyPersistedGenerateSettings
+        // already sit on projectSln.Generate; a derived namespace (no --namespace, nothing saved yet)
+        // isn't a flag R11 governs, so it's still assigned directly and silently.
         if (ShouldPersistSettings(standaloneMode, projectSln))
         {
-            projectSln.Generate ??= new GenerateConfig();
             if (namespaceWasDerived)
+            {
+                projectSln.Generate ??= new GenerateConfig();
                 projectSln.Generate.Namespace = modelNamespace;
-            projectSln.Generate.Generator = resolvedGeneratorType;
+            }
             Config!.Save(RootFolder);
         }
 
@@ -310,6 +295,65 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
     /// </remarks>
     internal static bool ShouldPersistSettings(bool standaloneMode, [NotNullWhen(true)] ProjectSolution? projectSln) =>
         !standaloneMode && projectSln != null;
+
+    /// <summary>
+    /// Applies <c>--namespace</c>, <c>--extra-tables</c>, <c>--generator</c>, <c>--output</c> and
+    /// <c>--service-context-name</c> to <paramref name="projectSln"/>.Generate — project mode only.
+    /// Each one routes through <see cref="ProjectConfig.GetOrUpdateValue"/> (R11): a flag left off keeps
+    /// the saved value untouched; passed against an unset key it saves and prints; passed with the saved
+    /// value it's silent; passed with a different value asks to overwrite, or exits non-interactively
+    /// without <c>--force config</c>. A flag that's absent isn't routed through the core at all — only
+    /// its own guard below decides that — so an ordinary run stays free of the core's verbose echo.
+    /// </summary>
+    /// <remarks>
+    /// <c>--extra-tables</c> loses its old "empty value clears the list" escape hatch: an empty value now
+    /// reads the same as an absent flag under the shared rule. Clearing means editing the list in
+    /// <c>.flowline</c> directly, or passing a different, non-empty list through the overwrite prompt.
+    /// <para>
+    /// Declining an overwrite prompt only sticks for the rest of the run because every downstream read
+    /// of these five values comes from <c>projectSln.Generate</c>, never straight from <paramref
+    /// name="settings"/> — see <c>resolvedGeneratorType</c>/<c>serviceContextName</c>/<c>modelsFolder</c>
+    /// in <c>ExecuteFlowlineAsync</c>. Reintroducing a <c>settings.X ??</c> fallback ahead of the config
+    /// read on any of those would silently let a declined flag win anyway.
+    /// </para>
+    /// </remarks>
+    internal static void ApplyPersistedGenerateSettings(ProjectSolution projectSln, Settings settings, string rootFolder)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.Namespace))
+            SetGenerate(projectSln, settings.Namespace.Trim(), g => g.Namespace, (g, v) => g.Namespace = v,
+                "Namespace", "Solution.Generate.Namespace", settings);
+
+        if (settings.ExtraTables != null)
+        {
+            var tables = settings.ExtraTables.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var joined = tables.Length > 0 ? string.Join(',', tables) : null;
+            SetGenerate(projectSln, joined,
+                g => g.ExtraTables is { Length: > 0 } et ? string.Join(',', et) : null,
+                (g, v) => g.ExtraTables = string.IsNullOrWhiteSpace(v) ? null : v.Split(','),
+                "Extra tables", "Solution.Generate.ExtraTables", settings);
+        }
+
+        if (settings.Generator.HasValue)
+            SetGenerate(projectSln, settings.Generator.Value.ToString(), g => g.Generator?.ToString(),
+                (g, v) => g.Generator = Enum.Parse<GeneratorType>(v!),
+                "Generator", "Solution.Generate.Generator", settings);
+
+        if (!string.IsNullOrWhiteSpace(settings.ServiceContextName))
+            SetGenerate(projectSln, settings.ServiceContextName.Trim(), g => g.ServiceContextName, (g, v) => g.ServiceContextName = v,
+                "Service context name", "Solution.Generate.ServiceContextName", settings);
+
+        if (!string.IsNullOrWhiteSpace(settings.Output))
+            SetGenerate(projectSln, Path.GetRelativePath(rootFolder, Path.GetFullPath(settings.Output)), g => g.OutputPath, (g, v) => g.OutputPath = v,
+                "Output path", "Solution.Generate.OutputPath", settings);
+    }
+
+    static void SetGenerate(ProjectSolution projectSln, string? input, Func<GenerateConfig, string?> get, Action<GenerateConfig, string?> set,
+        string label, string key, FlowlineSettings settings)
+    {
+        projectSln.Generate ??= new GenerateConfig();
+        var generate = projectSln.Generate;
+        ProjectConfig.GetOrUpdateValue(input, () => get(generate), v => set(generate, v), label, key, settings);
+    }
 
     async Task<(XrmContextAuth? XrmContextAuth, string? ResolvedSecret)> ResolveXrmContextAuthAsync(
         GeneratorType generatorType, PacProfile effectiveProfile, Settings settings, CancellationToken cancellationToken)
