@@ -867,9 +867,10 @@ public class CloneCommandTests
         {
             GetEnvironmentInfoByUrlOverride = (_, _, _, _) => Task.FromResult<EnvironmentInfo?>(MakeEnv(envType))
         };
+        var environmentTargetResolver = new EnvironmentTargetResolver(console);
 
         var command = new CloneCommand(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, capture,
-            projectScaffolder, createEnvironmentResolver, new NuGetVersionClient(new HttpClient()));
+            projectScaffolder, createEnvironmentResolver, new NuGetVersionClient(new HttpClient()), environmentTargetResolver);
 
         return (command, console);
     }
@@ -879,8 +880,8 @@ public class CloneCommandTests
 
     // Settings.IncludeManaged (a Spectre FlagValue<bool>) is only non-null once bound by Spectre's own
     // parser (see ManagedFlagBindingTests) — `new CloneCommand.Settings()` leaves it literally null,
-    // which NREs the moment PickSolutionAsync reads `.IsSet`. Parsing through a probe command, then
-    // setting DevUrl directly, gives PickSolutionAsync's tests a Settings shaped like a real run's.
+    // which NREs the moment PickSolutionAsync reads `.IsSet`. Parsing through a probe command gives
+    // these tests a Settings shaped like a real run's.
     sealed class SettingsProbeCommand : Command<CloneCommand.Settings>
     {
         public static CloneCommand.Settings? Captured;
@@ -892,15 +893,13 @@ public class CloneCommandTests
         }
     }
 
-    static CloneCommand.Settings MakeSettings(string? devUrl = null)
+    static CloneCommand.Settings MakeSettings(params string[] args)
     {
         var app = new CommandApp<SettingsProbeCommand>();
         app.Configure(c => c.PropagateExceptions());
-        app.Run(["Placeholder"]);
+        app.Run(["Placeholder", .. args]);
 
-        var settings = SettingsProbeCommand.Captured!;
-        settings.DevUrl = devUrl;
-        return settings;
+        return SettingsProbeCommand.Captured!;
     }
 
     // ── ShouldPickSolution: the pure gate ────────────────────────────────────
@@ -959,8 +958,8 @@ public class CloneCommandTests
         console.Input.PushKey(ConsoleKey.Enter); // solution picker: selects the first listed choice ("Unmanaged1")
         console.Input.PushKey(ConsoleKey.Enter); // role picker: Dev is listed first, so Enter accepts it
 
-        var settings = MakeSettings(DevUrl);
-        var (exitCode, env, projectSolution, solutionInfo) = await command.PickSolutionAsync(settings, new ProjectConfig(), CancellationToken.None);
+        var settings = MakeSettings();
+        var (exitCode, env, projectSolution, solutionInfo) = await command.PickSolutionAsync(settings, new ProjectConfig(), CancellationToken.None, seedSourceUrl: DevUrl);
 
         exitCode.Should().BeNull();
         env!.EnvironmentUrl.Should().Be(DevUrl);
@@ -987,8 +986,8 @@ public class CloneCommandTests
         console.Input.PushKey(ConsoleKey.Enter); // solution picker: first (and now only) choice
         console.Input.PushKey(ConsoleKey.Enter); // role picker: Dev is listed first
 
-        var settings = MakeSettings(DevUrl);
-        var (exitCode, _, projectSolution, _) = await command.PickSolutionAsync(settings, new ProjectConfig(), CancellationToken.None);
+        var settings = MakeSettings();
+        var (exitCode, _, projectSolution, _) = await command.PickSolutionAsync(settings, new ProjectConfig(), CancellationToken.None, seedSourceUrl: DevUrl);
 
         exitCode.Should().BeNull();
         projectSolution!.UniqueName.Should().Be("CrO7982");
@@ -1005,8 +1004,8 @@ public class CloneCommandTests
         command.GetSolutionsOverride = (_, _) => Task.FromResult(new List<SolutionInfo> { MakeSolution("OnlyManaged", isManaged: true) });
         console.Interactive();
 
-        var settings = MakeSettings(DevUrl); // flag-specified env — can't be re-picked, so the loop stops
-        var (exitCode, env, projectSolution, solutionInfo) = await command.PickSolutionAsync(settings, new ProjectConfig(), CancellationToken.None);
+        var settings = MakeSettings(); // seeded source URL — can't be re-picked, so the loop stops
+        var (exitCode, env, projectSolution, solutionInfo) = await command.PickSolutionAsync(settings, new ProjectConfig(), CancellationToken.None, seedSourceUrl: DevUrl);
 
         exitCode.Should().Be(0);
         env.Should().BeNull();
@@ -1028,9 +1027,9 @@ public class CloneCommandTests
         console.Input.PushKey(ConsoleKey.Enter); // picks the only listed solution
         console.Input.PushKey(ConsoleKey.Enter); // role picker: Dev is listed first, so Enter accepts it
 
-        var settings = MakeSettings(DevUrl);
+        var settings = MakeSettings();
         var config = new ProjectConfig();
-        var (exitCode, env, projectSolution, solutionInfo) = await command.PickSolutionAsync(settings, config, CancellationToken.None);
+        var (exitCode, env, projectSolution, solutionInfo) = await command.PickSolutionAsync(settings, config, CancellationToken.None, seedSourceUrl: DevUrl);
 
         exitCode.Should().BeNull();
         env!.EnvironmentUrl.Should().Be(DevUrl);
@@ -1055,14 +1054,142 @@ public class CloneCommandTests
         console.Interactive();
         console.Input.PushKey(ConsoleKey.Enter); // picks the only solution; role is locked to Prod, so no second prompt is consumed
 
-        var settings = MakeSettings(DevUrl);
+        var settings = MakeSettings();
         var config = new ProjectConfig();
-        var (exitCode, env, projectSolution, _) = await command.PickSolutionAsync(settings, config, CancellationToken.None);
+        var (exitCode, env, projectSolution, _) = await command.PickSolutionAsync(settings, config, CancellationToken.None, seedSourceUrl: DevUrl);
 
         exitCode.Should().BeNull();
         projectSolution!.UniqueName.Should().Be("CrO7982");
         config.ProdUrl.Should().Be(DevUrl);
         config.DevUrl.Should().BeNull();
         console.Output.Should().Contain("PROD set to");
+    }
+
+    // ── Settings: --env replaces --prod/--uat/--test/--dev (R9/R10) ─────────
+    // The Settings type itself has no ProdUrl/UatUrl/TestUrl/DevUrl properties any more — every call
+    // site above that used to set them was updated to compile, which is the other half of this proof.
+
+    const string ProdUrl = "https://contoso.crm4.dynamics.com";
+
+    [Fact]
+    public void Settings_EnvFlag_BindsEnv()
+    {
+        var settings = MakeSettings("--env", ProdUrl);
+
+        settings.Env.Should().Be(ProdUrl);
+    }
+
+    // ── ShouldPickSolution: --env given skips the picker too (R9) ────────────
+
+    [Fact]
+    public void ShouldPickSolution_EnvGiven_ReturnsFalse()
+    {
+        var settings = new CloneCommand.Settings { Env = ProdUrl };
+
+        CloneCommand.ShouldPickSolution(settings, new ProjectConfig(), isInteractive: true).Should().BeFalse();
+    }
+
+    // ── ConfiguredRoles: the pure count/order behind the --env-less decision (R9) ──
+
+    [Fact]
+    public void ConfiguredRoles_NothingConfigured_ReturnsEmpty()
+    {
+        CloneCommand.ConfiguredRoles(new ProjectConfig()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ConfiguredRoles_OneConfigured_ReturnsJustThatRole()
+    {
+        var config = new ProjectConfig { UatUrl = DevUrl };
+
+        CloneCommand.ConfiguredRoles(config).Should().Equal(EnvironmentRole.Uat);
+    }
+
+    [Fact]
+    public void ConfiguredRoles_SeveralConfigured_ReturnsThemInDevTestUatProdOrder()
+    {
+        var config = new ProjectConfig { ProdUrl = ProdUrl, DevUrl = DevUrl };
+
+        CloneCommand.ConfiguredRoles(config).Should().Equal(EnvironmentRole.Dev, EnvironmentRole.Prod);
+    }
+
+    // ── ResolveSourceUrlAsync: --env vs. the configured-role count (R9/KD4/AE5) ──
+    // A brand-new URL passed via --env goes through EnvironmentTargetResolver, which shells out to
+    // pac for an unrecognized URL — that path is EnvironmentTargetResolverTests.cs's job, not
+    // re-tested here. What's clone-specific and pac-free: the configured-role-count decision itself,
+    // and the two --env paths (role keyword, already-configured URL) that never reach pac.
+
+    [Fact]
+    public async Task ResolveSourceUrlAsync_OneRoleConfigured_UsesItWithoutPrompting()
+    {
+        var (command, console) = MakeCloneCommand();
+        var settings = MakeSettings();
+        var config = new ProjectConfig { UatUrl = DevUrl };
+
+        var (url, role) = await command.ResolveSourceUrlAsync(settings, config, CancellationToken.None);
+
+        url.Should().Be(DevUrl);
+        role.Should().Be(EnvironmentRole.Uat);
+        console.Output.Should().NotContain("More than one environment is configured");
+    }
+
+    [Fact]
+    public async Task ResolveSourceUrlAsync_ZeroConfiguredNoEnv_ThrowsNamingEnv()
+    {
+        var (command, _) = MakeCloneCommand();
+        var settings = MakeSettings();
+
+        var act = () => command.ResolveSourceUrlAsync(settings, new ProjectConfig(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.NotFound && e.Message.Contains("--env"));
+    }
+
+    // AE5: .flowline holds a ProdUrl and a DevUrl, no TTY, no --env — exit 15 naming --env.
+    [Fact]
+    public async Task ResolveSourceUrlAsync_MultipleRolesConfiguredNonInteractive_ThrowsExit15NamingEnv()
+    {
+        var (command, _) = MakeCloneCommand(); // TestConsole defaults non-interactive
+        var settings = MakeSettings();
+        var config = new ProjectConfig { ProdUrl = ProdUrl, DevUrl = DevUrl };
+
+        var act = () => command.ResolveSourceUrlAsync(settings, config, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed && e.Message.Contains("--env"));
+    }
+
+    [Fact]
+    public async Task ResolveSourceUrlAsync_MultipleRolesConfiguredInteractive_PromptsAndUsesThePickedRole()
+    {
+        var (command, console) = MakeCloneCommand();
+        console.Interactive();
+        console.Input.PushKey(ConsoleKey.DownArrow); // Dev is listed first (ConfiguredRoles order), Prod second
+        console.Input.PushKey(ConsoleKey.Enter);
+        var settings = MakeSettings();
+        var config = new ProjectConfig { DevUrl = DevUrl, ProdUrl = ProdUrl };
+
+        var (url, role) = await command.ResolveSourceUrlAsync(settings, config, CancellationToken.None);
+
+        role.Should().Be(EnvironmentRole.Prod);
+        url.Should().Be(ProdUrl);
+        console.Output.Should().Contain("More than one environment is configured");
+    }
+
+    // The resolver's role-keyword lookup resolves straight from .flowline (no pac round-trip), so an
+    // unset role fails before ever reaching a network call — this is EnvironmentTargetResolver's own
+    // behavior (see EnvironmentTargetResolverTests.cs), asserted here only to prove clone wires --env
+    // through it.
+    [Fact]
+    public async Task ResolveSourceUrlAsync_EnvRoleKeywordNotConfigured_ThrowsNamingTheFlowlineKey()
+    {
+        var (command, _) = MakeCloneCommand();
+        var settings = MakeSettings();
+        settings.Env = "uat";
+
+        var act = () => command.ResolveSourceUrlAsync(settings, new ProjectConfig(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.Message.Contains("UatUrl"));
     }
 }

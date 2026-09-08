@@ -14,7 +14,7 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture,
-    ProjectScaffolder projectScaffolder, CreateEnvironmentResolver createEnvironmentResolver, NuGetVersionClient nuGetVersionClient) :
+    ProjectScaffolder projectScaffolder, CreateEnvironmentResolver createEnvironmentResolver, NuGetVersionClient nuGetVersionClient, EnvironmentTargetResolver environmentTargetResolver) :
     FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
     /// <summary>Seam for testing — overrides PacUtils.GetSolutionsAsync (shells out to a real pac.exe
@@ -27,24 +27,8 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         [Description("Solution to clone into this repo (omit to pick one interactively)")]
         public string? Solution { get; set; }
 
-        [CommandOption("--prod <URL>")]
-        [Description("Production environment URL to clone solution from")]
-        public string? ProdUrl { get; set; }
-
-        [CommandOption("--uat <URL>")]
-        [Description("UAT environment URL to clone solution from")]
-        public string? UatUrl { get; set; }
-
-        [CommandOption("--test <URL>")]
-        [Description("Test environment URL to clone solution from")]
-        public string? TestUrl { get; set; }
-
-        [CommandOption("--dev <URL>")]
-        [Description("Development environment URL to clone solution from")]
-        public string? DevUrl { get; set; }
-
-        [CommandOption("--managed [false]")]
-        [Description("Include managed artifacts (--managed false resets to default)")]
+        [CommandOption("--managed [true|false]")]
+        [Description("Include managed artifacts — --managed alone means true, --managed false means false, saved to .flowline")]
         [DefaultValue(true)]
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
     }
@@ -54,22 +38,17 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        // Save all provided URLs to config first (no API calls, just config update + prompt on conflict)
-        Config!.GetOrUpdateProdUrl(settings.ProdUrl, settings);
-        Config!.GetOrUpdateUatUrl(settings.UatUrl, settings);
-        Config!.GetOrUpdateTestUrl(settings.TestUrl, settings);
-        Config!.GetOrUpdateDevUrl(settings.DevUrl, settings);
-
         EnvironmentInfo sourceEnv;
         ProjectSolution projectSln;
         SolutionInfo solutionInfo;
 
-        // U6/R11/R17: no solution named, no role URL configured (this run's flags or a prior
-        // .flowline), interactive session — offer the environment + solution pickers instead of
-        // FindUnmanagedSourceAsync's flag-driven error. Gated on all three so the existing
-        // flag-driven path (solution named, or any role URL configured) behaves exactly as today (R13):
-        // a non-interactive run always falls through to FindUnmanagedSourceAsync, so it raises the
-        // same NotFound error it always has, never CreateEnvironmentResolver's differently-worded one.
+        // U6/R11/R17: no solution named, no --env, no role URL configured (a prior .flowline),
+        // interactive session — offer the environment + solution pickers instead of
+        // ResolveConfiguredSourceAsync's flag-driven error. Gated on all four so the existing
+        // flag-driven path (solution named, --env given, or any role URL configured) behaves exactly
+        // as today (R13): a non-interactive run always falls through to ResolveConfiguredSourceAsync,
+        // so it raises the same NotFound error it always has, never CreateEnvironmentResolver's
+        // differently-worded one.
         if (ShouldPickSolution(settings, Config, IsInteractive()))
         {
             var (pickExitCodeOrNull, pickedEnv, pickedSln, pickedInfo) = await PickSolutionAsync(settings, Config, cancellationToken);
@@ -80,7 +59,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
         else
         {
-            (sourceEnv, projectSln, solutionInfo) = await FindUnmanagedSourceAsync(settings, cancellationToken);
+            (sourceEnv, projectSln, solutionInfo) = await ResolveConfiguredSourceAsync(settings, Config!, cancellationToken);
         }
 
         Logger.LogInformation("source={EnvironmentUrl} solution={SolutionName}", sourceEnv.EnvironmentUrl, projectSln.UniqueName);
@@ -111,43 +90,83 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         return 0;
     }
 
-    private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)> FindUnmanagedSourceAsync(Settings settings,
-        CancellationToken cancellationToken)
+    // R9: the flag-driven path — --env names the source directly; with no --env, exactly one
+    // configured role URL is unambiguous, more than one needs a pick (KD4), and zero is the same
+    // NotFound today's flag-driven path always raised (ShouldPickSolution already routes a blank,
+    // zero-configured, interactive run to the picker above instead of here).
+    private async Task<(EnvironmentInfo sourceEnv, ProjectSolution projectSolution, SolutionInfo solutionInfo)> ResolveConfiguredSourceAsync(
+        Settings settings, ProjectConfig config, CancellationToken cancellationToken)
     {
-        foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Uat, EnvironmentRole.Test, EnvironmentRole.Dev })
+        var (sourceUrl, role) = await ResolveSourceUrlAsync(settings, config, cancellationToken);
+
+        var (env, _) = await GetAndCheckEnvironmentAsync(sourceUrl, role, settings, cancellationToken);
+        var (sln, info) = await GetAndCheckSolutionAsync(
+            settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
+
+        // No fallback to another role now that there's a single, explicitly chosen source (R9) — a
+        // managed-only environment fails naming it, rather than silently skipping to another one.
+        if (info.IsManaged)
+            throw new FlowlineException(ExitCode.NotFound, $"'{sln.UniqueName}' in '{env.DisplayName}' is managed — clone needs an unmanaged source.");
+
+        return (env, sln, info);
+    }
+
+    // Pure URL/role decision — no I/O beyond the resolver itself and the role picker prompt, kept
+    // separate from ResolveConfiguredSourceAsync (which also checks the environment and solution exist,
+    // needing a real pac subprocess) so it's directly testable. config is explicit, not Config, for the
+    // same reason PickSolutionAsync takes it explicitly — callable without the base pipeline.
+    internal async Task<(string Url, EnvironmentRole? Role)> ResolveSourceUrlAsync(Settings settings, ProjectConfig config, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.Env))
         {
-            var configUrl = role switch
-            {
-                EnvironmentRole.Prod => Config!.ProdUrl,
-                EnvironmentRole.Uat  => Config!.UatUrl,
-                EnvironmentRole.Test => Config!.TestUrl,
-                EnvironmentRole.Dev  => Config!.DevUrl,
-                _ => null
-            };
-            if (string.IsNullOrEmpty(configUrl)) continue;
-
-            var (env, _) = await GetAndCheckEnvironmentInfoAsync(role, null, settings, cancellationToken);
-            var (sln, info) = await GetAndCheckSolutionAsync(
-                settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
-
-            if (info.IsManaged)
-            {
-                var label = role switch { EnvironmentRole.Prod => "Prod", EnvironmentRole.Uat => "UAT", EnvironmentRole.Test => "Test", _ => "Dev" };
-                Console.MarkupLine($"[dim]{label} solution is managed — skipping[/]");
-                continue;
-            }
-
-            return (env, sln, info);
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, config, devOnly: false, IsInteractive(), settings,
+                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+            return (target.Url, target.Role);
         }
 
-        throw new FlowlineException(ExitCode.NotFound, "No unmanaged environment found — provide a --dev, --test, --uat, or --prod URL with an unmanaged solution.");
+        var configuredRoles = ConfiguredRoles(config);
+        switch (configuredRoles.Count)
+        {
+            case 1:
+                var onlyRole = configuredRoles[0];
+                return (config.GetUrl(onlyRole)!, onlyRole);
+
+            case > 1 when !IsInteractive():
+                throw new FlowlineException(ExitCode.ValidationFailed,
+                    "More than one environment is configured — pass --env <dev|test|uat|prod> to say which one to clone from.");
+
+            case > 1:
+                var pickedRole = await PickConfiguredRoleAsync(configuredRoles, cancellationToken);
+                return (config.GetUrl(pickedRole)!, pickedRole);
+
+            default:
+                throw new FlowlineException(ExitCode.NotFound, "No environment configured — pass --env <url> to say which one to clone from.");
+        }
+    }
+
+    // U4: pure — no I/O — which .flowline roles already have a URL, in Dev/Test/Uat/Prod order.
+    internal static List<EnvironmentRole> ConfiguredRoles(ProjectConfig config) =>
+        new[] { EnvironmentRole.Dev, EnvironmentRole.Test, EnvironmentRole.Uat, EnvironmentRole.Prod }
+            .Where(r => !string.IsNullOrWhiteSpace(config.GetUrl(r)))
+            .ToList();
+
+    async Task<EnvironmentRole> PickConfiguredRoleAsync(List<EnvironmentRole> configuredRoles, CancellationToken cancellationToken)
+    {
+        var choices = configuredRoles
+            .Select(r => (Label: r switch { EnvironmentRole.Dev => "Dev", EnvironmentRole.Test => "Test", EnvironmentRole.Uat => "UAT", EnvironmentRole.Prod => "Prod", _ => r.ToString() }, Role: r))
+            .ToList();
+        var prompt = new SelectionPrompt<(string Label, EnvironmentRole Role)>()
+            .Title(FlowlineConsoleExtensions.Question("More than one environment is configured — pick which one to clone from:"))
+            .UseConverter(c => c.Label)
+            .AddChoices(choices);
+        return (await Console.PromptAsync(prompt, cancellationToken)).Role;
     }
 
     // U6/R13: pure — no I/O — so the gate itself is directly testable without a TestConsole or a
     // fully-constructed command. Interactivity is passed in rather than read here so callers (and
     // tests) control it explicitly instead of this reaching for the global console check.
     internal static bool ShouldPickSolution(Settings settings, ProjectConfig config, bool isInteractive) =>
-        string.IsNullOrWhiteSpace(settings.Solution) && isInteractive && !AnyRoleUrlConfigured(config);
+        string.IsNullOrWhiteSpace(settings.Solution) && string.IsNullOrWhiteSpace(settings.Env) && isInteractive && !AnyRoleUrlConfigured(config);
 
     // The environment's Default solution is the catch-all every unmanaged component lands in — it's the
     // environment, not a project, so it never belongs in the picker. Naming it explicitly
@@ -162,17 +181,19 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     // U6: the environment + solution pickers. Takes config explicitly (not Config) so it's callable —
     // and testable — without running the base command pipeline that normally sets it.
     internal async Task<(int? ExitCode, EnvironmentInfo? Env, ProjectSolution? ProjectSolution, SolutionInfo? SolutionInfo)> PickSolutionAsync(
-        Settings settings, ProjectConfig config, CancellationToken cancellationToken)
+        Settings settings, ProjectConfig config, CancellationToken cancellationToken, string? seedSourceUrl = null)
     {
         // Env-first (source-of-truth model): pick the environment to clone from, then its unmanaged
         // solutions. Zero unmanaged means it's likely not the source of truth (managed-only PROD, or the
         // wrong env) — guide and let the user re-pick. A flag-specified URL can't be re-picked, so fall
-        // through to the stop below instead of looping.
+        // through to the stop below instead of looping. seedSourceUrl only ever arrives from a test —
+        // ShouldPickSolution already requires --env to be blank before this runs, so a real run always
+        // starts the tenant-wide picker (null).
         EnvironmentInfo devEnv;
         List<SolutionInfo> unmanaged;
         while (true)
         {
-            devEnv = await createEnvironmentResolver.ResolveSourceAsync(settings.DevUrl, settings, cancellationToken);
+            devEnv = await createEnvironmentResolver.ResolveSourceAsync(seedSourceUrl, settings, cancellationToken);
 
             var getSolutions = GetSolutionsOverride ?? ((url, ct) => PacUtils.GetSolutionsAsync(url, _capture, ct));
             var allSolutions = await Console.Status().FlowlineSpinner().StartAsync(
@@ -189,7 +210,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
                 break;
 
             Console.Info("No unmanaged solutions here — Flowline's source of truth is usually PROD with unmanaged. Pick the environment that holds yours.");
-            if (!string.IsNullOrWhiteSpace(settings.DevUrl) || !IsInteractive())
+            if (!string.IsNullOrWhiteSpace(seedSourceUrl) || !IsInteractive())
                 break; // can't re-pick a flag-specified env, or no TTY — stop instead of looping
         }
 
