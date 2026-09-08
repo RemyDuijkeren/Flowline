@@ -18,21 +18,21 @@ Interactive is the fallback, never the requirement. Prompt only after the flag i
 *and* the run is interactive.
 
 ```csharp
-bool IsInteractive() => Console.Profile.Capabilities.Interactive;   // CloneCommand.cs:259
+bool IsInteractive() => Console.Profile.Capabilities.Interactive;   // CloneCommand.cs:281
 ```
 
 No TTY and no flag → fail immediately, naming the flag. Model:
-[InitCommand.cs:102-104](../../../src/Flowline/Commands/InitCommand.cs#L102-L104).
+[CreateEnvironmentResolver.cs:57-59](../../../src/Flowline/Services/CreateEnvironmentResolver.cs#L57-L59).
 
 ```
-Publisher prefix is required — pass --publisher-prefix <prefix>, or run this interactively to pick one.
+DEV environment is required — pass --env <url>, or run this interactively to pick one.
 ```
 
 Never let a `SelectionPrompt`/`TextPrompt` be reachable without that guard — an agent gets a
-hung process, not an error. Same rule in services:
-[CreateEnvironmentResolver.cs:57](../../../src/Flowline/Services/CreateEnvironmentResolver.cs#L57),
+hung process, not an error. Same rule elsewhere:
+[InitCommand.cs:111-113](../../../src/Flowline/Commands/InitCommand.cs#L111-L113),
 [ProfileResolutionService.cs:52](../../../src/Flowline/Services/ProfileResolutionService.cs#L52),
-[SecretResolver.cs:30](../../../src/Flowline/Services/SecretResolver.cs#L30).
+[SecretResolver.cs:29](../../../src/Flowline/Services/SecretResolver.cs#L29).
 
 ## 2. Confirmations go through `ConfirmGated`
 
@@ -56,14 +56,16 @@ console.ConfirmGated(
 
 Generic CLI advice says "add `--force` to skip confirmation". Flowline's is narrower on
 purpose: `-f|--force <SPECIFIER>`, repeatable, `all` for everything the command gates
-([FlowlineSettings.cs:13-38](../../../src/Flowline/FlowlineSettings.cs#L13-L38)).
+([FlowlineSettings.cs:13-29](../../../src/Flowline/FlowlineSettings.cs#L13-L29)).
 
 - Read it with `settings.HasForce("<specifier>")` — never `settings.Force.Any()`.
 - New hazard → new specifier, added to that command's `ValidForceSpecifiers` override
-  ([PushCommand.cs:102](../../../src/Flowline/Commands/PushCommand.cs#L102),
-  [DeployCommand.cs:63](../../../src/Flowline/Commands/DeployCommand.cs#L63),
-  [SyncCommand.cs:42](../../../src/Flowline/Commands/SyncCommand.cs#L42); config-only commands
-  reuse `FlowlineSettings.ConfigOnlyValidSpecifiers`). The base command validates it for you
+  ([PushCommand.cs:79-81](../../../src/Flowline/Commands/PushCommand.cs#L79-L81),
+  [DeployCommand.cs:95-96](../../../src/Flowline/Commands/DeployCommand.cs#L95-L96),
+  [SyncCommand.cs:38-39](../../../src/Flowline/Commands/SyncCommand.cs#L38-L39),
+  [ProvisionCommand.cs:43-44](../../../src/Flowline/Commands/ProvisionCommand.cs#L43-L44), whose
+  `overwrite` specifier gates an existing target instead of the removed `--allow-overwrite` flag;
+  config-only commands reuse `FlowlineSettings.ConfigOnlyValidSpecifiers`). The base command validates it for you
   ([FlowlineCommand.cs:56-98](../../../src/Flowline/Commands/FlowlineCommand.cs#L56-L98)) and an
   invalid value **lists the valid ones** — that error is how an agent discovers the vocabulary.
   A specifier read by `HasForce` but missing from the list is unreachable: passing it errors out.
@@ -91,6 +93,8 @@ pattern-match on the numbers. Rules when throwing `FlowlineException`:
   a corrective action must repeat it in the message: 4 → `pac auth create --environment <url>`,
   12 → commit or stash, 14 → `--force`, 17 → the specifier to pass.
 - No message that is only "failed" / "error". Name the resource and the next action.
+- An opt-in code stays opt-in. `drift --exit-code`/`diff --exit-code` exit 22 (`ChangesFound`) only
+  when the caller passed that flag; without it a run with changes still exits 0.
 
 ## 6. Graceful stop: `CannotContinue`, exit 0
 
@@ -107,9 +111,11 @@ command or a named place — not "try again" or "check your setup". Nothing prin
 help — unused command docs stay out of the agent's context.
 
 `.WithDescription(...)` follows **what + when to run + what changes**
-([Program.cs:156-219](../../../src/Flowline/Program.cs#L156-L219) are the reference set). "Push
+([Program.cs:288-374](../../../src/Flowline/Program.cs#L288-L374) are the reference set). "Push
 plugins" fails. Same for `[Description]` on every `[CommandOption]` — an undocumented flag is
-invisible to an agent reading `--help`.
+invisible to an agent reading `--help`. Every flag whose value persists to `.flowline` ends its
+description with "(saved to .flowline)": see `--prod` (provision) and `--namespace`/`--output`
+(generate).
 
 Every command also registers `.WithExample(...)` — examples pattern-match better than prose, so a
 new command without at least one is incomplete. One argument per string:
@@ -120,10 +126,6 @@ config.AddCommand<PushCommand>("push")
       .WithExample("push")
       .WithExample("push", "ContosoCustomizations", "--scope", "webresources");
 ```
-
-(A few existing calls pack several args into one string —
-[Program.cs:164](../../../src/Flowline/Program.cs#L164),
-[:171](../../../src/Flowline/Program.cs#L171). Don't copy that shape.)
 
 ## 8. Output: text lines + exit code, no `--json`
 
@@ -147,6 +149,24 @@ can tell it moved, and don't gate it behind an "already done" check.
 
 When a step genuinely can't be repeated, the error names the recovery command.
 
+## 10. Flag-name prefix says what the flag drops
+
+Two prefixes, two different things; don't blur them:
+
+- `--skip-<check>` skips something that only reads and reports a verdict, no write either way.
+  Deploy's `--skip-dtap-check`, `--skip-solution-check`, `--skip-component-check` are the precedent
+  ([DeployCommand.cs](../../../src/Flowline/Commands/DeployCommand.cs)).
+- `--no-<action>` drops something that writes or has a side effect. Deploy's `--no-backup`,
+  `--no-delete`; push's `--no-build`, `--no-delete`, `--no-publish`.
+- `--no-cache` is the one exception, kept for the git/npm convention it borrows from: it isn't a
+  `--skip-*` even though the cache check itself is read-only.
+
+New flag that turns off a read-only gate: `--skip-<check>`. New flag that turns off a write:
+`--no-<action>`.
+
+Parsing is strict: an option the command doesn't declare is a parse error
+(`Error: Unknown option '<name>'.`, exit 15, `ValidationFailed`).
+
 ## Review checklist
 
 When changing a command, walk this:
@@ -161,3 +181,4 @@ When changing a command, walk this:
 - [ ] `.WithDescription` = what + when + state change; at least one `.WithExample`; every option has `[Description]`
 - [ ] Result data in plain lines, not only styling
 - [ ] Re-running converges (or the state advance is deliberate and visible)
+- [ ] New flag named `--skip-<check>` for a read-only gate, `--no-<action>` for a write; unknown options still fail parsing

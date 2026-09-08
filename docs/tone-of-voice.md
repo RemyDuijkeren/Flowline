@@ -104,7 +104,7 @@ Both strings are markup-escaped by the helper, so write them as plain text — `
 ### Finish line
 One per command, always last, earns its emoji. References the next command(s) so they know what's next.
 ```
-:rocket: Cloned! Use 'push' and 'sync' to keep it in flow.
+:rocket: Cloned! Use 'push' and 'pull' to keep it in flow.
 ```
 
 ---
@@ -164,7 +164,7 @@ WebResources project created                 [green]
 Mapping file written                         [green]
 Build done                                   [green]
 
-:rocket: Cloned! Use 'push' and 'sync' to keep it in flow.
+:rocket: Cloned! Use 'push' and 'pull' to keep it in flow.
 ```
 
 ---

@@ -20,12 +20,12 @@ No `.flowline`? Route in this order:
 1. **Migration candidate** — `spkl.json`, a Daxif `_Config.fsx`/`*.daxif`, a `.pacxproj`, or an ALM
    Accelerator pipeline: defer to the `flowline-migration` skill. Don't offer `clone`/`init`.
 2. **Plugin-DLL-only task** (register a compiled assembly, no project wanted): standalone mode —
-   `flowline push <SolutionName> --pluginFile <dll|nupkg> --dev <url>`, or `--webresources <folder>`.
+   `flowline push <SolutionName> --plugin-file <dll|nupkg> --env <url>`, or `--webresources <folder>`.
    No `clone`, no `.flowline`. The solution must already exist in the environment.
-3. **The solution already exists in Dataverse** → `flowline clone <SolutionName> --prod <url>`. Bare
+3. **The solution already exists in Dataverse** → `flowline clone <SolutionName> --env <url>`. Bare
    `flowline clone` picks interactively (environment, then one of its unmanaged solutions). Clone only
    *adopts* — it never creates a solution.
-4. **Nothing to adopt — true greenfield** → `flowline init <Name> --dev <url> --publisher-prefix <prefix>`.
+4. **Nothing to adopt — true greenfield** → `flowline init <Name> --env <url> --publisher-prefix <prefix>`.
    This creates the publisher and an empty unmanaged solution in Dataverse, then scaffolds the repo
    around it. Sandbox and Developer environments only; it refuses a Production target.
 
@@ -34,16 +34,16 @@ No `.flowline`? Route in this order:
 ## Source-of-truth model
 
 By default **PROD holds the unmanaged solution and plays the role `master` plays in Git**; a DEV
-environment is a branch of it. So `clone` normally pulls from PROD, `push`/`sync` work against DEV, and
+environment is a branch of it. So `clone` normally pulls from PROD, `push`/`pull` work against DEV, and
 `deploy` promotes DEV's work onward. A team keeping only managed in PROD and treating DEV as truth is
 also supported — don't assume either way beyond what `.flowline` says.
 
 `flowline provision [dev|test|uat]` is how a DEV gets branched off PROD — it copies PROD into the
 target with `pac admin copy`, creating the environment as a **Sandbox** when it doesn't exist yet —
-so a provisioned DEV is always a Sandbox. A Developer environment is a fine `clone`/`sync` source but
+so a provisioned DEV is always a Sandbox. A Developer environment is a fine `clone`/`pull` source but
 can't be reached this way. Copy mode defaults to
 minimal (schema, no data) for `dev` and full for `test`/`uat`; `--copy full|minimal` overrides.
-An existing target is refused unless you pass `--allow-overwrite`.
+An existing target asks to overwrite interactively; non-interactively it needs `--force overwrite`.
 
 Re-provisioning is the intended way to resync DEV with PROD after promoting — but **it is slow**:
 typically 30 minutes to 2 hours, and Flowline raises `pac`'s wait ceiling to 8 hours for the rare
@@ -66,7 +66,7 @@ routine post-deploy step.
    to the user before anything mutating. It ends with `Air push complete`; nothing was written.
 3. `flowline push` → deterministic sync to DEV, including orphan cleanup. A second run says
    `Nothing to push — already up to date.`
-4. `flowline sync` (alias `flowline pull`) after any Maker Portal change; commit the result.
+4. `flowline pull` (alias `flowline sync`) after any Maker Portal change; commit the result.
 5. Promote: `flowline deploy test` → `flowline deploy prod`, DTAP-gated. `flowline deploy <env> --dry-run`
    runs every pre-flight (DTAP gate, git-clean, drift, pack, solution checker, orphan report) plus a
    labeled backup, then stops before importing; it ends with `Dry run complete`.
@@ -99,10 +99,10 @@ before building — see the `flowline-generate` skill. Late-bound plugins never 
   behavior (the step fires, the form loads the script) before reporting the change complete. A deploy
   can also exit 0 having only *reported* some orphans — see below.
 - **Authority rule:** `push` treats the repo as authoritative — anything in DEV not present in source
-  gets deleted (that's the point of orphan cleanup). `sync` treats DEV as authoritative for solution
+  gets deleted (that's the point of orphan cleanup). `pull` treats DEV as authoritative for solution
   metadata — the repo gets updated. TEST/UAT/PROD are never authoritative: a change made directly there
   is drift, surfaced by `flowline drift`, fixed by porting it to DEV first. Never push over DEV changes
-  that haven't been synced.
+  that haven't been pulled.
 - **Auth profile is guarded.** Every Dataverse-touching command checks that PAC CLI's *active* auth
   profile matches the target environment. Non-interactively a mismatch fails with a `pac auth select`
   remediation — pass `--auto-select-auth-profile` (`-a`) in CI to switch automatically.
@@ -114,12 +114,12 @@ before building — see the `flowline-generate` skill. Late-bound plugins never 
   Windows, else `$XDG_CACHE_HOME`, else `~/.cache`. Reading the log is the alternative to re-running
   with `--verbose`.
 
-## What `sync` writes, and how to read it
+## What `pull` writes, and how to read it
 
-Every `sync` rewrites two files in the repo. Both are generated output — edit the source, never these.
+Every `pull` rewrites two files in the repo. Both are generated output — edit the source, never these.
 
-**`CHANGES.md`** — the same tree `sync` prints, as a file: components added, modified, or removed in
-DEV since the last commit. It describes *this sync*, so it is replaced every run, not appended to.
+**`CHANGES.md`** — the same tree `pull` prints, as a file: components added, modified, or removed in
+DEV since the last commit. It describes *this pull*, so it is replaced every run, not appended to.
 
 **`docs/DATAVERSE_CONTEXT.md`** — a schema digest built from `Solution/src/`. Read it for logical
 names, types, option set values, and which columns a form or view uses.
@@ -135,7 +135,7 @@ Two more reading notes:
 - `~ entity metadata` in a change report means the entity's XML changed without a listed
   attribute-level change — often ordering or a dependency block, not a customization.
 - Flipping `--managed` changes the *extraction format* (`Solution.xml` goes `<Managed>0</Managed>` →
-  `2`), so the first sync after it reports a large one-time diff that isn't a customization change.
+  `2`), so the first pull after it reports a large one-time diff that isn't a customization change.
   Commit it once and move on.
 
 ## Orphan cleanup — what actually gets deleted
@@ -157,19 +157,24 @@ some cleanup failed.
 
 ## Flags worth knowing
 
-- `push`: `--scope all|plugins|assemblyonly|webresources`, `--pluginFile <dll|nupkg>`,
-  `--webresources <path>`, `--no-build`, `--no-delete`, `--no-publish`, `--dry-run`, `--dev <url>`.
+- `push`: `--scope all|plugins|assemblyonly|webresources`, `--plugin-file <dll|nupkg>`,
+  `--webresources <path>`, `--no-build`, `--no-delete`, `--no-publish`, `--dry-run`, `--env <role|url>`
+  (DEV only).
 - `deploy`: `--dry-run`, `--path <zip>`, `--no-delete`, `--no-backup`, `--skip-dtap-check`,
-  `--skip-solution-check`.
-- `sync`: `--bump patch|minor|major|none`, `--managed [false]`, `--no-build`, `--dev <url>`.
-- `init`: `--dev <url>`, `--publisher-prefix <prefix>`, `--publisher-name`, `--display-name`.
-- `diff`: `--from <ref>`, `--to <ref>` (needs `--from`; without it the right side is the working tree,
-  so uncommitted and untracked files count), `--write [FILE]` (bare: `CHANGES.md` at the project root,
-  left alone when nothing changed since that's sync's file; with a value: a relative path resolves against
-  the current folder, and it's rewritten every run), `--exit-code`. Writes nothing unless `--write` is
-  passed.
-- Global: `--verbose` (`-v`), `--force <specifier>` (`-f`), `--no-cache`,
-  `--auto-select-auth-profile` (`-a`).
+  `--skip-solution-check`, `--skip-component-check`.
+- `pull`: `--bump patch|minor|major|none`, `--managed [false]`, `--no-build`,
+  `--env <role|url>` (DEV only).
+- `init`: `--env <role|url>` (DEV only), `--publisher-prefix <prefix>`, `--publisher-name`, `--display-name`.
+- `diff`: two optional ref positionals: `diff`, `diff A`, `diff A B`, `diff A..B` (shorthand for
+  `A B`), `diff A...B` (merge base of A and B, against B); without a second ref the right side is the
+  working tree, so uncommitted and untracked files count. Plus `--write [FILE]` (bare: `CHANGES.md` at
+  the project root, left alone when nothing changed since that's `pull`'s file; with a value: a relative
+  path resolves against the current folder, and it's rewritten every run), `--exit-code`. Writes nothing
+  unless `--write` is passed.
+- Global (every command): `--verbose` (`-v`), `--force <specifier>` (`-f`). Dataverse-touching commands
+  only (`clone`, `push`, `pull`, `deploy`, `provision`, `generate`, `drift`, `configure`): `--no-cache`,
+  `--auto-select-auth-profile` (`-a`). `--env <role|url>` only on `clone`, `push`, `pull`, `generate`,
+  `init`.
 - `flowline sln add <path.cdsproj>` wires a `.cdsproj` into the solution file — `dotnet sln add`
   refuses `.cdsproj` *and exits 0 while refusing*. Runs standalone: no `.flowline`, no git, no login.
 
@@ -182,8 +187,9 @@ command fails with the valid list.
 |---|---|
 | `push` | `delete-orphans`, `recreate-assembly`, `delete-form-handlers`, `config`, `all` |
 | `deploy` | `drift`, `first-import`, `delete-orphans`, `all` |
-| `sync` | `dirty`, `config`, `all` |
-| `clone`, `init`, `configure`, `drift`, `generate`, `provision` | `config`, `all` |
+| `pull` | `dirty`, `config`, `all` |
+| `provision` | `overwrite`, `config`, `all` |
+| `clone`, `init`, `configure`, `drift`, `generate` | `config`, `all` |
 
 `deploy`'s `delete-orphans` is narrower than `push`'s: it gates exactly one unattributable case (a
 Custom API with no plugin type) plus web-resource orphans. Everything else follows the table above.
@@ -200,28 +206,28 @@ Exit codes are a stable public API — they don't change meaning across Flowline
 | 4 | NotAuthenticated | No usable PAC auth profile | Run: `pac auth create --environment <url>` |
 | 10 | ConnectionFailed | Dataverse environment unreachable | Check the environment URL in `.flowline` |
 | 11 | ConfigInvalid | `.flowline`, the `.sln`/`.slnx`, or a settings file is missing or malformed; a role keyword was used with no project to resolve it from; or the solution couldn't be identified outside a project | Check the file named in the error. For a role outside a project, pass the environment URL. When the error asks for a flag, pass it — `--solution-name` outside a project |
-| 12 | DirtyWorkingDirectory | Uncommitted git changes block the operation | `git commit` or `git stash` first (`sync` also accepts `--force dirty`; `deploy` does not) |
+| 12 | DirtyWorkingDirectory | Uncommitted git changes block the operation | `git commit` or `git stash` first (`pull` also accepts `--force dirty`; `deploy` does not) |
 | 13 | BuildFailed | `dotnet build` or PAC pack failed | Fix the build errors and retry |
-| 14 | VersionConflict | Target has a newer solution version | Add the `--force` specifier the error names |
-| 15 | ValidationFailed | Drift detected, missing dependencies, invalid `--force` value, schema mismatch, or contradictory flags | For `drift`, **15 means drift was found — that's success, not an error.** Otherwise read the error; a flag conflict names both flags |
+| 14 | VersionConflict | Reserved: allocated in this contract but never thrown by any command | — |
+| 15 | ValidationFailed | Missing dependencies, invalid `--force` value, an unknown option, schema mismatch, or contradictory flags | Read the error; a flag conflict names both flags, an unknown option names it |
 | 16 | Timeout | PAC CLI 60-minute limit exceeded | Retry; check environment health |
-| 17 | ForceRequired | Destructive operation needs explicit confirmation | Add the `--force <specifier>` the message names |
+| 17 | ForceRequired | Destructive operation needs explicit confirmation, including a declined confirmation prompt (e.g. `deploy`'s first-import prompt, `provision`'s overwrite prompt) | Add the `--force <specifier>` the message names |
 | 18 | PartialSuccess | `deploy` imported but some orphan cleanup failed, or `configure` couldn't apply some components | One failure and every failure share this code — read the printed counts. Fix what the output names and re-run; both commands are safe to repeat |
 | 19 | Inconclusive | A check couldn't run to completion — `drift`'s empty-input guard skipped the comparison, a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault), or every component a `configure` settings file declared was missing from the target | Not a pass/fail signal — read the printed reason. For `configure` it usually means the wrong settings file or the wrong environment |
 | 20 | WriteTargetOccupied | A file already occupies a path the command would write to (e.g. `scaffold` meeting an existing template file) | Nothing is broken — something valid is in the way. Move the named file aside, or run the command somewhere else |
 | 21 | AssemblyNotRegistered | Deploy imported, but a plug-in package holds an assembly with no registration in the target, or one registered with no plugin types | Create the `pluginassembly` record under that package (sandbox isolation, matching version/culture/public key token), then deploy again so the content write populates its plugin types — repeats every deploy until that record exists |
-| 22 | ChangesFound | `diff --exit-code` found changes | **Not a failure**: the comparison ran and something differs. Only returned when `--exit-code` is passed; without it a run with changes still exits 0. Branch on it instead of parsing output |
-| 130 | Cancelled | Ctrl+C / SIGINT, or `deploy`'s first-import confirmation declined | For the confirmation case: re-run with `--force first-import`. An interrupted `configure` still prints the components it applied before stopping; re-run to finish |
+| 22 | ChangesFound | `drift --exit-code` or `diff --exit-code` found changes | **Not a failure**: the comparison ran and something differs. Only returned when `--exit-code` is passed; without it a run with changes still exits 0 (`drift`'s default). Branch on it instead of parsing output |
+| 130 | Cancelled | Ctrl+C / SIGINT | An interrupted `configure` still prints the components it applied before stopping; re-run to finish |
 
 Codes 2 and 5 are intentionally unused.
 
 ## Gotchas that look like bugs
 
-- `deploy dev` is rejected outright, `--dry-run` or not. Use `flowline sync`, or `flowline drift dev`
+- `deploy dev` is rejected outright, `--dry-run` or not. Use `flowline pull`, or `flowline drift dev`
   as the preview.
 - `drift`/`deploy` compare Dataverse against **committed** `Solution/src/`, not build output — anything
-  pushed but not yet `sync`ed and committed shows as an orphan. Correct behavior.
-- A long `deploy`/`clone`/`sync` is genuinely slow (a real import can exceed 10 minutes, silent for
+  pushed but not yet pulled and committed shows as an orphan. Correct behavior.
+- A long `deploy`/`clone`/`pull` is genuinely slow (a real import can exceed 10 minutes, silent for
   minutes at a stretch). Don't kill it on apparent idleness — a kill mid-publish leaves the import
   committed with post-import cleanup unrun.
 - Commands act on the current directory; there is no `--project` flag. A harness that resets cwd must

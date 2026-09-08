@@ -24,14 +24,14 @@ On a match, proactively offer: *"This looks like a `<tool>` project — want me 
 
 ## Guide
 
-Every guide follows the same two-phase strategy: **Phase 1 (standalone)** replaces the old tool for plugin push, web resource push, and type generation with no project restructuring — run `flowline push <Solution> --pluginFile <dll|nupkg> --dev <url>` / `--webresources <folder>` from a folder with no `.flowline`, always with `--dry-run` first. **Phase 2 (project)** runs `flowline clone` (the solution already exists in Dataverse, which is the normal migration case) or `flowline init` (only if it doesn't) to adopt the `.flowline` config and folder convention, then replaces the old tool's registration syntax with Flowline attributes. Don't skip straight to Phase 2 — confirm Phase 1 is stable first, per each guide's own recommendation.
+Every guide follows the same two-phase strategy: **Phase 1 (standalone)** replaces the old tool for plugin push, web resource push, and type generation with no project restructuring — run `flowline push <Solution> --plugin-file <dll|nupkg> --env <url>` / `--webresources <folder>` from a folder with no `.flowline`, always with `--dry-run` first. **Phase 2 (project)** runs `flowline clone` (the solution already exists in Dataverse, which is the normal migration case) or `flowline init` (only if it doesn't) to adopt the `.flowline` config and folder convention, then replaces the old tool's registration syntax with Flowline attributes. Don't skip straight to Phase 2 — confirm Phase 1 is stable first, per each guide's own recommendation.
 
 ### From spkl (`Flowline.wiki/14-Migration-from-spkl.md`)
 
 - Replace `[CrmPluginRegistration(...)]` with `[Step]`/`[Filter]`/`[PreImage]`/`[PostImage]`. Stage and message come from the **class name** (e.g. `AccountPreUpdatePlugin`), not attribute arguments; use `[Handles]` if the class can't be renamed.
 - `[CrmPluginRegistration("dev1_MyApi")]` (links an existing Custom API) becomes `[CustomApi]` (Flowline creates and manages the record). Pin `UniqueName` if the live name doesn't match Flowline's class-name convention.
 - Web resources: drop `spkl.json`'s explicit file mapping — Flowline derives the Dataverse name from the folder path under `WebResources/dist/`.
-- `spkl earlybound` → `flowline generate`; `spkl unpack` → `flowline clone`/`sync`; `spkl import` → `flowline deploy`.
+- `spkl earlybound` → `flowline generate`; `spkl unpack` → `flowline clone`/`pull`; `spkl import` → `flowline deploy`.
 - No equivalent for `spkl instrument` (reverse-engineering existing registrations) or `SecureConfiguration` — see the wiki guide's "Known gaps" for workarounds.
 
 ### From Daxif (`Flowline.wiki/15-Migration-from-Daxif.md`)
@@ -39,7 +39,7 @@ Every guide follows the same two-phase strategy: **Phase 1 (standalone)** replac
 - Replace the fluent `RegisterPluginStep<T>(...)` calls in the `Plugin` base class constructor with `[Step]`/`[Filter]`/`[PreImage]`/`[PostImage]` attributes on a plain `IPlugin` class — Flowline detects any `IPlugin` implementor, including through a custom base class.
 - `CustomAPI` base class → `[CustomApi]` + `[Input]`/`[Output]`.
 - Web resource naming convention (`{prefix}_{solution}/{path}`) is the same, but Daxif's folder already contains the full prefixed path while Flowline derives it from `WebResources/dist/`. Watch the case-sensitivity note in the wiki guide — Flowline lowercases the solution name.
-- `.fsx` scripts (`PluginSyncDev.fsx`, `SolutionExportDev.fsx`, etc.) map to `flowline push`/`sync`/`deploy`/`generate` calls — see the wiki guide's script-mapping table.
+- `.fsx` scripts (`PluginSyncDev.fsx`, `SolutionExportDev.fsx`, etc.) map to `flowline push`/`pull`/`deploy`/`generate` calls — see the wiki guide's script-mapping table.
 - No equivalent for Daxif's data migration module, per-step enable/disable, or TypeScript generation via XrmDefinitelyTyped.
 
 ### From ALM Accelerator (`Flowline.wiki/16-Migration-from-ALM-Accelerator.md`)
@@ -64,7 +64,7 @@ After the user completes the steps above, confirm the migration actually works �
 
 1. Run `flowline push --dry-run` (same command regardless of migration depth).
 2. Run the phase-appropriate second check:
-   - **Project-mode migration** (Phase 2 done, `.flowline` adopted): `flowline sync`.
-   - **Standalone-only migration** (deliberately stopped at Phase 1, no `.flowline`): `pac solution sync` directly — `flowline sync` requires a project and would report `ConfigInvalid` here, which is a mismatch, not a migration failure.
+   - **Project-mode migration** (Phase 2 done, `.flowline` adopted): `flowline pull`.
+   - **Standalone-only migration** (deliberately stopped at Phase 1, no `.flowline`): `pac solution sync` directly — `flowline pull` requires a project and would report `ConfigInvalid` here, which is a mismatch, not a migration failure.
 3. If either check exits `12` (`DirtyWorkingDirectory`) right after scaffolding — none of the wiki guides include a commit step between scaffolding and the first push — treat it as "commit the scaffolded `Solution/src/` first," not migration failure.
 4. Report success or failure honestly, naming which check failed if only one did. Don't report the migration as done just because the guide's steps were followed — only step 2's result decides that. Re-running this verify step after fixing a failure is safe; it doesn't compound the earlier problem.

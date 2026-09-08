@@ -130,8 +130,8 @@ it lands in `dist/` untouched and skips Rollup entirely.
 
 ### Outside a Flowline project
 
-`flowline push <solution> --webresources <path> --dev <url>` pushes a loose folder with no
-`.flowline` and no repo. The solution name and `--dev` are required, nothing is built, and
+`flowline push <solution> --webresources <path> --env <url>` pushes a loose folder with no
+`.flowline` and no repo. The solution name and `--env` are required, nothing is built, and
 `--scope webresources` *requires* `--webresources`. Inside a project folder the
 flag is rejected (exit 15) rather than guessed at — `cd` elsewhere or use project mode.
 
