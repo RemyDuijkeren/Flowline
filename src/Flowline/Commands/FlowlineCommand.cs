@@ -17,8 +17,6 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public enum EnvironmentRole { Prod, Uat, Test, Dev }
-
 public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) : AsyncCommand<TSettings>
     where TSettings : FlowlineSettings
 {
@@ -236,7 +234,8 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     };
 
     protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironmentInfoAsync(
-        EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null)
+        EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
+        bool skipTypeGuard = false)
     {
         var label = role switch
         {
@@ -271,11 +270,14 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
 
-        if (role == EnvironmentRole.Prod && env.Type != "Production")
-            throw new FlowlineException(ExitCode.ValidationFailed, "That environment isn't Production type — verify the URL in .flowline points to a Production environment.");
+        if (!skipTypeGuard)
+        {
+            if (role == EnvironmentRole.Prod && env.Type != "Production")
+                throw new FlowlineException(ExitCode.ValidationFailed, "That environment isn't Production type — verify the URL in .flowline points to a Production environment.");
 
-        if (role != EnvironmentRole.Prod && env.Type == "Production")
-            throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
+            if (role != EnvironmentRole.Prod && env.Type == "Production")
+                throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
+        }
 
         Console.Ok($"{label} env [bold]{env.DisplayName}[/] ({env.EnvironmentUrl}) exists");
         return (env, profile);
