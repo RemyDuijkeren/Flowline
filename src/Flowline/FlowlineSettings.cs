@@ -14,14 +14,6 @@ public class FlowlineSettings : CommandSettings
     [Description("Approve a specific hazard by name for this command; repeatable. Pass 'all' for everything this command gates — an invalid value lists the valid ones.")]
     public string[] Force { get; set; } = [];
 
-    [CommandOption("--no-cache")]
-    [Description("Re-run all pre-flight checks instead of using cached results (on deploy, also forces a fresh pack instead of reusing a cached artifact)")]
-    public bool NoCache { get; set; } = false;
-
-    [CommandOption("-a|--auto-select-auth-profile")]
-    [Description("Automatically switch PAC CLI's active auth profile to match the one Flowline resolved, without asking — the switch is not restored afterward")]
-    public bool AutoSwitchProfile { get; set; } = false;
-
     public bool HasForce(string specifier) =>
         Force.Contains(specifier, StringComparer.OrdinalIgnoreCase) || Force.Contains("all", StringComparer.OrdinalIgnoreCase);
 

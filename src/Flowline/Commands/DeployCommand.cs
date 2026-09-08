@@ -24,7 +24,7 @@ namespace Flowline.Commands;
 
 public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, IEnumerable<IPostDeployService> postDeployServices, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
-    public sealed class Settings : FlowlineSettings
+    public sealed class Settings : DataverseSettings
     {
         [CommandArgument(0, "<target>")]
         [Description("Target environment: prod, uat, test, dev, or a URL")]
@@ -420,7 +420,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         var profile = await ProfileResolutionService.ResolveAsync(targetUrl, ct);
         var targetEnv = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{targetUrl}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, profile, settings, ct));
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, profile, settings, settings.NoCache, ct));
 
         if (targetEnv == null)
             throw new FlowlineException(ExitCode.ConnectionFailed,
@@ -430,7 +430,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         var existingSolution = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.UniqueName}[/]...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.UniqueName, includeManaged: true, settings, ct, bypassCache: true));
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.UniqueName, includeManaged: true, settings, settings.NoCache, ct, bypassCache: true));
 
         if (existingSolution != null)
         {
@@ -493,7 +493,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         var predecessorInfo = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.UniqueName}[/] in {dtapDecision.PredecessorLabel}...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.UniqueName, includeManaged: true, settings, ct, bypassCache: true));
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.UniqueName, includeManaged: true, settings, settings.NoCache, ct, bypassCache: true));
 
         if (predecessorInfo == null)
             throw new FlowlineException(ExitCode.ValidationFailed,

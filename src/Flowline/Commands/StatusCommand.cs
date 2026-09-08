@@ -94,18 +94,19 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
         // Before the try and the early returns below: "am I on the latest?" is the question status exists
         // to answer, so the notice must not depend on a config being found or the tool probes succeeding.
+        // status stays on FlowlineSettings — no --no-cache, so this is always false.
         UpdateNoticeChecker.PrintNotice(Console, await UpdateNoticeChecker.CheckAsync(
-            Console, FlowlineValidator.Default, nuGetVersionClient, settings.NoCache, cancellationToken));
+            Console, FlowlineValidator.Default, nuGetVersionClient, false, cancellationToken));
 
         try
         {
-            var dotNet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, cancellationToken);
+            var dotNet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, false, cancellationToken);
             Console.MarkupLine($"[bold].NET SDK[/] version: [green]{dotNet.Version}[/]");
 
-            var pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, cancellationToken);
+            var pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, false, cancellationToken);
             Console.MarkupLine($"[bold]Power Platform CLI[/] version: [green]{pac.Version}[/] ({pac.InstallType})");
 
-            var git = await FlowlineValidator.Default.EnsureGitAsync(settings, cancellationToken);
+            var git = await FlowlineValidator.Default.EnsureGitAsync(settings, false, cancellationToken);
             Console.MarkupLine($"[bold]Git[/] version: [green]{git.Version}[/]");
         }
         catch

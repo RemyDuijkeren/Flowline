@@ -21,7 +21,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     /// subprocess with no mocking seam of its own).</summary>
     internal Func<string, CancellationToken, Task<List<SolutionInfo>>>? GetSolutionsOverride { get; set; }
 
-    public sealed class Settings : FlowlineSettings
+    public sealed class Settings : DataverseSettings
     {
         [CommandArgument(0, "[solution]")]
         [Description("Solution to clone into this repo (omit to pick one interactively)")]

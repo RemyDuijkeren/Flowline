@@ -31,7 +31,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         All = WebResources | Plugins
     }
 
-    public sealed class Settings : FlowlineSettings
+    public sealed class Settings : DataverseSettings
     {
         [CommandArgument(0, "[solution]")]
         [Description("Solution to push (optional in project mode)")]

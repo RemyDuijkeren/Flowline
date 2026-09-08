@@ -32,7 +32,7 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     /// SolutionPackager and dotnet processes.</summary>
     internal Func<ProjectSolution, string, string, CancellationToken, Task<int?>>? ValidatePackAndBuildOverride { get; set; }
 
-    public sealed class Settings : FlowlineSettings
+    public sealed class Settings : DataverseSettings
     {
         [CommandArgument(0, "[name]")]
         [Description("Solution unique name to create (omit to enter one interactively)")]
