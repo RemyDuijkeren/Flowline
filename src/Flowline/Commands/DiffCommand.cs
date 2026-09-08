@@ -31,12 +31,12 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 {
     public sealed class Settings : FlowlineSettings
     {
-        [CommandOption("--from <REF>")]
-        [Description("Git ref to compare from — a commit, tag, or branch (default: HEAD)")]
+        [CommandArgument(0, "[from]")]
+        [Description("Git ref to compare from — a commit, tag, or branch (default: HEAD). 'A..B' is shorthand for 'A B'; 'A...B' compares the merge base of A and B against B")]
         public string? From { get; set; }
 
-        [CommandOption("--to <REF>")]
-        [Description("Git ref to compare to (default: the working tree, so uncommitted and untracked files count). Needs --from")]
+        [CommandArgument(1, "[to]")]
+        [Description("Git ref to compare to (default: the working tree, so uncommitted and untracked files count)")]
         public string? To { get; set; }
 
         [CommandOption("--exit-code")]
@@ -101,8 +101,12 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     /// </remarks>
     internal async Task<int> DiffAsync(string rootFolder, string? from, string? to, string? writeTo, bool verbose, bool exitCodeOnChanges, CancellationToken cancellationToken, bool bareWrite = false)
     {
-        var (fromRef, toSide) = ResolveSides(from, to);
+        var spec = ParseRefSpec(from, to);
         await EnsureGitRepositoryAsync(rootFolder, _capture, cancellationToken);
+
+        var (fromRef, toSide) = spec.MergeBase
+            ? await ResolveMergeBaseAsync(rootFolder, spec, cancellationToken)
+            : ResolveSides(spec.From, spec.To);
 
         var (srcFolder, solutionName) = await ResolveSourceFolderAsync(rootFolder, cancellationToken);
         if (writeTo is not null) EnsureWriteTargetOutsideSource(writeTo, srcFolder, rootFolder);
@@ -140,24 +144,70 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     /// <summary>How the right side reads in a message — the ref itself, or the files on disk.</summary>
     static string Name(SolutionChangeSummary.ComparisonSide side) => side.GitRef ?? "working tree";
 
-    /// <summary>Turns the two options into the two sides of the comparison.</summary>
+    /// <summary>The two positionals once any <c>A..B</c>/<c>A...B</c> range syntax has been split out of
+    /// them — always a plain pair from here on.</summary>
+    internal readonly record struct RefSpec(string From, string? To, bool MergeBase);
+
+    /// <summary>Splits git's range syntax out of the raw positionals, so every later step only ever sees a
+    /// plain ref pair.</summary>
     /// <remarks>
-    /// <c>--from</c> moves the left side; the right side stays the files on disk unless <c>--to</c> says
-    /// otherwise. So <c>--to</c> alone has no meaning — it would leave the left side at HEAD, which is what
-    /// a bare run already does, and silently ignoring half the invocation is worse than refusing it.
+    /// Pure and synchronous: a <c>...</c> range still names two refs here, not yet a merge base — that git
+    /// call needs a working directory and happens afterward, in <see cref="ResolveMergeBaseAsync"/>.
     /// </remarks>
-    /// <exception cref="FlowlineException"><see cref="ExitCode.ValidationFailed"/> for <c>--to</c> without <c>--from</c>.</exception>
+    /// <exception cref="FlowlineException">
+    /// <see cref="ExitCode.ValidationFailed"/> for a range positional combined with a second one (two ways
+    /// of naming the right side at once), or a range missing either of its two sides.
+    /// </exception>
+    internal static RefSpec ParseRefSpec(string? from, string? to)
+    {
+        var left = string.IsNullOrWhiteSpace(from) ? null : from.Trim();
+        var right = string.IsNullOrWhiteSpace(to) ? null : to.Trim();
+
+        if (left is null) return new RefSpec("HEAD", right, false);
+
+        var mergeBase = left.Contains("...", StringComparison.Ordinal);
+        var separator = mergeBase ? "..." : "..";
+        if (!left.Contains(separator, StringComparison.Ordinal)) return new RefSpec(left, right, false);
+
+        if (right is not null)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"'{left}' is already a range — pass a range or two refs, not both. Drop '{right}'.");
+
+        var idx = left.IndexOf(separator, StringComparison.Ordinal);
+        var (rangeFrom, rangeTo) = (left[..idx], left[(idx + separator.Length)..]);
+
+        if (string.IsNullOrWhiteSpace(rangeFrom))
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"'{left}' is missing the ref before '{separator}'. Use '<ref>{left}'.");
+        if (string.IsNullOrWhiteSpace(rangeTo))
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"'{left}' is missing the ref after '{separator}'. Use '{left}<ref>'.");
+
+        return new RefSpec(rangeFrom, rangeTo, mergeBase);
+    }
+
+    /// <summary>Turns a parsed, non-range ref pair into the two sides of the comparison.</summary>
+    /// <remarks>A missing left side defaults to HEAD — the same default a bare run uses.</remarks>
     internal static (string From, SolutionChangeSummary.ComparisonSide To) ResolveSides(string? from, string? to)
     {
-        var fromRef = string.IsNullOrWhiteSpace(from) ? null : from.Trim();
+        var fromRef = string.IsNullOrWhiteSpace(from) ? "HEAD" : from.Trim();
         var toRef = string.IsNullOrWhiteSpace(to) ? null : to.Trim();
 
-        if (toRef is not null && fromRef is null)
-            throw new FlowlineException(ExitCode.ValidationFailed,
-                "--to sets the right side of the comparison, so it needs a left side too. Add --from <ref>.");
+        return (fromRef, toRef is null ? SolutionChangeSummary.ComparisonSide.WorkingTree : new SolutionChangeSummary.ComparisonSide(toRef));
+    }
 
-        return (fromRef ?? "HEAD",
-                toRef is null ? SolutionChangeSummary.ComparisonSide.WorkingTree : new SolutionChangeSummary.ComparisonSide(toRef));
+    /// <summary>Resolves an <c>A...B</c> range to the merge base of A and B, compared against B.</summary>
+    /// <exception cref="FlowlineException">
+    /// <see cref="ExitCode.ValidationFailed"/> naming both refs when they share no common history.
+    /// </exception>
+    async Task<(string From, SolutionChangeSummary.ComparisonSide To)> ResolveMergeBaseAsync(string rootFolder, RefSpec spec, CancellationToken cancellationToken)
+    {
+        var mergeBase = await GitUtils.GetMergeBaseAsync(spec.From, spec.To!, rootFolder, _capture, cancellationToken);
+        if (mergeBase is null)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"'{spec.From}' and '{spec.To}' share no common history — 'diff' can't compute a merge base between them.");
+
+        return (mergeBase, new SolutionChangeSummary.ComparisonSide(spec.To));
     }
 
     /// <summary>Refuses to compare history where there is none.</summary>

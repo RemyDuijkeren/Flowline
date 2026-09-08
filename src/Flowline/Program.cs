@@ -228,10 +228,11 @@ app.Configure(config =>
 
     // diff = read-only comparison of two points in git history; the git counterpart to drift
     config.AddCommand<DiffCommand>("diff")
-          .WithDescription("Report which solution components changed between two points in git history. Reads git and the unpacked solution XML only — no Dataverse connection, no authentication, no network. Run before a commit to see what a DEV session actually changed, or between two tags to see what a release contains. Read-only — changes nothing. Use 'drift' to compare against a live environment instead.")
+          .WithDescription("Report which solution components changed between two points in git history: two optional ref positionals, or a git-style range. Reads git and the unpacked solution XML only — no Dataverse connection, no authentication, no network. Run before a commit to see what a DEV session actually changed, or between two tags to see what a release contains. Read-only — changes nothing. Use 'drift' to compare against a live environment instead.")
           .WithExample("diff")
-          .WithExample("diff", "--from", "v1.2.0")
-          .WithExample("diff", "--from", "v1.2.0", "--to", "v1.3.0");
+          .WithExample("diff", "v1.2.0")
+          .WithExample("diff", "v1.2.0", "v1.3.0")
+          .WithExample("diff", "v1.2.0...v1.3.0");
 
     // configure = apply a per-environment settings file. Sits beside deploy rather than inside it: the
     // values and component states a settings file carries change on their own schedule, and re-running a

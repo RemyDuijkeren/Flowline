@@ -214,6 +214,24 @@ public static class GitUtils
         return string.IsNullOrWhiteSpace(sha) ? null : sha;
     }
 
+    // Null exit code means "no common history", not "git failed" — the same shape GetLastCommitShaForPathAsync
+    // uses for "no commit touches this path". Callers turn that into their own domain error.
+    public static async Task<string?> GetMergeBaseAsync(string refA, string refB, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
+    {
+        var cmd = Cli.Wrap("git");
+        if (workingDirectory != null)
+            cmd = cmd.WithWorkingDirectory(workingDirectory);
+
+        var finalCmd = cmd.WithArguments(args => args.Add("merge-base").Add(refA).Add(refB))
+                          .WithValidation(CommandResultValidation.None);
+        var result = await (capture?.Apply(finalCmd, suppressErrors: true) ?? finalCmd)
+                           .ExecuteBufferedAsync(cancellationToken);
+
+        if (result.ExitCode != 0) return null;
+        var sha = result.StandardOutput.Trim();
+        return string.IsNullOrWhiteSpace(sha) ? null : sha;
+    }
+
     // The repository root at or above startDir, or null when startDir isn't inside one. Walks up, because
     // a Flowline project doesn't have to sit at the repository root — a repo can hold several, each in its
     // own folder — and every one of them is still legitimately "in a Git repo".
