@@ -9,6 +9,7 @@ using Spectre.Console.Testing;
 
 namespace Flowline.Tests.Services;
 
+[Collection("ProjectConfigConsole")]
 public class EnvironmentTargetResolverTests
 {
     const string DevUrl = "https://contoso-dev.crm4.dynamics.com/";
