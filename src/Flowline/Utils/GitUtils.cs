@@ -212,8 +212,11 @@ public static class GitUtils
         return ShaOrNull(result);
     }
 
-    // Null exit code means "no common history", not "git failed" — the same shape GetLastCommitShaForPathAsync
-    // uses for "no commit touches this path". Callers turn that into their own domain error.
+    // Null return means "no common history" (git's own exit code 1 for this) — the same shape
+    // GetLastCommitShaForPathAsync uses for "no commit touches this path". Callers turn that into their
+    // own domain error. Exit 128 (unknown ref, not a repo, ...) is a different failure — an unrelated
+    // history and a typo'd ref both landing on "share no common history" sends the reader chasing the
+    // wrong problem, so that case throws instead of collapsing to null.
     public static async Task<string?> GetMergeBaseAsync(string refA, string refB, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
     {
         var cmd = Cli.Wrap("git");
@@ -224,6 +227,11 @@ public static class GitUtils
                           .WithValidation(CommandResultValidation.None);
         var result = await (capture?.Apply(finalCmd, suppressErrors: true) ?? finalCmd)
                            .ExecuteBufferedAsync(cancellationToken);
+
+        if (result.ExitCode == 1) return null;
+        if (result.ExitCode != 0)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"git couldn't resolve '{refA}' or '{refB}' — {result.StandardError.Trim()}");
 
         return ShaOrNull(result);
     }

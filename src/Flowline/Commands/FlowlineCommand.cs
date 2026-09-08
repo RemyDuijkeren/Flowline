@@ -223,7 +223,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
     // Mixed-case label for the "Checking dev ..." spinner and the environment-check errors; null covers a
     // use-once URL that belongs to no role.
-    static string RoleLabel(EnvironmentRole? role) => role switch
+    protected static string RoleLabel(EnvironmentRole? role) => role switch
     {
         EnvironmentRole.Prod => "Prod",
         EnvironmentRole.Uat  => "UAT",
@@ -249,7 +249,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
     protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironmentInfoAsync(
         EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
-        bool skipTypeGuard = false)
+        bool skipTypeGuard = false, bool devOnly = false)
     {
         var label = RoleLabel(role);
         var key = role.ConfigKey();
@@ -262,7 +262,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             throw new FlowlineException(ExitCode.ConfigInvalid,
                 $"{label} URL isn't set in .flowline — add \"{key}\": \"<url>\" to .flowline" + (role == EnvironmentRole.Prod ? ", or pass --prod <URL>." : "."));
 
-        return await GetAndCheckEnvironmentAsync(url, role, settings, cancellationToken, resolvedProfile, skipTypeGuard);
+        return await GetAndCheckEnvironmentAsync(url, role, settings, cancellationToken, resolvedProfile, skipTypeGuard, devOnly);
     }
 
     // Non-persisting sibling of GetAndCheckEnvironmentInfoAsync above — for a caller (EnvironmentTargetResolver's
@@ -270,9 +270,11 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     // back through a GetOrUpdate*Url setter, which would save it into .flowline for an empty key even on a
     // "use this URL once" result. role is nullable to cover exactly that use-once case (KD3) — skipTypeGuard
     // is forced on whenever role is null, since there is then no role to check the environment's type against.
+    // devOnly lets a DEV-only caller (push/sync) refuse Production even when role came back null from a
+    // "use this URL once" pick, where the role-based guard below has nothing to check.
     protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironmentAsync(
         string url, EnvironmentRole? role, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
-        bool skipTypeGuard = false)
+        bool skipTypeGuard = false, bool devOnly = false)
     {
         var label = RoleLabel(role);
 
@@ -287,12 +289,12 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
 
-        if (!skipTypeGuard && role is { } r)
+        if (!skipTypeGuard)
         {
-            if (r == EnvironmentRole.Prod && env.Type != "Production")
+            if (role == EnvironmentRole.Prod && env.Type != "Production")
                 throw new FlowlineException(ExitCode.ValidationFailed, "That environment isn't Production type — verify the URL in .flowline points to a Production environment.");
 
-            if (r != EnvironmentRole.Prod && env.Type == "Production")
+            if (env.Type == "Production" && (devOnly || (role is { } r && r != EnvironmentRole.Prod)))
                 throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
         }
 

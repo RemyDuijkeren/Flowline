@@ -441,6 +441,21 @@ public class GitUtilsTests : IDisposable
         mergeBase.Should().BeNull();
     }
 
+    [Fact]
+    public async Task GetMergeBaseAsync_WithUnknownRef_ThrowsInsteadOfReportingNoCommonHistory()
+    {
+        // `git merge-base <bad-ref> HEAD` exits 128 (unresolvable ref), not 1 (no common ancestor) --
+        // collapsing both to null misreports a typo as diverged history.
+        CreateAndCommitFile("first.txt");
+        var trunk = ReadGitOutput("rev-parse", "--abbrev-ref", "HEAD");
+
+        var act = () => GitUtils.GetMergeBaseAsync(trunk, "nosuchref-xyz", _root);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed
+                && e.Message.Contains("nosuchref-xyz") && e.Message.Contains("couldn't resolve"));
+    }
+
     // ── AssertGitRepoAsync: the repository has to be usable, not just present on disk ──────────
 
     static SubprocessCapture Capture() => new(Spectre.Console.AnsiConsole.Console);

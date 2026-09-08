@@ -140,6 +140,16 @@ public class ManagedFlagBindingTests
         Assert.EndsWith("(saved to .flowline)", description.Description);
     }
 
+    // R12: clone's --managed persists to .flowline too, same wording rule as sync's.
+    [Fact]
+    public void Clone_ManagedOption_DescriptionEndsWithSavedToFlowline()
+    {
+        var description = typeof(CloneCommand.Settings).GetProperty(nameof(CloneCommand.Settings.IncludeManaged))!
+            .GetCustomAttribute<DescriptionAttribute>()!;
+
+        Assert.EndsWith("(saved to .flowline)", description.Description);
+    }
+
     // Regression: --pull is a FlagValue<string> and carried [DefaultValue(false)], copied from the
     // FlagValue<bool> options above. Spectre assigns a declared default straight into FlagValue<T>.Value,
     // so binding threw InvalidCastException (Boolean -> String) before the command body ran — every

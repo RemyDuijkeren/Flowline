@@ -28,7 +28,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         public string? Solution { get; set; }
 
         [CommandOption("--managed [true|false]")]
-        [Description("Include managed artifacts — --managed alone means true, --managed false means false, saved to .flowline")]
+        [Description("Include managed artifacts — --managed alone means true, --managed false means false (saved to .flowline)")]
         [DefaultValue(true)]
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
     }
@@ -153,7 +153,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     async Task<EnvironmentRole> PickConfiguredRoleAsync(List<EnvironmentRole> configuredRoles, CancellationToken cancellationToken)
     {
         var choices = configuredRoles
-            .Select(r => (Label: r switch { EnvironmentRole.Dev => "Dev", EnvironmentRole.Test => "Test", EnvironmentRole.Uat => "UAT", EnvironmentRole.Prod => "Prod", _ => r.ToString() }, Role: r))
+            .Select(r => (Label: RoleLabel(r), Role: r))
             .ToList();
         var prompt = new SelectionPrompt<(string Label, EnvironmentRole Role)>()
             .Title(FlowlineConsoleExtensions.Question("More than one environment is configured — pick which one to clone from:"))

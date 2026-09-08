@@ -221,12 +221,20 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         var authority = ResolveAuthority(profile);
         var cacheHelper = await GetOrCreateMsalCacheHelperAsync();
 
-        // Token acquisition failures (session expired, tenant mismatch, ...) are left to surface as
-        // their own FlowlineException — those already carry an actionable, specific message; this
-        // probe's transport classification is only for the HTTP call itself.
-        var accessToken = profile.IsServicePrincipal
-            ? (await AcquireServicePrincipalTokenAsync(profile, authority, cacheHelper, resourceUrl, cancellationToken)).Token.AccessToken
-            : (await AcquireUserTokenAsync(profile, authority, cacheHelper, resourceUrl, cancellationToken)).Token.AccessToken;
+        // A token acquisition failure on the probed profile (session expired, tenant mismatch, ...) means
+        // this profile can't reach the target -- the same outcome as a 401/403/404 from the Web API call
+        // below, so it's reported the same way instead of aborting the caller's whole switch/prompt chain.
+        string accessToken;
+        try
+        {
+            accessToken = profile.IsServicePrincipal
+                ? (await AcquireServicePrincipalTokenAsync(profile, authority, cacheHelper, resourceUrl, cancellationToken)).Token.AccessToken
+                : (await AcquireUserTokenAsync(profile, authority, cacheHelper, resourceUrl, cancellationToken)).Token.AccessToken;
+        }
+        catch (FlowlineException)
+        {
+            return new ProbeUnauthorizedOrNotFound();
+        }
 
         return await SendReachabilityProbeAsync(accessToken, resourceUrl, cancellationToken);
     }

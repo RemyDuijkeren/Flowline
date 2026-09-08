@@ -78,7 +78,7 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         if (devEnv is null)
             return 0; // user chose "+ Create new environment" — resolver already emitted the provision advice
 
-        var exitCode = await CreateSolutionAsync(devEnv, name, settings, RootFolder, Config!, cancellationToken);
+        var exitCode = await CreateSolutionAsync(devEnv, name, settings, RootFolder, Config!, cancellationToken, devUrl);
         if (exitCode != 0)
             return exitCode;
 
@@ -99,7 +99,8 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         Settings settings,
         string rootFolder,
         ProjectConfig config,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? devUrl = null)
     {
         // R14/R19: refuse before anything is written to Dataverse.
         SolutionNameValidator.EnsureSolutionUniqueName(uniqueName);
@@ -160,7 +161,9 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // approved: without it, running init over an existing .flowline that names a different DEV URL
         // told you to pass --force config, and passing it changed nothing (HasForce is read off settings).
         config.GetOrUpdateSolution(uniqueName, includeManaged: false, settings);
-        config.GetOrUpdateDevUrl(devEnv.EnvironmentUrl, settings);
+        // same URL, two spellings: devUrl is the raw --env value the resolver already saved; falling
+        // back to devEnv.EnvironmentUrl's canonical form would trip the ordinal-compare overwrite gate.
+        config.GetOrUpdateDevUrl(devUrl ?? devEnv.EnvironmentUrl, settings);
         config.Save(rootFolder);
         Console.Ok($"DEV set to [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})");
 

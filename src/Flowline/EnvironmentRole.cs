@@ -29,4 +29,15 @@ public static class EnvironmentRoles
         EnvironmentRole.Dev  => "DEV",
         _ => throw new ArgumentOutOfRangeException(nameof(role))
     };
+
+    /// <summary>Case-insensitive dev/test/uat/prod keyword to role, or null when it isn't one. The one
+    /// mapping DriftCommand.TryResolveRole and EnvironmentTargetResolver.TryParseRole both delegate to.</summary>
+    public static EnvironmentRole? TryParse(string value) => value.ToLowerInvariant() switch
+    {
+        "prod" => EnvironmentRole.Prod,
+        "uat"  => EnvironmentRole.Uat,
+        "test" => EnvironmentRole.Test,
+        "dev"  => EnvironmentRole.Dev,
+        _      => null
+    };
 }

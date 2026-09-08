@@ -285,7 +285,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         }
         else
         {
-            (devEnv, profile) = await GetAndCheckEnvironmentAsync(environmentUrl, resolvedRole, settings, cancellationToken);
+            (devEnv, profile) = await GetAndCheckEnvironmentAsync(environmentUrl, resolvedRole, settings, cancellationToken, devOnly: true);
             var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
             slnInfo = slnInfoResult;
             solutionName = projectSln.UniqueName;

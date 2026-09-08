@@ -211,7 +211,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             else if (!await AnsiConsole.Console.ConfirmAsync(BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged), false, settings, "first-import", cancellationToken))
             {
                 Console.Info("Deploy cancelled. Re-run with --force first-import to skip this confirmation.");
-                return (int)ExitCode.ForceRequired;
+                return (int)ResolveFirstImportDeclinedExitCode();
             }
         }
 
@@ -459,6 +459,11 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         includeManaged
             ? $"First managed deploy of '{solutionName}' to {targetDisplayName} — the real deploy will ask you to confirm before importing, since this mode can't change later without uninstalling first."
             : $"First deploy of '{solutionName}' to {targetDisplayName} as unmanaged — the real deploy will ask you to confirm before importing, since switching to managed later needs manual removal first.";
+
+    // AE9/R19: a declined first-import confirmation reports ForceRequired (17), not Cancelled (130) —
+    // the remedy is a flag (--force first-import), not a re-run. Pure so it's unit-testable without a
+    // live PAC CLI or Dataverse connection, matching this file's established decision-method style.
+    internal static ExitCode ResolveFirstImportDeclinedExitCode() => ExitCode.ForceRequired;
 
     private async Task ValidateDtapGateAsync(
         ProjectSolution sln, string gateVersion, string targetUrl, Settings settings, CancellationToken ct)

@@ -184,14 +184,9 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
 
     static bool TryParseRole(string value, out EnvironmentRole role)
     {
-        switch (value.ToLowerInvariant())
-        {
-            case "dev": role = EnvironmentRole.Dev; return true;
-            case "test": role = EnvironmentRole.Test; return true;
-            case "uat": role = EnvironmentRole.Uat; return true;
-            case "prod": role = EnvironmentRole.Prod; return true;
-            default: role = default; return false;
-        }
+        var parsed = EnvironmentRoles.TryParse(value);
+        role = parsed ?? default;
+        return parsed is not null;
     }
 
     static EnvironmentRole ToEnvironmentRole(InferredRole role) => role switch

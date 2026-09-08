@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Flowline.Commands;
+using Flowline.Core;
 
 namespace Flowline.Tests;
 
@@ -47,5 +48,13 @@ public class DeployCommandFirstImportTests
         note.Should().Contain("UAT");
         note.Should().Contain("unmanaged");
         note.Should().Contain("real deploy will ask you to confirm");
+    }
+
+    // AE9/R19: locks in the declined first-import exit code (17, not the old 130) so a future revert
+    // of that one-line change is caught here instead of only in production.
+    [Fact]
+    public void ResolveFirstImportDeclinedExitCode_IsForceRequired()
+    {
+        DeployCommand.ResolveFirstImportDeclinedExitCode().Should().Be(ExitCode.ForceRequired);
     }
 }

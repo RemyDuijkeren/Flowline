@@ -413,6 +413,39 @@ public class InitCommandTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    // Regression: `--env <url>/` (trailing slash) — the resolver already saved that exact raw string
+    // as DevUrl (EnvironmentTargetResolver.SaveRole, whitespace-trimmed only) before CreateSolutionAsync
+    // ever runs; devEnv.EnvironmentUrl carries Dataverse's canonical, slash-stripped form instead. Passing
+    // devEnv.EnvironmentUrl to the second DevUrl write compared it ordinally against the already-saved
+    // slashed form and tripped the non-interactive overwrite gate after the solution was already created
+    // in Dataverse. This exercises CreateSolutionAsync at the same seam the two tests above use — no full
+    // ExecuteFlowlineAsync harness exists in this file (it needs CreateEnvironmentResolver.ResolveCreateTargetAsync
+    // and a live Validator lookup wired up), so this pins the fix at the level the rest of this test class does.
+    [Fact]
+    public async Task CreateSolution_DevUrlHasTrailingSlash_MatchesAlreadySavedForm_NoOverwritePrompt()
+    {
+        var (command, _, orgService) = MakeInitCommand(interactive: false);
+        StubCreate(orgService, Guid.NewGuid(), Guid.NewGuid());
+
+        var root = CreateTempRoot();
+        try
+        {
+            SeedScaffoldedRoot(root, "MySolution");
+            var rawDevUrl = DevUrl + "/";
+            // Mirrors what EnvironmentTargetResolver.SaveRole already wrote into Config in memory before
+            // ExecuteFlowlineAsync calls CreateSolutionAsync.
+            var config = new ProjectConfig { DevUrl = rawDevUrl };
+            var settings = new InitCommand.Settings { PublisherPrefix = "acme" };
+
+            var exitCode = await command.CreateSolutionAsync(MakeDevEnv(), "MySolution", settings, root, config,
+                CancellationToken.None, devUrl: rawDevUrl);
+
+            exitCode.Should().Be(0);
+            config.DevUrl.Should().Be(rawDevUrl);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     static void StubCreate(IOrganizationServiceAsync2 orgService, Guid publisherId, Guid solutionId)
     {
         orgService.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == "publisher")), Arg.Any<CancellationToken>())

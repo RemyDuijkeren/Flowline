@@ -18,7 +18,7 @@ Interactive is the fallback, never the requirement. Prompt only after the flag i
 *and* the run is interactive.
 
 ```csharp
-bool IsInteractive() => Console.Profile.Capabilities.Interactive;   // CloneCommand.cs:281
+protected bool IsInteractive() => Console.Profile.Capabilities.Interactive;   // FlowlineCommand.cs:236
 ```
 
 No TTY and no flag → fail immediately, naming the flag. Model:

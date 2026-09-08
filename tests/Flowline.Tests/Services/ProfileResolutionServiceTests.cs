@@ -580,6 +580,40 @@ public class ProfileResolutionServiceTests
     }
 
     [Fact]
+    public async Task ActiveProfileTokenAcquisitionFailure_FallsThrough_NotActiveProfilesOwnSessionError()
+    {
+        // R14 regression: a stale/expired token on the active-but-irrelevant profile must not abort
+        // resolution with that profile's own "Session expired" error. ProbeReachabilityAsync now
+        // catches a FlowlineException from token acquisition and reports ProbeUnauthorizedOrNotFound
+        // instead of letting it propagate (DataverseConnector.cs) -- simulated here via the seam since
+        // no Core-level seam reaches MSAL's token acquisition (see DataverseConnectorTests.cs).
+        var activeProfile = MakeProfile(name: "TEST-SP", kind: "ServicePrincipal", resource: "https://test.crm4.dynamics.com");
+        var devProfile = MakeProfile(name: "Dev", kind: "DATAVERSE", resource: EnvironmentUrl);
+        var probeCalls = 0;
+
+        var console = new TestConsole(); // non-interactive by default
+        var connector = new DataverseConnector(console, new HttpClient());
+        var svc = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
+        {
+            GetPacProfilesOverride = () => [activeProfile, devProfile],
+            IsProfileActiveOverride = p => p == activeProfile,
+            FindBestProfileOverride = _ => new ProfileFound(devProfile),
+            ProbeReachabilityOverride = (_, _, _) =>
+            {
+                probeCalls++;
+                return Task.FromResult<ReachabilityProbeResult>(new ProbeUnauthorizedOrNotFound());
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        probeCalls.Should().Be(1);
+        ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
+        ex.Message.Should().Contain("pac auth select");
+        ex.Message.Should().NotContain("Session expired for 'TEST-SP'"); // the active profile's own credential error never surfaces
+    }
+
+    [Fact]
     public async Task ActiveProfileProbeTransportFailure_HttpRequestException_ThrowsConnectionFailed()
     {
         var activeProfile = MakeProfile(name: "TEST-SP", kind: "ServicePrincipal", resource: "https://test.crm4.dynamics.com");

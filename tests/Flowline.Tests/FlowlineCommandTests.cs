@@ -111,8 +111,8 @@ public class FlowlineCommandTests
 
         public Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironment(
             string url, EnvironmentRole? role, FlowlineSettings settings, CancellationToken cancellationToken,
-            PacProfile? resolvedProfile = null, bool skipTypeGuard = false) =>
-            GetAndCheckEnvironmentAsync(url, role, settings, cancellationToken, resolvedProfile, skipTypeGuard);
+            PacProfile? resolvedProfile = null, bool skipTypeGuard = false, bool devOnly = false) =>
+            GetAndCheckEnvironmentAsync(url, role, settings, cancellationToken, resolvedProfile, skipTypeGuard, devOnly);
     }
 
     static TestCommand MakeCommand(ProfileResolutionService profileResolutionService)
@@ -244,6 +244,21 @@ public class FlowlineCommandTests
             CancellationToken.None, resolvedProfile: profile);
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task GetAndCheckEnvironmentAsync_DevOnlyTrue_RoleNull_ProductionType_Throws()
+    {
+        // Push/sync's "use this URL once" result also carries Role:null, but push/sync are DEV-only
+        // commands — devOnly:true must still refuse Production even without a role to check.
+        var command = MakeCommandWithValidator(MakeValidator("Production"));
+        var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
+
+        var act = () => command.GetAndCheckEnvironment(EnvUrl, null, new FlowlineSettings(),
+            CancellationToken.None, resolvedProfile: profile, devOnly: true);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed);
     }
 
     [Fact]

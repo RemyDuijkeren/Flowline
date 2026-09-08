@@ -648,6 +648,7 @@ public class GeneratePersistingFlagDescriptionTests
     [InlineData(nameof(GenerateCommand.Settings.Generator))]
     [InlineData(nameof(GenerateCommand.Settings.Output))]
     [InlineData(nameof(GenerateCommand.Settings.ServiceContextName))]
+    [InlineData(nameof(GenerateCommand.Settings.Env))]
     public void PersistingFlag_DescriptionEndsWithSavedToFlowline(string propertyName)
     {
         var description = typeof(GenerateCommand.Settings).GetProperty(propertyName)!

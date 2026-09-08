@@ -188,14 +188,7 @@ public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConn
         return (env, profile);
     }
 
-    internal static EnvironmentRole? TryResolveRole(string target) => target.ToLowerInvariant() switch
-    {
-        "prod" => EnvironmentRole.Prod,
-        "uat"  => EnvironmentRole.Uat,
-        "test" => EnvironmentRole.Test,
-        "dev"  => EnvironmentRole.Dev,
-        _      => null
-    };
+    internal static EnvironmentRole? TryResolveRole(string target) => EnvironmentRoles.TryParse(target);
 
     // KD8: drift is read-only, so a completed comparison is not itself a failure — it exits 0 whether or
     // not orphans were found. Only --exit-code turns "orphans found" into a distinct code (22, shared with
