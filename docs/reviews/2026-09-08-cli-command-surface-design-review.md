@@ -96,7 +96,10 @@ Decision: **accept, modified** (2026-09-08)
   `.flowline` key to add (G3 rejected, so no `env add`). No new flag.
 - Role inference, first hit wins, shared by every command that offers to save: (1) URL suffix
   `-dev`, `-test`, `-uat` before `.crm`, the same convention `provision --suffix` writes;
-  (2) environment type, Production → `prod`, Sandbox or Developer → `dev`; (3) fallback `dev`.
+  (2) environment type, Production → `prod`, Developer → `dev`; (3) an unsuffixed Sandbox is
+  not inferred (changed 2026-09-08 in plan review: Dataverse reports test and UAT sandboxes with
+  the same type as DEV): non-interactive fails naming the `.flowline` key, interactive shows the
+  picker with no pre-selection.
   Interactive: picker pre-selected with the inferred role. Non-interactive: inferred role
   used, printed as "Saved as dev (inferred from environment type). Change it in `.flowline`."
 - `clone <solution> --env <url>` saves the URL through that same resolver, because clone
