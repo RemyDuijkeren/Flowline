@@ -21,7 +21,8 @@ namespace Flowline.Commands;
 // project comes to exist, so there is no project yet to require.
 public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService,
     ILoggerFactory loggerFactory, SubprocessCapture capture, CreateEnvironmentResolver createEnvironmentResolver,
-    DataverseConnector dataverseConnector, SolutionCreateService solutionCreateService, ProjectScaffolder projectScaffolder, NuGetVersionClient nuGetVersionClient) :
+    DataverseConnector dataverseConnector, SolutionCreateService solutionCreateService, ProjectScaffolder projectScaffolder, NuGetVersionClient nuGetVersionClient,
+    EnvironmentTargetResolver environmentTargetResolver) :
     FlowlineCommand<InitCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
     /// <summary>Seam for testing — overrides DataverseConnector.ConnectViaPacAsync (a real MSAL token
@@ -37,10 +38,6 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         [CommandArgument(0, "[name]")]
         [Description("Solution unique name to create (omit to enter one interactively)")]
         public string? Name { get; set; }
-
-        [CommandOption("--dev <URL>")]
-        [Description("Target DEV environment URL (omit to pick from your tenant)")]
-        public string? DevUrl { get; set; }
 
         [CommandOption("--display-name <TEXT>")]
         [Description("Solution display name (defaults to a humanized form of the unique name)")]
@@ -65,7 +62,19 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // R14/R19: refuse a bad name before spending an interactive environment picker on it.
         SolutionNameValidator.EnsureSolutionUniqueName(name);
 
-        var devEnv = await createEnvironmentResolver.ResolveCreateTargetAsync(settings.DevUrl, settings, cancellationToken);
+        // KTD5: --env is DEV-only for init. An explicit --env goes through the same seam every other
+        // env-driven command uses (KD1) — a role keyword only resolves against an already-configured
+        // DevUrl, which a greenfield init doesn't have yet, so this is skipped when --env is absent and
+        // CreateEnvironmentResolver keeps its own tenant-wide picker / non-interactive error for that case.
+        string? devUrl = null;
+        if (!string.IsNullOrWhiteSpace(settings.Env))
+        {
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, devOnly: true, IsInteractive(), settings,
+                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+            devUrl = target.Url;
+        }
+
+        var devEnv = await createEnvironmentResolver.ResolveCreateTargetAsync(devUrl, settings, cancellationToken);
         if (devEnv is null)
             return 0; // user chose "+ Create new environment" — resolver already emitted the provision advice
 

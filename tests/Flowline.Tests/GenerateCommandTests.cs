@@ -3,8 +3,45 @@ using Flowline.Commands;
 using Flowline.Config;
 using Flowline.Core;
 using FluentAssertions;
+using Spectre.Console.Cli;
 
 namespace Flowline.Tests;
+
+public class GenerateCommandParseTests
+{
+    // -- R1/R4: --env replaces --dev (U3) — generate accepts any role, incl. Production (KTD8) --
+
+    sealed class CapturingGenerateSettingsCommand : Command<GenerateCommand.Settings>
+    {
+        public static Action<GenerateCommand.Settings>? OnExecute;
+
+        protected override int Execute(CommandContext context, GenerateCommand.Settings settings, CancellationToken cancellationToken)
+        {
+            OnExecute?.Invoke(settings);
+            return 0;
+        }
+    }
+
+    [Fact]
+    public void CommandApp_EnvRoleKeyword_BindsEnv()
+    {
+        GenerateCommand.Settings? captured = null;
+        var app = new CommandApp();
+        app.Configure(c => c.AddCommand<CapturingGenerateSettingsCommand>("generate"));
+        CapturingGenerateSettingsCommand.OnExecute = s => captured = s;
+
+        var exitCode = app.Run(["generate", "--env", "prod"]);
+
+        exitCode.Should().Be(0);
+        captured!.Env.Should().Be("prod");
+    }
+
+    [Fact]
+    public void Settings_HasNoDevUrlProperty_TheOldFlagIsGone()
+    {
+        typeof(GenerateCommand.Settings).GetProperty("DevUrl").Should().BeNull();
+    }
+}
 
 public class GeneratorResolutionTests
 {

@@ -167,6 +167,21 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         return null;
     }
 
+    // Reused by standalone push/generate (no ProjectConfig to resolve a keyword against) to refuse a bare
+    // role keyword before it's silently treated as a literal URL.
+    internal static bool IsRoleKeyword(string value) => TryParseRole(value, out _);
+
+    // Standalone push/generate call ResolveStandaloneEnvironmentUrl directly (no ProjectConfig, so this
+    // class's own ResolveAsync doesn't apply) — that method only checks for a blank value, so a bare
+    // keyword like "dev" would otherwise flow through as if it were a literal URL. One shared guard for
+    // both callers, called before ResolveStandaloneEnvironmentUrl.
+    internal static void EnsureUsableStandaloneEnv(string? env)
+    {
+        if (!string.IsNullOrWhiteSpace(env) && IsRoleKeyword(env))
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                "Standalone mode has no .flowline to resolve a role against — pass --env <url>.");
+    }
+
     static bool TryParseRole(string value, out EnvironmentRole role)
     {
         switch (value.ToLowerInvariant())

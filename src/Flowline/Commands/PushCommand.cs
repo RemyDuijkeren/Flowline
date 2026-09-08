@@ -18,7 +18,7 @@ using Flowline.Validation;
 
 namespace Flowline.Commands;
 
-public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FormEventService formEventService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient)
+public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FormEventService formEventService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient, EnvironmentTargetResolver environmentTargetResolver)
     : FlowlineCommand<PushCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
     [Flags]
@@ -48,10 +48,6 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         [CommandOption("-w|--webresources <PATH>")]
         [Description("Web resource folder to push without using a Flowline project")]
         public string? WebResources { get; set; }
-
-        [CommandOption("--dev <url>")]
-        [Description("Use this dev environment URL")]
-        public string? DevUrl { get; set; }
 
         [CommandOption("--no-delete")]
         [Description("Push without deleting any Dataverse assets that are missing from source")]
@@ -99,11 +95,32 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         var runMode = ResolveRunMode(settings);
         var standaloneParams = ResolveStandaloneParameters(settings, standaloneMode);
 
-        var environmentUrl = "";
+        // R3: the DEV-only refusal has to fire before any PAC profile is resolved, any connection made,
+        // or anything written to .flowline — so this resolve happens before ResolveEnvironmentAndSolutionAsync,
+        // which is what does that work.
+        string environmentUrl;
+        EnvironmentRole? resolvedRole = null;
+        var configSaved = false;
         if (standaloneMode)
-            environmentUrl = ProfileResolutionService.ResolveStandaloneEnvironmentUrl(settings.DevUrl);
+        {
+            EnvironmentTargetResolver.EnsureUsableStandaloneEnv(settings.Env);
+            environmentUrl = ProfileResolutionService.ResolveStandaloneEnvironmentUrl(settings.Env);
+        }
+        else
+        {
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, devOnly: true, IsInteractive(), settings,
+                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+            environmentUrl = target.Url;
+            resolvedRole = target.Role;
+            configSaved = target.Saved;
+        }
 
-        var (devEnv, solutionName, pluginPackageMode, resolvedProfile) = await ResolveEnvironmentAndSolutionAsync(settings, standaloneMode, environmentUrl, standaloneParams, cancellationToken);
+        var (devEnv, solutionName, pluginPackageMode, resolvedProfile) = await ResolveEnvironmentAndSolutionAsync(settings, standaloneMode, environmentUrl, resolvedRole, standaloneParams, cancellationToken);
+
+        // R11: .flowline is only written once the resolver actually saved something (a first-seen URL) —
+        // a keyword/URL match against an already-saved role never reaches here with configSaved true.
+        if (configSaved)
+            Config!.Save();
 
         if (!standaloneMode)
             environmentUrl = devEnv.EnvironmentUrl!;
@@ -250,6 +267,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         Settings settings,
         bool standaloneMode,
         string environmentUrl,
+        EnvironmentRole? resolvedRole,
         StandaloneParams standaloneParams,
         CancellationToken cancellationToken)
     {
@@ -267,7 +285,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         }
         else
         {
-            (devEnv, profile) = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Dev, settings.DevUrl, settings, cancellationToken);
+            (devEnv, profile) = await GetAndCheckEnvironmentAsync(environmentUrl, resolvedRole, settings, cancellationToken);
             var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
             slnInfo = slnInfoResult;
             solutionName = projectSln.UniqueName;
@@ -560,6 +578,8 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         public string? DllPath { get; set; }
         public string? WebResourcesPath { get; set; }
     }
+
+    bool IsInteractive() => Console.Profile.Capabilities.Interactive;
 
     internal static bool IsStandaloneMode(Settings settings) =>
         !string.IsNullOrWhiteSpace(settings.PluginFile) || !string.IsNullOrWhiteSpace(settings.WebResources);

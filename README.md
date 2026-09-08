@@ -116,7 +116,7 @@ public class CreditLimitValidationUpdatePlugin : IPlugin
 Already have a built assembly? Push it standalone, no cloned project needed:
 
 ```bash
-flowline push ContosoSales --pluginFile ./bin/Release/Plugins.dll --dev https://contoso-dev.crm4.dynamics.com
+flowline push ContosoSales --pluginFile ./bin/Release/Plugins.dll --env https://contoso-dev.crm4.dynamics.com
 ```
 
 **[Flowline.Attributes reference](src/Flowline.Attributes/README.md)** · **[Push Plugins and Custom APIs wiki](https://github.com/RemyDuijkeren/Flowline/wiki/05-Push-Plugins-and-Custom-APIs)**
@@ -130,7 +130,7 @@ flowline push ContosoSales --pluginFile ./bin/Release/Plugins.dll --dev https://
 Point it at a build output folder, and it creates, updates, and removes web resources to match, standalone, no cloned project needed:
 
 ```bash
-flowline push ContosoSales --webresources ./dist --dev https://contoso-dev.crm4.dynamics.com
+flowline push ContosoSales --webresources ./dist --env https://contoso-dev.crm4.dynamics.com
 ```
 
 Beyond the sync itself, Flowline reads `// flowline:...` comment annotations straight out of your built files and uses them to auto-wire Dataverse metadata that would otherwise mean a Maker Portal visit:

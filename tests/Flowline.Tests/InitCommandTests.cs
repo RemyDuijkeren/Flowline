@@ -48,7 +48,7 @@ public class InitCommandTests
     public void Settings_OptionFlags_HaveNoShortAliases()
     {
         // "-v|--verbose"-shaped templates carry a short alias before the pipe; init's own flags
-        // (--dev is shared with clone/generate, which also has none) must all be long-form only.
+        // must all be long-form only.
         var ownProperties = typeof(InitCommand.Settings).GetProperties(BindingFlags.Instance | BindingFlags.Public)
             .Where(p => p.DeclaringType == typeof(InitCommand.Settings));
 
@@ -86,7 +86,7 @@ public class InitCommandTests
     {
         var exitCode = BuildInitParseProbe().Run([
             "init", "MySolution",
-            "--dev", "https://contoso-dev.crm4.dynamics.com",
+            "--env", "https://contoso-dev.crm4.dynamics.com",
             "--display-name", "My Solution",
             "--publisher-prefix", "acme",
             "--publisher-name", "Acme Corp"
@@ -95,7 +95,7 @@ public class InitCommandTests
         exitCode.Should().Be(0);
         var captured = CapturingInitSettingsCommand.Captured!;
         captured.Name.Should().Be("MySolution");
-        captured.DevUrl.Should().Be("https://contoso-dev.crm4.dynamics.com");
+        captured.Env.Should().Be("https://contoso-dev.crm4.dynamics.com");
         captured.DisplayName.Should().Be("My Solution");
         captured.PublisherPrefix.Should().Be("acme");
         captured.PublisherName.Should().Be("Acme Corp");
@@ -109,7 +109,7 @@ public class InitCommandTests
         exitCode.Should().Be(0);
         var captured = CapturingInitSettingsCommand.Captured!;
         captured.Name.Should().Be("MySolution");
-        captured.DevUrl.Should().BeNull();
+        captured.Env.Should().BeNull();
         captured.DisplayName.Should().BeNull();
         captured.PublisherPrefix.Should().BeNull();
         captured.PublisherName.Should().BeNull();
@@ -125,6 +125,12 @@ public class InitCommandTests
 
         exitCode.Should().Be(0);
         CapturingInitSettingsCommand.Captured!.Name.Should().BeNull();
+    }
+
+    [Fact]
+    public void Settings_HasNoDevUrlProperty_TheOldFlagIsGone()
+    {
+        typeof(InitCommand.Settings).GetProperty("DevUrl").Should().BeNull();
     }
 
     // ── Optional name: prompted interactively, refused with the argument named when there's no TTY ──
@@ -190,7 +196,8 @@ public class InitCommandTests
         var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, capture);
 
         var command = new InitCommand(console, new FlowlineRuntimeOptions(), profileResolutionService,
-            NullLoggerFactory.Instance, capture, createEnvironmentResolver, connector, new SolutionCreateService(), projectScaffolder, new NuGetVersionClient(new HttpClient()))
+            NullLoggerFactory.Instance, capture, createEnvironmentResolver, connector, new SolutionCreateService(), projectScaffolder, new NuGetVersionClient(new HttpClient()),
+            new EnvironmentTargetResolver(console))
         {
             ConnectOverride = (_, _, _) => Task.FromResult(orgService),
             ValidatePackAndBuildOverride = s_succeedingBuild
