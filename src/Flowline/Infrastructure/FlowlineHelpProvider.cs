@@ -55,7 +55,7 @@ internal sealed class FlowlineHelpProvider(ICommandAppSettings settings) : HelpP
         }
         
         var version = FlowlineVersion.Display;
-        var versionText = new Text($"Flowline CLI v{version} - Dataverse ALM: clone → push → sync → deploy", new Style(FlowlineTheme.PrimaryColor));
+        var versionText = new Text($"Flowline CLI v{version} - Dataverse ALM: clone → push → pull → deploy", new Style(FlowlineTheme.PrimaryColor));
         yield return versionText;
         yield return Text.NewLine;
         yield return Text.NewLine;

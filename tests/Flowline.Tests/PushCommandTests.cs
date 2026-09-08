@@ -1036,7 +1036,45 @@ public class PushCommandTests : IDisposable
     public void Settings_HasNoDevUrlProperty_TheOldFlagIsGone()
     {
         // R10/KD5: --dev is removed with no alias — asserted on the settings shape rather than a parse
-        // outcome, since this repo's parser doesn't reject an unrecognized flag.
+        // outcome, since this probe's plain CommandApp doesn't enable strict parsing. Production strict
+        // parsing (Program.cs, via CliConfiguration.Configure) is proven in ProgramParsingTests.
         typeof(PushCommand.Settings).GetProperty("DevUrl").Should().BeNull();
+    }
+
+    // -- R22/KD16: --pluginFile becomes --plugin-file --
+
+    [Fact]
+    public void CommandApp_PluginFile_BindsPluginFile()
+    {
+        PushCommand.Settings? captured = null;
+        var app = new CommandApp();
+        app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
+        CapturingPushSettingsCommand.OnExecute = s => captured = s;
+
+        var exitCode = app.Run(["push", "--plugin-file", "./bin/Release/Plugins.dll"]);
+
+        exitCode.Should().Be(0);
+        captured!.PluginFile.Should().Be("./bin/Release/Plugins.dll");
+    }
+
+    [Fact]
+    public void CommandApp_OldPluginFileSpelling_FailsUnderStrictParsing()
+    {
+        // Mirrors Program.cs's real setting (config.Settings.StrictParsing = true, set in
+        // CliConfiguration.Configure) rather than BuildPushParseProbe's plain, non-strict app — this is
+        // the one test in this file that needs strict parsing on, so it sets it directly instead of
+        // pulling in the full CliConfiguration.Configure surface ProgramParsingTests already covers.
+        var app = new CommandApp();
+        app.Configure(c =>
+        {
+            c.Settings.StrictParsing = true;
+            c.PropagateExceptions();
+            c.AddCommand<NoOpPushSettingsCommand>("push");
+        });
+
+        var act = () => app.Run(["push", "--pluginFile", "./bin/Release/Plugins.dll"]);
+
+        act.Should().Throw<CommandParseException>()
+           .WithMessage("*pluginFile*");
     }
 }

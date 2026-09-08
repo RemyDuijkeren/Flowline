@@ -86,7 +86,7 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
     protected override Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         ValidatePart(settings.Part);
-        ValidateName(settings.Name);
+        ValidateName(settings.Name, settings.Part);
 
         // --output is just "the folder I am standing in", so it needs no special case: the project is
         // written there either way, and the solution-file search starts there either way.
@@ -469,19 +469,22 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
 
     /// <summary>Refuses a <c>--name</c> that would produce a project Flowline cannot use.</summary>
     /// <remarks>
-    /// The Test/Tests rule is not style. <c>WebResourcesProjectResolver.IsTestProject</c> eliminates any
-    /// project whose file name ends that way before scoring, so a project named there would resolve to "no
-    /// WebResources project" and every later <c>push</c> would skip web resources with a warning instead of
-    /// failing. Rejecting the name at creation is the only point where that is still cheap to fix.
+    /// The Test/Tests rule is not style, and it is webresources-only. <c>WebResourcesProjectResolver.IsTestProject</c>
+    /// eliminates any project whose file name ends that way before scoring, so a project named there would
+    /// resolve to "no WebResources project" and every later <c>push</c> would skip web resources with a
+    /// warning instead of failing. Plugin discovery has no such name rule — a plugin project named that way
+    /// is unaffected — so the rejection only fires for <c>part == "webresources"</c>. Rejecting the name at
+    /// creation is the only point where that is still cheap to fix.
     ///
     /// The character check is what keeps <c>--name</c> a name: a path there would put the project somewhere
     /// <c>--output</c> already covers, with two flags able to disagree about where the scaffold lands.
     /// </remarks>
-    internal static void ValidateName(string? name)
+    internal static void ValidateName(string? name, string part)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
 
-        if (name.EndsWith("Test", StringComparison.OrdinalIgnoreCase) || name.EndsWith("Tests", StringComparison.OrdinalIgnoreCase))
+        if (part.Equals("webresources", StringComparison.OrdinalIgnoreCase) &&
+            (name.EndsWith("Test", StringComparison.OrdinalIgnoreCase) || name.EndsWith("Tests", StringComparison.OrdinalIgnoreCase)))
             throw new FlowlineException(ExitCode.ValidationFailed,
                 $"'{name}' ends in Test, and Flowline reads a project named that way as a test project — push would skip its web resources every run. Pick a name that doesn't.");
 

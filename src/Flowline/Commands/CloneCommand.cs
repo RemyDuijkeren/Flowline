@@ -86,7 +86,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         await projectScaffolder.ScaffoldDocsAsync(slnFolder, solutionName, slnFileName, cancellationToken);
 
-        Console.Done("Cloned! Use 'push' and 'sync' to keep it in flow. ヽ(•‿•)ノ");
+        Console.Done("Cloned! Use 'push' and 'pull' to keep it in flow. ヽ(•‿•)ノ");
         return 0;
     }
 

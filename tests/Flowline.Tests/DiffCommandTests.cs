@@ -268,9 +268,9 @@ public class DiffCommandTests : IDisposable
             .And.Message.Should().Contain("solution file");
     }
 
-    /// <summary>R13. A solution file whose src/ was never unpacked names 'sync' as the fix.</summary>
+    /// <summary>R13. A solution file whose src/ was never unpacked names 'pull' as the fix.</summary>
     [Fact]
-    public async Task ResolveSourceFolderAsync_WithNoUnpackedSource_FailsNamingSync()
+    public async Task ResolveSourceFolderAsync_WithNoUnpackedSource_FailsNamingPull()
     {
         var srcFolder = await CreateSolutionRepoAsync();
         Directory.Delete(srcFolder, recursive: true);
@@ -279,7 +279,7 @@ public class DiffCommandTests : IDisposable
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Where(e => e.ExitCode == ExitCode.NotFound)
-            .And.Message.Should().Contain("sync");
+            .And.Message.Should().Contain("pull");
     }
 
     /// <summary>The source folder is read through the solution file, so a relocated solution folder is followed.</summary>

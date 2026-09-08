@@ -81,7 +81,7 @@ public static class MissingComponentReport
         lines.Add(reportPath != null
             ? $"Full list: {reportPath}"
             : "Couldn't write the full report — the components above are the first five of the set.");
-        lines.Add("Fix it: install the missing solution or application in the target, or remove the dependent component from the solution in DEV and run 'flowline sync'.");
+        lines.Add("Fix it: install the missing solution or application in the target, or remove the dependent component from the solution in DEV and run 'flowline pull'.");
         lines.Add("Last resort: --skip-component-check deploys without this check.");
 
         return string.Join(Environment.NewLine, lines);

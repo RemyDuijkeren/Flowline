@@ -82,7 +82,7 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         if (exitCode != 0)
             return exitCode;
 
-        Console.Done("Created! Use 'push' and 'sync' to keep it in flow.");
+        Console.Done("Created! Use 'push' and 'pull' to keep it in flow.");
         return 0;
     }
 

@@ -48,7 +48,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         // Solution is the single one configured in .flowline — sync is project-mode only
         var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(null, devEnv.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
         if (slnInfo.IsManaged)
-            throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for sync — use an unmanaged solution.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for pull — use an unmanaged solution.");
 
         Logger.LogInformation("target={EnvironmentUrl} solution={SolutionName} bump={Bump}", devEnv.EnvironmentUrl, projectSln.UniqueName, settings.Bump);
 

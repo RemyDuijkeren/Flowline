@@ -124,7 +124,7 @@ public class MissingComponentReportTests : IDisposable
         var message = MissingComponentReport.RenderFailureMessage(results, @"C:\artifacts\missing-components.txt");
 
         message.Should().ContainEquivalentOf("install");
-        message.Should().ContainEquivalentOf("sync");
+        message.Should().ContainEquivalentOf("pull");
     }
 
     [Fact]

@@ -276,7 +276,7 @@ public class PluginProjectResolverTests : IDisposable
 
         var message = act.Should().Throw<FlowlineException>()
                          .Which.Message;
-        message.Should().Contain("SomeLibrary").And.Contain("--pluginFile");
+        message.Should().Contain("SomeLibrary").And.Contain("--plugin-file");
     }
 
     [Fact]
@@ -303,7 +303,7 @@ public class PluginProjectResolverTests : IDisposable
 
         var thrown = act.Should().Throw<FlowlineException>().Which;
         thrown.ExitCode.Should().Be(ExitCode.ValidationFailed);
-        thrown.Message.Should().Contain("Plugins").And.Contain("--pluginFile");
+        thrown.Message.Should().Contain("Plugins").And.Contain("--plugin-file");
     }
 
     [Fact]

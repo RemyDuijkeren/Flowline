@@ -836,6 +836,18 @@ public class CloneCommandTests
                .And.NotContain("Solution/src/");
     }
 
+    // R21/KD9: pull is the primary name, sync a permanent alias — the scaffolded AGENTS.md an agent
+    // reads as fact must lead with the command it will actually type.
+    [Fact]
+    public void BuildAgentsFileContent_LeadsWithPullNotSync_AndNamesNoRemovedDevFlag()
+    {
+        var content = ProjectScaffolder.BuildAgentsFileContent("CrO7982", "CrO7982.slnx", "Solution");
+
+        content.Should().Contain("flowline pull")
+               .And.NotContain("flowline sync")
+               .And.NotContain("--dev");
+    }
+
     // ── Interactive solution pick (U6 / R11, R17, R13) ──────────────────────
     // No solution named, no role URL configured, interactive — offers the environment + solution
     // pickers instead of FindUnmanagedSourceAsync's flag-driven error. `ShouldPickSolution` is the pure

@@ -286,7 +286,7 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         if (!Directory.Exists(srcFolder))
             throw new FlowlineException(ExitCode.NotFound,
-                $"No unpacked solution source at '{ConsolePath.FormatRelativePath(srcFolder, rootFolder, markup: false)}' — 'diff' reads that XML. Run 'flowline sync' to unpack it first.");
+                $"No unpacked solution source at '{ConsolePath.FormatRelativePath(srcFolder, rootFolder, markup: false)}' — 'diff' reads that XML. Run 'flowline pull' to unpack it first.");
 
         // The .cdsproj carries the solution's identity, so the written report is headed by the same name
         // sync writes.
