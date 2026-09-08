@@ -233,15 +233,15 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
             | 11 | Config invalid | Check .flowline exists and is valid |
             | 12 | Dirty working directory | Commit or stash changes first |
             | 13 | Build failed | Fix `dotnet build` errors in Plugins/ |
-            | 14 | Version conflict | Add the --force <specifier> the error names to overwrite |
-            | 15 | Validation failed | Check error output for drift, an invalid --force value, or missing dependencies |
+            | 14 | Version conflict | Reserved, never thrown |
+            | 15 | Validation failed | Check error output: a non-DEV target on push/pull/init, an invalid --force value, unsynced local changes on deploy, or missing dependencies |
             | 16 | Timeout | PAC CLI 60-min limit hit — retry or check environment health |
-            | 17 | Force required | Add the --force <specifier> the message names |
+            | 17 | Force required | Add the --force <specifier> the message names (config overwrite, provision overwrite, a declined first-import confirmation) |
             | 18 | Partial success | Deploy landed but orphan cleanup failed — remove the named items via maker portal |
             | 19 | Inconclusive | A check could not run to completion — investigate the printed reason before trusting the result |
             | 20 | Write target occupied | A file is in the way — move it aside, or run the command elsewhere |
             | 21 | Assembly not registered | Create the `pluginassembly` record the error names, then deploy again |
-            | 22 | Changes found | Not a failure — `diff --exit-code` found changes. Only returned when `--exit-code` is passed |
+            | 22 | Changes found | Not a failure — `diff --exit-code` or `drift --exit-code` found changes. Only returned when `--exit-code` is passed |
             | 130 | Cancelled | Ctrl+C pressed |
 
             ## Environments
