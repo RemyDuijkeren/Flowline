@@ -200,22 +200,39 @@ public class SettingsFileReaderTests
 
         try
         {
-            // Read-only is the cheapest real failure: the move into place is refused after the replacement
-            // has already been written to the temp file, which is exactly the window that used to truncate.
-            File.SetAttributes(path, FileAttributes.ReadOnly);
+            // Cheapest real failure per platform. On Windows a read-only target refuses the move into place,
+            // which is exactly the window that used to truncate. Unix ignores the file's own permissions on a
+            // rename, so there the folder is made unwritable instead and the temp write is what fails.
+            if (OperatingSystem.IsWindows())
+                File.SetAttributes(path, FileAttributes.ReadOnly);
+            else
+                File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
 
             var act = () => SettingsFileReader.Save(new SettingsDocument(), path);
 
             act.Should().Throw<UnauthorizedAccessException>();
 
-            File.SetAttributes(path, FileAttributes.Normal);
+            Restore();
             File.ReadAllText(path).Should().Be(original);
             Directory.GetFiles(folder, "*.tmp").Should().BeEmpty("a failed write cleans up after itself");
         }
         finally
         {
-            if (File.Exists(path)) File.SetAttributes(path, FileAttributes.Normal);
+            Restore();
             Directory.Delete(folder, recursive: true);
+        }
+
+        void Restore()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                if (File.Exists(path)) File.SetAttributes(path, FileAttributes.Normal);
+            }
+            else if (Directory.Exists(folder))
+            {
+                File.SetUnixFileMode(folder,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
         }
     }
 
