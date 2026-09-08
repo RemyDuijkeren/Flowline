@@ -20,7 +20,8 @@ public class ProfileResolutionServiceTests
         bool isInteractive = false,
         bool autoSwitchProfile = false,
         IReadOnlyList<PacProfile>? allProfiles = null,
-        Func<PacProfile, bool>? isProfileActiveOverride = null)
+        Func<PacProfile, bool>? isProfileActiveOverride = null,
+        Func<PacProfile, string, CancellationToken, Task<ReachabilityProbeResult>>? probeReachabilityOverride = null)
     {
         console = new TestConsole();
         if (isInteractive) console.Interactive();
@@ -29,7 +30,8 @@ public class ProfileResolutionServiceTests
         {
             FindBestProfileOverride = _ => resolvedResult,
             IsProfileActiveOverride = isProfileActiveOverride ?? (_ => isProfileActive),
-            GetPacProfilesOverride = () => allProfiles ?? []
+            GetPacProfilesOverride = () => allProfiles ?? [],
+            ProbeReachabilityOverride = probeReachabilityOverride
         };
         return svc;
     }
@@ -387,7 +389,13 @@ public class ProfileResolutionServiceTests
         {
             GetPacProfilesOverride = () => [profileA, profileB],
             IsProfileActiveOverride = p => { activeChecks.Add(p.Name!); return switched.Contains(p.Name!); },
-            SelectAuthProfileOverride = (p, _, _) => { switchCalls++; switched.Add(p.Name!); return Task.CompletedTask; }
+            SelectAuthProfileOverride = (p, _, _) => { switchCalls++; switched.Add(p.Name!); return Task.CompletedTask; },
+            // U6's active-profile preference (EnsureActiveProfileAsync's preferReachableActiveProfile
+            // branch) runs on every mismatch; once A is switched active it no longer matches B's URL, so
+            // the second ResolveAsync would otherwise probe DataverseConnector for real (real
+            // MSAL/network, non-deterministic on CI). Stubbed to fall through to today's chain, unchanged
+            // from this test's original intent.
+            ProbeReachabilityOverride = (_, _, _) => Task.FromResult<ReachabilityProbeResult>(new ProbeUnauthorizedOrNotFound())
         };
 
         svc.FindBestProfileOverride = _ => new ProfileFound(profileA);
@@ -396,8 +404,15 @@ public class ProfileResolutionServiceTests
         svc.FindBestProfileOverride = _ => new ProfileFound(profileB);
         await svc.ResolveAsync(profileB.Resource!);
 
-        // Each URL is checked twice: once to detect the mismatch, once after switching to confirm it took.
-        activeChecks.Should().Equal("A", "A", "B", "B");
+        // First call: the initial isActive(A) check finds A not active (1). U6's lookup then scans for
+        // whatever IS active -- checks A, then B, finds neither (2 more) -- so it skips the probe and
+        // falls through. The existing guard then switches and checks A again to confirm it took (1
+        // more). Second call: the initial isActive(B) check finds B not active (1). U6's lookup scans
+        // again -- finds A active on the first check (1) -- but A's URL doesn't match B's target, so the
+        // probe runs (stubbed above, no active check of its own) and falls through. The existing guard
+        // then switches and checks B again to confirm (1 more). Observed by running this test before
+        // adding the assertion, per the plan's characterisation step.
+        activeChecks.Should().Equal("A", "A", "B", "A", "B", "A", "B");
         switchCalls.Should().Be(2);
     }
 
@@ -445,6 +460,190 @@ public class ProfileResolutionServiceTests
 
         option.LongNames.Should().Contain("auto-select-auth-profile");
         option.ShortNames.Should().Contain("a");
+    }
+
+    // ── Active profile reachability (U6/R14) ─────────────────────────────────
+
+    [Fact]
+    public async Task ActiveProfile_ReachesTarget_UsesItWithoutPromptOrSwitch()
+    {
+        // AE6: PAC's active profile is a UNIVERSAL profile with no environment URL of its own, and it
+        // can reach the DEV target; a second profile carries that URL, so FindBestProfile matches that
+        // one (as it always does — R14 only overrides the guard afterwards, not the URL match itself).
+        // The active profile still wins outright -- no prompt, no switch -- once EnsureActiveProfileAsync
+        // finds the URL match isn't active and the active profile can reach the target instead.
+        var activeProfile = MakeProfile(name: "MyUser", kind: "UNIVERSAL", resource: null);
+        var urlMatchProfile = MakeProfile(name: "DevProfile", kind: "DATAVERSE", resource: EnvironmentUrl);
+        var switchCalls = 0;
+        var probeCalls = 0;
+
+        var console = new TestConsole();
+        var connector = new DataverseConnector(console, new HttpClient());
+        var svc = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
+        {
+            GetPacProfilesOverride = () => [activeProfile, urlMatchProfile],
+            IsProfileActiveOverride = p => p == activeProfile,
+            FindBestProfileOverride = _ => new ProfileFound(urlMatchProfile),
+            SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; },
+            ProbeReachabilityOverride = (profile, url, _) =>
+            {
+                probeCalls++;
+                profile.Should().BeSameAs(activeProfile);
+                url.Should().Be(EnvironmentUrl);
+                return Task.FromResult<ReachabilityProbeResult>(new ProbeReachable());
+            }
+        };
+
+        var result = await svc.ResolveAsync(EnvironmentUrl);
+
+        result.Should().BeSameAs(activeProfile); // the active profile, not the URL-matched one
+        probeCalls.Should().Be(1);
+        switchCalls.Should().Be(0);
+        console.Output.Should().NotContain("Switch active PAC auth profile?");
+        console.Output.Should().Contain("Resolved PAC auth profile");
+        console.Output.Should().Contain(EnvironmentUrl); // names the target it was resolved for, not its own (absent) URL
+    }
+
+    [Fact]
+    public async Task ActiveProfileIsUrlMatch_ProbeSeamNotInvoked()
+    {
+        // The active profile already carries the target URL -- EnsureActiveProfileAsync's existing
+        // fast path already handles this at zero extra cost, so the probe must not run at all.
+        var profile = MakeProfile();
+        var probeCalls = 0;
+        var svc = MakeService(out _, new ProfileFound(profile), isProfileActive: true, allProfiles: [profile],
+            probeReachabilityOverride: (_, _, _) => { probeCalls++; return Task.FromResult<ReachabilityProbeResult>(new ProbeReachable()); });
+
+        var result = await svc.ResolveAsync(EnvironmentUrl);
+
+        result.Should().BeSameAs(profile);
+        probeCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ActiveProfileProbeUnauthorized_FallsThrough_InteractivePromptDefaultsToDecline()
+    {
+        var activeProfile = MakeProfile(name: "TEST-SP", kind: "ServicePrincipal", resource: "https://test.crm4.dynamics.com");
+        var devProfile = MakeProfile(name: "Dev", kind: "DATAVERSE", resource: EnvironmentUrl);
+        var probeCalls = 0;
+
+        var console = new TestConsole();
+        console.Interactive();
+        console.Input.PushKey(ConsoleKey.Enter); // bare enter -> defaults to decline
+
+        var connector = new DataverseConnector(console, new HttpClient());
+        var svc = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
+        {
+            GetPacProfilesOverride = () => [activeProfile, devProfile],
+            IsProfileActiveOverride = p => p == activeProfile,
+            FindBestProfileOverride = _ => new ProfileFound(devProfile),
+            ProbeReachabilityOverride = (_, _, _) =>
+            {
+                probeCalls++;
+                return Task.FromResult<ReachabilityProbeResult>(new ProbeUnauthorizedOrNotFound());
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        probeCalls.Should().Be(1);
+        ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
+        console.Output.Should().Contain("Switch active PAC auth profile?");
+    }
+
+    [Fact]
+    public async Task ActiveProfileProbeUnauthorized_FallsThrough_NonInteractiveThrowsNamingPacAuthSelect()
+    {
+        var activeProfile = MakeProfile(name: "TEST-SP", kind: "ServicePrincipal", resource: "https://test.crm4.dynamics.com");
+        var devProfile = MakeProfile(name: "Dev", kind: "DATAVERSE", resource: EnvironmentUrl);
+        var probeCalls = 0;
+
+        var console = new TestConsole(); // non-interactive by default
+        var connector = new DataverseConnector(console, new HttpClient());
+        var svc = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions())
+        {
+            GetPacProfilesOverride = () => [activeProfile, devProfile],
+            IsProfileActiveOverride = p => p == activeProfile,
+            FindBestProfileOverride = _ => new ProfileFound(devProfile),
+            ProbeReachabilityOverride = (_, _, _) =>
+            {
+                probeCalls++;
+                return Task.FromResult<ReachabilityProbeResult>(new ProbeUnauthorizedOrNotFound());
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        probeCalls.Should().Be(1);
+        ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
+        ex.Message.Should().Contain("pac auth select");
+    }
+
+    [Fact]
+    public async Task ActiveProfileProbeTransportFailure_HttpRequestException_ThrowsConnectionFailed()
+    {
+        var activeProfile = MakeProfile(name: "TEST-SP", kind: "ServicePrincipal", resource: "https://test.crm4.dynamics.com");
+        var switchCalls = 0;
+
+        var svc = MakeService(out var console, new ProfileFound(MakeProfile(name: "Dev")), allProfiles: [activeProfile],
+            isInteractive: true, // makes the "no prompt shown" assertion below meaningful (non-interactive shows no prompt regardless)
+            isProfileActiveOverride: p => p == activeProfile,
+            probeReachabilityOverride: (_, _, _) => Task.FromResult<ReachabilityProbeResult>(new ProbeTransportFailure(new HttpRequestException("boom"))));
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+        // No input pushed — if a prompt were shown, TestConsole would throw on empty input queue.
+
+        var ex = await Assert.ThrowsAsync<FlowlineException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        ex.ExitCode.Should().Be(ExitCode.ConnectionFailed);
+        switchCalls.Should().Be(0);
+        console.Output.Should().NotContain("Switch active PAC auth profile?");
+    }
+
+    [Fact]
+    public async Task ActiveProfileReachable_AutoSwitchSet_UsesActiveProfileWithoutSwitching()
+    {
+        // -a (AutoSwitchProfile) approves switching TO the URL match -- it says nothing about whether
+        // the active profile should be preferred over it in the first place. R14 ("uses it with no
+        // switch and no prompt") applies the same way whether -a is set or not: preferReachableActiveProfile
+        // is checked before the AutoSwitchProfile branch, so a reachable active profile still short-circuits
+        // it. Pins that ordering -- a refactor that moved the check below AutoSwitchProfile would pass
+        // every other test here (the existing Guard_AutoSwitch* tests never have an active profile at all).
+        var activeProfile = MakeProfile(name: "MyUser", kind: "UNIVERSAL", resource: null);
+        var urlMatchProfile = MakeProfile(name: "DevProfile", kind: "DATAVERSE", resource: EnvironmentUrl);
+        var switchCalls = 0;
+        var probeCalls = 0;
+
+        var svc = MakeService(out _, new ProfileFound(urlMatchProfile), autoSwitchProfile: true,
+            allProfiles: [activeProfile, urlMatchProfile],
+            isProfileActiveOverride: p => p == activeProfile,
+            probeReachabilityOverride: (_, _, _) => { probeCalls++; return Task.FromResult<ReachabilityProbeResult>(new ProbeReachable()); });
+        svc.SelectAuthProfileOverride = (_, _, _) => { switchCalls++; return Task.CompletedTask; };
+
+        var result = await svc.ResolveAsync(EnvironmentUrl);
+
+        result.Should().BeSameAs(activeProfile);
+        probeCalls.Should().Be(1);
+        switchCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ActiveProfileProbeTransportFailure_Timeout_RethrowsForDataverseTimeoutHandling()
+    {
+        // Rethrown unwrapped, not as a FlowlineException(Timeout) -- if the probe were actually
+        // cancelled by the user's own Ctrl+C, wrapping it here would report ExitCode.Timeout instead
+        // of ExitCode.Cancelled at the top-level handler. DataverseTimeout.Matches is what ultimately
+        // decides that distinction, using the process's own cancellation flag Program.cs owns.
+        var activeProfile = MakeProfile(name: "TEST-SP", kind: "ServicePrincipal", resource: "https://test.crm4.dynamics.com");
+        var timeoutException = new TaskCanceledException("timed out");
+
+        var svc = MakeService(out _, new ProfileFound(MakeProfile(name: "Dev")), allProfiles: [activeProfile],
+            isProfileActiveOverride: p => p == activeProfile,
+            probeReachabilityOverride: (_, _, _) => Task.FromResult<ReachabilityProbeResult>(new ProbeTransportFailure(timeoutException)));
+
+        var ex = await Assert.ThrowsAsync<TaskCanceledException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        ex.Should().BeSameAs(timeoutException);
+        DataverseTimeout.Matches(ex, userCancelled: false).Should().BeTrue();
     }
 
     // ── BuildNameSuggestion ──────────────────────────────────────────────────
