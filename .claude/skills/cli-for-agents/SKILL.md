@@ -114,8 +114,8 @@ help — unused command docs stay out of the agent's context.
 ([Program.cs:288-374](../../../src/Flowline/Program.cs#L288-L374) are the reference set). "Push
 plugins" fails. Same for `[Description]` on every `[CommandOption]` — an undocumented flag is
 invisible to an agent reading `--help`. Every flag whose value persists to `.flowline` ends its
-description with "(saved to .flowline)": see `--prod` (provision) and `--namespace`/`--output`
-(generate).
+description with "(saved to .flowline)": see `--env` (any of clone, init, push, pull, generate,
+provision) and `--managed` (pull).
 
 Every command also registers `.WithExample(...)` — examples pattern-match better than prose, so a
 new command without at least one is incomplete. One argument per string:

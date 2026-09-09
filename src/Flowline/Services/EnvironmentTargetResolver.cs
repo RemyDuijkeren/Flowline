@@ -8,12 +8,13 @@ using Spectre.Console;
 
 namespace Flowline.Services;
 
-// KTD1: the one seam every --env-driven command (push, sync, generate, init, clone) resolves its
-// target through. Turns a role keyword or URL into a canonical environment URL, the role it belongs
-// to, and whether resolving it wrote anything to .flowline (KD1/KD3). devOnly:true adds the R3 gate —
-// a DEV-only command refuses a non-DEV target before any PAC profile is resolved or .flowline is
-// touched, so the caller passes the environment-info lookup in rather than this class resolving one
-// itself (keeps the gate testable without a real pac subprocess).
+// KTD1: the one seam every --env-driven command (push, sync, generate, init, clone, provision)
+// resolves its target through. Turns a role keyword or URL into a canonical environment URL, the role
+// it belongs to, and whether resolving it wrote anything to .flowline (KD1/KD3). onlyRole set adds the
+// R3 gate — a command restricted to one role refuses any other target before any PAC profile is
+// resolved or .flowline is touched, so the caller passes the environment-info lookup in rather than
+// this class resolving one itself (keeps the gate testable without a real pac subprocess). onlyRole
+// null means any role is acceptable (clone, generate).
 public sealed record EnvironmentTargetResult(string Url, EnvironmentRole? Role, bool Saved);
 
 public class EnvironmentTargetResolver(IAnsiConsole console)
@@ -21,13 +22,15 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
     public async Task<EnvironmentTargetResult> ResolveAsync(
         string? envOption,
         ProjectConfig config,
-        bool devOnly,
+        EnvironmentRole? onlyRole,
         bool isInteractive,
         FlowlineSettings settings,
         Func<string, CancellationToken, Task<EnvironmentInfo?>> getEnvironmentInfoByUrl,
         CancellationToken cancellationToken)
     {
-        var value = string.IsNullOrWhiteSpace(envOption) ? "dev" : envOption.Trim();
+        var value = string.IsNullOrWhiteSpace(envOption)
+            ? onlyRole?.ToString().ToLowerInvariant() ?? "dev"
+            : envOption.Trim();
 
         // Role keyword (R5): resolves straight from .flowline, never touches Dataverse.
         if (TryParseRole(value, out var keywordRole))
@@ -37,8 +40,8 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
                 throw new FlowlineException(ExitCode.ConfigInvalid,
                     $"{keywordRole.ConfigKey()} isn't set in .flowline — add it, or pass --env <url>.");
 
-            if (devOnly && keywordRole != EnvironmentRole.Dev)
-                throw DevOnlyRefusal($"'{value}' targets {keywordRole.UpperLabel()}");
+            if (onlyRole is { } required && keywordRole != required)
+                throw RoleOnlyRefusal($"'{value}' targets {keywordRole.UpperLabel()}", required);
 
             return new EnvironmentTargetResult(configuredUrl, keywordRole, Saved: false);
         }
@@ -48,8 +51,8 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         var matchedRole = MatchConfiguredUrl(value, config);
         if (matchedRole is not null)
         {
-            if (devOnly && matchedRole != EnvironmentRole.Dev)
-                throw DevOnlyRefusal($"'{value}' is your {matchedRole.Value.UpperLabel()} environment");
+            if (onlyRole is { } required && matchedRole != required)
+                throw RoleOnlyRefusal($"'{value}' is your {matchedRole.Value.UpperLabel()} environment", required);
 
             return new EnvironmentTargetResult(config.GetUrl(matchedRole.Value)!, matchedRole, Saved: false);
         }
@@ -62,34 +65,44 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
                 $"'{value}' isn't a role (dev, test, uat, prod) or a URL — pass --env <dev|test|uat|prod|url>.");
 
         // A URL Flowline hasn't seen — read its type through the profile-less lookup (KTD2: never
-        // PacUtils.GetPartsFromEnvUrl, which exits the process on a regex miss) so the DEV-only gate
-        // below runs before any profile is resolved or connection made.
+        // PacUtils.GetPartsFromEnvUrl, which exits the process on a regex miss) so the role gate below
+        // runs before any profile is resolved or connection made.
         var envInfo = await getEnvironmentInfoByUrl(value, cancellationToken);
         var envType = envInfo?.Type;
 
-        if (devOnly && string.Equals(envType, "Production", StringComparison.OrdinalIgnoreCase))
-            throw DevOnlyRefusal($"'{value}' is a Production environment");
+        if (onlyRole == EnvironmentRole.Dev && string.Equals(envType, "Production", StringComparison.OrdinalIgnoreCase))
+            throw RoleOnlyRefusal($"'{value}' is a Production environment", EnvironmentRole.Dev);
+
+        // provision's mirror of the check above: a source that isn't Production-typed can't be copied
+        // from as prod, whatever role it looks like it plays.
+        if (onlyRole == EnvironmentRole.Prod && envType is not null && !string.Equals(envType, "Production", StringComparison.OrdinalIgnoreCase))
+            throw RoleOnlyRefusal($"'{value}' is a {envType} environment", EnvironmentRole.Prod);
 
         var inference = EnvironmentRoleInference.Infer(value, envType);
 
         // R3 with the inferred role in view: a Sandbox whose name says -test or -uat is a TEST or UAT
-        // environment as far as Flowline can tell, so a DEV-only command refuses it here rather than
-        // saving it under TestUrl and pushing to it. An uninferred Sandbox falls through to the
-        // ask-or-fail path below, which on a DEV-only command can only end in DEV or "use once".
-        if (devOnly && inference.Role is { } inferredRole && inferredRole != InferredRole.Dev)
-            throw DevOnlyRefusal($"'{value}' looks like a {ToEnvironmentRole(inferredRole).UpperLabel()} environment ({inference.Source})");
+        // environment as far as Flowline can tell, so a role-restricted command refuses it here rather
+        // than saving it under TestUrl and using it against that role. An uninferred Sandbox falls
+        // through to the ask-or-fail path below, which on a role-restricted command can only end in
+        // that role or "use once".
+        if (onlyRole is { } gateRole && inference.Role is { } inferredRole && ToEnvironmentRole(inferredRole) != gateRole)
+            throw RoleOnlyRefusal($"'{value}' looks like a {ToEnvironmentRole(inferredRole).UpperLabel()} environment ({inference.Source})", gateRole);
 
         return isInteractive
-            ? await ResolveNewUrlInteractivelyAsync(value, inference, devOnly, config, settings, cancellationToken)
-            : ResolveNewUrlNonInteractively(value, inference, config, settings);
+            ? await ResolveNewUrlInteractivelyAsync(value, inference, onlyRole, config, settings, cancellationToken)
+            : ResolveNewUrlNonInteractively(value, inference, onlyRole, config, settings);
     }
 
     // R7: non-interactive save, or R8's failure when nothing could be inferred.
-    EnvironmentTargetResult ResolveNewUrlNonInteractively(string url, RoleInferenceResult inference, ProjectConfig config, FlowlineSettings settings)
+    EnvironmentTargetResult ResolveNewUrlNonInteractively(string url, RoleInferenceResult inference, EnvironmentRole? onlyRole, ProjectConfig config, FlowlineSettings settings)
     {
         if (inference.Role is not { } inferred)
-            throw new FlowlineException(ExitCode.ValidationFailed,
-                $"""Can't tell which role '{url}' belongs to — add "DevUrl": "{url}" to .flowline, or "TestUrl" or "UatUrl" if that is what it is.""");
+        {
+            var hint = onlyRole is { } required
+                ? $"""add "{required.ConfigKey()}": "{url}" to .flowline."""
+                : $"""add "DevUrl": "{url}" to .flowline, or "TestUrl" or "UatUrl" if that is what it is.""";
+            throw new FlowlineException(ExitCode.ValidationFailed, $"Can't tell which role '{url}' belongs to — {hint}");
+        }
 
         return SaveRole(ToEnvironmentRole(inferred), url, inference.Source, config, settings);
     }
@@ -97,16 +110,17 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
     // R6: interactive save — role picker pre-selected on the inferred role (listed first, so a bare
     // Enter accepts it, mirroring CloneCommand.ResolveRoleAsync), with no pre-selection when nothing
     // was inferred (R8) and an escape hatch to use the URL once without saving. The offered roles stay
-    // consistent with the gate that already ran: a DEV-only command offers only DEV (picking PROD here
-    // would silently defeat the R3 gate), and PROD is only ever offered when it's the inferred role —
-    // mirrors CloneCommand.ResolveRoleAsync, which never lets a Sandbox/unknown-typed env land on Prod.
+    // consistent with the gate that already ran: a role-restricted command offers only that role
+    // (picking another here would silently defeat the R3 gate), and PROD is only ever offered
+    // unrestricted when it's the inferred role — mirrors CloneCommand.ResolveRoleAsync, which never
+    // lets a Sandbox/unknown-typed env land on Prod.
     async Task<EnvironmentTargetResult> ResolveNewUrlInteractivelyAsync(
-        string url, RoleInferenceResult inference, bool devOnly, ProjectConfig config, FlowlineSettings settings, CancellationToken cancellationToken)
+        string url, RoleInferenceResult inference, EnvironmentRole? onlyRole, ProjectConfig config, FlowlineSettings settings, CancellationToken cancellationToken)
     {
         var inferredRole = inference.Role is { } r ? ToEnvironmentRole(r) : (EnvironmentRole?)null;
 
-        EnvironmentRole[] roles = devOnly
-            ? [EnvironmentRole.Dev]
+        EnvironmentRole[] roles = onlyRole is { } required
+            ? [required]
             : inferredRole == EnvironmentRole.Prod
                 ? [EnvironmentRole.Dev, EnvironmentRole.Test, EnvironmentRole.Uat, EnvironmentRole.Prod]
                 : [EnvironmentRole.Dev, EnvironmentRole.Test, EnvironmentRole.Uat];
@@ -200,6 +214,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
 
     static string NormalizeForCompare(string? url) => (url ?? "").Trim().TrimEnd('/').ToLowerInvariant();
 
-    static FlowlineException DevOnlyRefusal(string detail) =>
-        new(ExitCode.ValidationFailed, $"{detail} — this command only runs against DEV. Use --env dev or a DEV environment URL.");
+    static FlowlineException RoleOnlyRefusal(string detail, EnvironmentRole role) =>
+        new(ExitCode.ValidationFailed,
+            $"{detail} — this command only accepts {role.UpperLabel()}. Use --env {role.ToString().ToLowerInvariant()} or a {role.UpperLabel()} environment URL.");
 }

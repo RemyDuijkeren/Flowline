@@ -95,7 +95,7 @@ and nothing broke — the work just belongs to another command or another place.
 stop, not an error: no red, no exception, no stack trace.
 ```
 ⏸ Can't create a DEV environment from here.
-Next: Run 'flowline provision dev --prod <prod-url>' to create DEV - or create a environment in the Power Platform admin center, then re-run 'flowline init'.
+Next: Run 'flowline provision dev --env <prod-url>' to create DEV - or create a environment in the Power Platform admin center, then re-run 'flowline init'.
 ```
 Rules: one per command, and it replaces the finish line — a run either stops or finishes, never both.
 The message says what can't happen; `Next:` names the concrete command (or place) that makes it happen.

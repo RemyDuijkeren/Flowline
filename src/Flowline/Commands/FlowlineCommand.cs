@@ -256,11 +256,12 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
 
         var url = GetOrUpdateUrl(role, inputUrl, settings);
 
-        // The role flags are gone (KD5); the only way to supply a missing role URL is the file itself,
-        // or provision's own --prod for the one command that still takes a source override.
+        // The role flags are gone (KD5) — the only remaining callers here (configure/drift resolving a
+        // role keyword out of a positional <target>) have no flag to override a missing role URL with;
+        // the only way to supply one is the file itself, or passing a URL as <target> directly.
         if (string.IsNullOrEmpty(url))
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"{label} URL isn't set in .flowline — add \"{key}\": \"<url>\" to .flowline" + (role == EnvironmentRole.Prod ? ", or pass --prod <URL>." : "."));
+                $"{label} URL isn't set in .flowline — add \"{key}\": \"<url>\" to .flowline.");
 
         return await GetAndCheckEnvironmentAsync(url, role, settings, cancellationToken, resolvedProfile, skipTypeGuard, devOnly);
     }

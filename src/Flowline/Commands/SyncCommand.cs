@@ -41,7 +41,7 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // R3: DEV-only — refused before any PAC profile resolve, connect, or .flowline write.
-        var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, devOnly: true, IsInteractive(), settings,
+        var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
             (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
         var (devEnv, _) = await GetAndCheckEnvironmentAsync(target.Url, target.Role, settings, cancellationToken, devOnly: true);
 

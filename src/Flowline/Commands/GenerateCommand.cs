@@ -123,12 +123,12 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
             if (projectSln == null)
                 throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as an argument or configure a single solution in .flowline.");
 
-            // KTD8: generate accepts any role (incl. Production) — devOnly:false, and the type guard is
+            // KTD8: generate accepts any role (incl. Production) — onlyRole:null, and the type guard is
             // skipped below when the environment is actually checked. Any URL the resolver saves lands
             // in Config in-memory here; the existing end-of-run Config!.Save(RootFolder) (ShouldPersistSettings,
             // below) is what actually flushes it once generation succeeds — matching how projectSln's own
             // mutations above are already deferred to that one save.
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, devOnly: false, IsInteractive(), settings,
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, onlyRole: null, IsInteractive(), settings,
                 (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
             devUrl = target.Url;
             resolvedRole = target.Role;

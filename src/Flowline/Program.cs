@@ -324,7 +324,7 @@ namespace Flowline
             config.AddCommand<ProvisionCommand>("provision")
                   .WithDescription("Create a DEV, TEST, or UAT environment by copying from production. Saves environment URL to .flowline. One-time setup for new environments.")
                   .WithExample("provision", "dev")
-                  .WithExample("provision", "dev", "--prod", "https://contoso.crm4.dynamics.com", "--force", "overwrite")
+                  .WithExample("provision", "dev", "--env", "https://contoso.crm4.dynamics.com", "--force", "overwrite")
                   .WithExample("provision", "test", "--copy", "full", "--suffix", "mytest");
 
             // Generate early-bound C# types from solution entities via pac modelbuilder build

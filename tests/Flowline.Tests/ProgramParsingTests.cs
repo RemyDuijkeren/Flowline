@@ -49,6 +49,33 @@ public class ProgramParsingTests
            .WithMessage("*bogus*");
     }
 
+    // -- R9/R10: provision's --prod is gone, replaced by --env (KTD1) --
+
+    [Fact]
+    public void Provision_OldProdSpelling_FailsWithUnknownOptionError()
+    {
+        var app = BuildRealApp(out _);
+
+        var act = () => app.Run(["provision", "dev", "--prod", "https://contoso.crm4.dynamics.com"]);
+
+        act.Should().Throw<CommandParseException>()
+           .WithMessage("*prod*");
+    }
+
+    [Fact]
+    public void Provision_EnvOption_Parses_ReachesCommandActivationRatherThanFailingToParse()
+    {
+        // BuildRealApp has no DI registrar, so a parsed command still fails — but at activation
+        // (Spectre resolving ProvisionCommand's constructor dependencies), not at the parser. That
+        // distinguishes it from the old --prod spelling above, which never gets this far.
+        var app = BuildRealApp(out _);
+
+        var act = () => app.Run(["provision", "dev", "--env", "https://contoso.crm4.dynamics.com"]);
+
+        act.Should().Throw<CommandRuntimeException>()
+           .WithMessage("*Could not resolve type*ProvisionCommand*");
+    }
+
     // -- AE11: sync is a permanent alias of pull, and help renders the primary name --
 
     [Fact]

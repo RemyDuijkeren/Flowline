@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-- **`--dev`/`--prod`/`--uat`/`--test` are replaced by a single `-e|--env <role|url>`** on `clone`, `push`, `pull`, `generate` and `init`: pass a role keyword (`dev`, `test`, `uat`, `prod`) that resolves from `.flowline`, or a URL directly. `push`, `pull` and `init` still accept DEV only; `generate` accepts any role. There is no alias for the removed flags. `provision`'s own `--prod <URL>` flag is unaffected.
+- **`--dev`/`--prod`/`--uat`/`--test` are replaced by a single `-e|--env <role|url>`** on `clone`, `push`, `pull`, `generate`, `init` and `provision`: pass a role keyword (`dev`, `test`, `uat`, `prod`) that resolves from `.flowline`, or a URL directly. `push`, `pull` and `init` still accept DEV only; `generate` accepts any role. On `provision`, `--env` names the Production source it copies from, defaulting to `prod`; the target role stays a positional argument. `provision`'s own `--prod <URL>` flag is removed, with no alias. There is no alias for any of the removed flags.
 - **`--pluginFile` is renamed `--plugin-file`** (short `-p` unchanged).
 - **`provision`'s `--allow-overwrite` is replaced by `--force overwrite`**: an existing target now asks to overwrite interactively, and needs `--force overwrite` (or `--force all`) non-interactively; it used to proceed without asking.
 - **`diff`'s `--from`/`--to` are replaced by positional refs**: `diff`, `diff A`, `diff A B`, `diff A..B` (shorthand for `A B`), `diff A...B` (merge base of A and B, against B).

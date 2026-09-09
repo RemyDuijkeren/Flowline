@@ -69,7 +69,7 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         string? devUrl = null;
         if (!string.IsNullOrWhiteSpace(settings.Env))
         {
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, devOnly: true, IsInteractive(), settings,
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
                 (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
             devUrl = target.Url;
         }

@@ -108,7 +108,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         }
         else
         {
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, devOnly: true, IsInteractive(), settings,
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
                 (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
             environmentUrl = target.Url;
             resolvedRole = target.Role;

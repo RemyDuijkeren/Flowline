@@ -716,7 +716,7 @@ plumbing.** Measured that way, three gaps belong to Flowline.
 | **Deprovision** | `provision` creates environments and records their URLs in `.flowline`; nothing removes them. | Operator friction |
 
 Deprovision is narrower than it first appears: the §9 reset-on-drift loop is already served by
-`provision --allow-overwrite`, which copies over an existing environment. What is missing is
+`provision --force overwrite`, which copies over an existing environment. What is missing is
 end-of-feature teardown, and the capacity and licence cleanup that follows from treating
 environments as disposable branches. Guards it would need: refuse Production-type environments,
 refuse the configured prod URL specifically, and delete only environments `.flowline` records as

@@ -91,16 +91,27 @@ public class FlowlineSettingsTests
         settings.GetProperty(nameof(EnvironmentSettings.Env)).Should().NotBeNull();
     }
 
-    // KD1/R2: the target-is-the-point commands keep their positional and never show --env.
+    // KD1/R2: the target-is-the-point commands keep their positional and never show this --env.
     [Theory]
     [InlineData(typeof(DeployCommand.Settings))]
     [InlineData(typeof(DriftCommand.Settings))]
     [InlineData(typeof(ConfigureCommand.Settings))]
-    [InlineData(typeof(ProvisionCommand.Settings))]
     public void PositionalTargetCommands_DoNotExposeEnv(Type settings)
     {
         settings.GetProperty(nameof(EnvironmentSettings.Env)).Should().BeNull();
         settings.GetProperty(nameof(DataverseSettings.NoCache)).Should().NotBeNull();
+    }
+
+    // Provision keeps its positional role too, but it still needs an --env — for the Production source
+    // it copies from, not the environment it acts on — so it declares its own copy directly on
+    // DataverseSettings rather than inheriting EnvironmentSettings's.
+    [Fact]
+    public void ProvisionSettings_DeclaresItsOwnEnv_NotInheritedFromEnvironmentSettings()
+    {
+        var property = typeof(ProvisionCommand.Settings).GetProperty(nameof(ProvisionCommand.Settings.Env));
+
+        property.Should().NotBeNull();
+        property!.DeclaringType.Should().Be(typeof(ProvisionCommand.Settings));
     }
 
     [Fact]

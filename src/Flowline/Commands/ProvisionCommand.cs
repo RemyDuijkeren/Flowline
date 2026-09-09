@@ -18,7 +18,7 @@ public enum Role { Dev, Test, Uat }
 
 public enum CopyType { Minimal, Full }
 
-public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient, EnvironmentTargetResolver environmentTargetResolver) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
     public sealed class Settings : DataverseSettings
     {
@@ -27,9 +27,12 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         [DefaultValue(Role.Dev)]
         public Role Role { get; set; } = Role.Dev; // dev|test|uat
 
-        [CommandOption("--prod <URL>")]
-        [Description("Production environment URL to copy from (saved to .flowline)")]
-        public string? ProdUrl { get; set; }
+        // Not EnvironmentSettings.Env — provision copies FROM this environment (the "source" it connects
+        // to), rather than acting on it as the target the way push/sync/generate/clone do. The target is
+        // the positional Role above. Declared here rather than inherited so the description can say so.
+        [CommandOption("-e|--env <ROLE|URL>")]
+        [Description("Production environment to copy from: prod or a URL (default: prod, saved to .flowline)")]
+        public string? Env { get; set; }
 
         [CommandOption("--copy <minimal|full>")]
         [Description("Copy with data (full) or no data (minimal) from prod (default: minimal for dev, full for test and uat)")]
@@ -45,8 +48,13 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        // Production URL is required
-        var (prodEnv, _) = await GetAndCheckEnvironmentInfoAsync(EnvironmentRole.Prod, settings.ProdUrl, settings, cancellationToken);
+        // Source = the environment provision connects to (Production, via --env); target is the positional
+        // role above. Resolved through the shared seam (KTD1) so a bare --env dev or a non-Production URL
+        // is refused before any PAC profile is resolved or .flowline is touched; the resolver already
+        // saves a first-seen URL to .flowline in memory, so this doesn't route back through GetOrUpdateUrl.
+        var source = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, onlyRole: EnvironmentRole.Prod, IsInteractive(), settings,
+            (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+        var (prodEnv, _) = await GetAndCheckEnvironmentAsync(source.Url, EnvironmentRole.Prod, settings, cancellationToken);
 
         // Prepare the target environment name and url
         var suffix = string.IsNullOrWhiteSpace(settings.Suffix)

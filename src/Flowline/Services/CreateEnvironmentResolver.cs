@@ -144,7 +144,7 @@ public class CreateEnvironmentResolver(
             // cases, since provision requires a prod to copy from.
             console.CannotContinue(
                 "Can't create a DEV environment from here.",
-                "Run 'flowline provision dev --prod <prod-url>' to create DEV - or create a environment in the Power Platform admin center, then re-run 'flowline init'.");
+                "Run 'flowline provision dev --env <prod-url>' to create DEV - or create a environment in the Power Platform admin center, then re-run 'flowline init'.");
             return null;
         }
 

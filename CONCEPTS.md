@@ -63,7 +63,7 @@ A change *within* a component — for example, an attribute added to an entity, 
 ## Environments
 
 ### Environment role
-One of the four named places a Flowline project addresses: `dev`, `test`, `uat`, `prod`. A role is a key in `.flowline` holding one environment URL, and it is the value a command accepts wherever it takes a target, either as a positional (`deploy prod`) or through `--env`. `push`, `pull` and `init` accept only `dev`; the others accept any role or a URL.
+One of the four named places a Flowline project addresses: `dev`, `test`, `uat`, `prod`. A role is a key in `.flowline` holding one environment URL, and it is the value a command accepts wherever it names an environment, either as a positional target (`deploy prod`) or through `--env`, which names the existing environment the command connects to. `push`, `pull` and `init` accept only `dev`; `provision` accepts only `prod`, the source it copies from; the others accept any role or a URL.
 
 ### Role inference
 The rule that assigns an [[Environment role]] to a URL that is not yet in `.flowline`, so the URL can be saved under a key without the user naming one. First hit wins: the host suffix `-dev`, `-test` or `-uat` before the `.crm` segment; then the environment type, Production to `prod` and Developer to `dev`. A Sandbox with no suffix is not inferred, because Dataverse reports a test or UAT sandbox with the same type as a DEV one. Interactive runs show a picker, with the inferred role pre-selected when there is one; non-interactive runs save an inferred role and print which key was written and why, and fail naming the key to add when nothing could be inferred.

@@ -104,7 +104,16 @@ Decision: **accept, modified** (2026-09-08)
   used, printed as "Saved as dev (inferred from environment type). Change it in `.flowline`."
 - `clone <solution> --env <url>` saves the URL through that same resolver, because clone
   creates `.flowline`; no `--role` flag. `init` always targets dev.
-- `--prod/--uat/--test/--dev` retired; `--dev` hidden alias for one release.
+- `--prod/--uat/--test/--dev` retired, no alias (changed 2026-09-08 in plan review: pre-1.0,
+  no compatibility aliases).
+- `provision <role> --prod <url>` becomes `provision <role> -e|--env <prod|url>`, default
+  `prod` (added 2026-09-09 after an options pass over `--prod`, `--source`, `--from` and
+  `--env`). `--env` on every Dataverse command means the existing environment the command
+  connects to: a read source on `clone`, a write target on `push`, the Production source on
+  `provision`. The positional `<role>` stays the environment being created. A new URL goes
+  through the same resolver with a PROD-only gate; a dev/test/uat keyword or a non-Production
+  URL is refused before anything is written. The shared help text reads "Environment to
+  connect to" rather than "Target environment".
 
 ### C2. `.flowline` is edited only through side effects of other commands
 
@@ -731,14 +740,15 @@ Every option name this review touched, with the decided outcome.
 | Now | Decided | Finding |
 |---|---|---|
 | `--dev <url>` (push, sync, generate) | `-e\|--env <role\|url>`, default `dev` | C1 |
-| `--prod/--uat/--test/--dev <url>` (clone, init) | retired; `clone --env <url>` saves via role inference, `--dev` hidden alias one release | C1 |
+| `--prod/--uat/--test/--dev <url>` (clone, init) | retired, no alias; `clone --env <url>` saves via role inference | C1 |
+| `--prod <url>` (provision) | `-e\|--env <prod\|url>`, default `prod`: the Production source it copies from | C1 |
 | `--managed [false]` | stays; placeholder rendered `[true\|false]`, help reworded | C2, C12 |
 | `--skip-dtap-check` etc. | stay; rule: `--skip-<check>` reads, `--no-<action>` writes | C4 |
 | `--allow-overwrite` | `--force overwrite` | C5 |
 | `--dry-run` | stays, no short flag | C11 |
 | `-a\|--auto-select-auth-profile` | stays; resolver prefers the active profile when it reaches the target | C8 |
 | `--client-secret <SECRET>` | stays | C10 |
-| `--pluginFile` | `--plugin-file`, old spelling hidden alias | C13 |
+| `--pluginFile` | `--plugin-file`, no alias | C13 |
 | `--path <zip>` (deploy, drift) | stays, help says "the packed solution zip" | C15 |
 | `--pull [zip-or-folder]` | stays until P10 | C15, P10 |
 | `--scope assemblyonly` | stays, help notes it is a subset of `plugins` | P3 |
@@ -763,7 +773,7 @@ flowline generate [--env <role|url>] ...
 flowline deploy <prod|uat|test|url> ...                                                (no dev in help)
 flowline drift  <target> [--path <zip>] [--exit-code]
 flowline diff   [<from> [<to>]] [--write [file]] [--exit-code]                        (A..B, A...B)
-flowline provision [dev|test|uat] [--copy minimal|full] [--force overwrite]
+flowline provision [dev|test|uat] [--env <prod|url>] [--copy minimal|full] [--force overwrite]
 flowline scaffold webresources|plugins [--name] [-o]
 ```
 

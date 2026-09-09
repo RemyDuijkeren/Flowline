@@ -119,7 +119,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
     {
         if (!string.IsNullOrWhiteSpace(settings.Env))
         {
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, config, devOnly: false, IsInteractive(), settings,
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, config, onlyRole: null, IsInteractive(), settings,
                 (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
             return (target.Url, target.Role);
         }

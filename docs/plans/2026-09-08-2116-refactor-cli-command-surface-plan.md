@@ -34,7 +34,7 @@ The review found the command surface grew one grammar at a time. Environments we
 
 ### Key Decisions
 
-- KD1. **`-e|--env <role|url>` on push, pull, generate and init; positional `<target>` stays on deploy, drift, configure** (session-settled: user-approved — chosen over `--env` everywhere: required input is positional, optional input with a default is a flag). Governs R1, R2, R5.
+- KD1. **`-e|--env <role|url>` on push, pull, generate, init and provision; positional `<target>` stays on deploy, drift, configure** (session-settled: user-approved — chosen over `--env` everywhere: required input is positional, optional input with a default is a flag). `--env` names the existing environment the command connects to; on `provision` that is the Production source it copies from, and the positional `<role>` stays the environment being created (extended 2026-09-09, session-settled: user-directed — chosen over keeping `--prod`, `--source` and `--from`: one flag, one meaning, no new word). Governs R1, R2, R5.
 - KD2. **push, pull and init target DEV only** (session-settled: user-directed — chosen over allowing other roles behind a force specifier: code flows up through DEV, everything else is `deploy`). Governs R3, R4.
 - KD3. **A URL not in `.flowline` is offered for saving under an inferred role; non-interactive runs save and say so** (session-settled: user-directed — chosen over a `--role` flag, a one-shot URL that is never saved, and an `env add` command: inference from URL suffix and environment type needs no new flag, and `.flowline` is hand-editable). The fallback for an unsuffixed Sandbox changed from `dev` to ask-or-fail after document review (session-settled: user-approved — chosen over defaulting to `dev`: Dataverse cannot distinguish a test or UAT sandbox from a DEV one by type, so a default would hand DEV write access to an environment that never earned it). Governs R6, R7, R8.
 - KD4. **clone with several configured URLs and no `--env` asks interactively and errors non-interactively** (session-settled: user-directed — chosen over defaulting to prod). Governs R9.
@@ -55,7 +55,7 @@ The review found the command surface grew one grammar at a time. Environments we
 
 **Environment addressing**
 
-- R1. `push`, `pull`, `generate` and `init` accept `-e|--env <role|url>`, default `dev`, and no longer accept `--dev`.
+- R1. `push`, `pull`, `generate` and `init` accept `-e|--env <role|url>`, default `dev`, and no longer accept `--dev`. `provision` accepts `-e|--env <prod|url>`, default `prod`, naming the Production environment it copies from, and no longer accepts `--prod`; a dev/test/uat keyword or a non-Production URL is refused before anything is written. The shared `--env` description reads "Environment to connect to: dev, test, uat, prod, or a URL (saved to .flowline)".
 - R2. `deploy`, `drift` and `configure` keep their positional `<target>` and gain nothing.
 - R3. `push`, `pull` and `init` refuse any target that is not DEV before connecting to it, resolving a PAC profile for it, or writing anything to `.flowline`: a role keyword other than `dev`, a URL equal to a configured test, UAT or prod URL, or a URL whose environment type is Production. The error names the accepted forms and exits 15.
 - R4. `generate` accepts any role keyword or URL, including a Production-type environment.
@@ -377,20 +377,22 @@ U1, U7, U8, U9 and U10 have no upstream dependency and can run as one parallel l
 ### U7. provision: `--force overwrite` and `--copy` on every role
 
 - **Goal:** Overwriting an environment is a force-gated hazard, and `--copy` means what it says.
-- **Requirements:** R16, R17, R10 (`--allow-overwrite`). Instantiates KD11 via KTD10.
-- **Dependencies:** none.
-- **Files:** `src/Flowline/Commands/ProvisionCommand.cs`, `tests/Flowline.Tests/ProvisionCommandTests.cs`.
+- **Requirements:** R16, R17, R10 (`--allow-overwrite`, `--prod`), R1 (`--env`). Instantiates KD11 via KTD10 and KD1.
+- **Dependencies:** U2 (the `--env` part).
+- **Files:** `src/Flowline/Commands/ProvisionCommand.cs`, `src/Flowline/Services/EnvironmentTargetResolver.cs`, `tests/Flowline.Tests/ProvisionCommandTests.cs`, `tests/Flowline.Tests/Services/EnvironmentTargetResolverTests.cs`.
 - **Approach:**
   1. Remove `AllowOverwrite`; add `overwrite` to `ValidForceSpecifiers`.
   2. Replace the warn-and-return at lines 129 to 133 with `ConfirmAsync(..., settings, "overwrite", ct)`; a declined prompt exits 17 like deploy's first-import decline after U8.
   3. Copy type at line 158: use the passed value when given, else the role default.
-- **Patterns to follow:** `DeployCommand` first-import confirmation for the `ConfirmAsync` call shape and the specifier list.
+  4. Replace `--prod <URL>` with `-e|--env <role|url>` (added 2026-09-09). The source resolves through `EnvironmentTargetResolver` with the DEV-only gate generalised to `onlyRole` (PROD for provision, DEV for push, pull and init, none for clone and generate); a blank `--env` defaults to the gated role's keyword. The non-persisting environment check then confirms the type; the existing post-copy save flushes the resolver's write.
+- **Patterns to follow:** `DeployCommand` first-import confirmation for the `ConfirmAsync` call shape and the specifier list; `PushCommand` for the resolver call.
 - **Test scenarios:**
   - Covers AE7. Existing target, non-interactive, no specifier: exit 17 naming `--force overwrite`; `--force all` proceeds.
   - Existing target, interactive, decline: exit 17; accept: copy runs.
   - `--force bogus` lists `overwrite`, `config`, `all`.
   - `provision uat --copy minimal` issues a minimal copy; `provision uat` issues a full copy; `provision dev` issues minimal.
-- **Verification:** Tests green; `provision --help` shows `--copy` with the per-role default and no `--allow-overwrite`.
+  - `provision dev --env dev` exits 15 naming PROD; `--env <sandbox-url>` is refused before any `.flowline` write; `--env <prod-url>` is saved as ProdUrl and printed; no `--env` resolves ProdUrl; `--prod <url>` fails with the parser's unknown-option error.
+- **Verification:** Tests green; `provision --help` shows `--env` with the `prod` default, `--copy` with the per-role default, and neither `--allow-overwrite` nor `--prod`.
 
 ### U8. Exit codes: drift `--exit-code`, declined first import
 

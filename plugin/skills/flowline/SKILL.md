@@ -173,8 +173,8 @@ some cleanup failed.
   unless `--write` is passed.
 - Global (every command): `--verbose` (`-v`), `--force <specifier>` (`-f`). Dataverse-touching commands
   only (`clone`, `push`, `pull`, `deploy`, `provision`, `generate`, `drift`, `configure`): `--no-cache`,
-  `--auto-select-auth-profile` (`-a`). `--env <role|url>` only on `clone`, `push`, `pull`, `generate`,
-  `init`.
+  `--auto-select-auth-profile` (`-a`). `--env <role|url>` on `clone`, `push`, `pull`, `generate`,
+  `init` and `provision`. On `provision` it names the Production source to copy from, default `prod`.
 - `flowline sln add <path.cdsproj>` wires a `.cdsproj` into the solution file — `dotnet sln add`
   refuses `.cdsproj` *and exits 0 while refusing*. Runs standalone: no `.flowline`, no git, no login.
 

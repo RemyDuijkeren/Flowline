@@ -18,6 +18,7 @@ using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
+[Collection("ProjectConfigConsole")] // CreateSolutionAsync reads the global AnsiConsole.Console through ProjectConfig's overwrite prompt
 public class InitCommandTests
 {
     // ── Standalone/greenfield wiring (mirrors SlnAddCommandTests' pattern for the same overrides) ──
