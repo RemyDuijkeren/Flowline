@@ -78,7 +78,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         if (onlyRole == EnvironmentRole.Prod && envType is not null && !string.Equals(envType, "Production", StringComparison.OrdinalIgnoreCase))
             throw RoleOnlyRefusal($"'{value}' is a {envType} environment", EnvironmentRole.Prod);
 
-        var inference = EnvironmentRoleInference.Infer(value, envType);
+        var inference = EnvironmentRoleInference.Infer(value, envType, envInfo?.DisplayName);
 
         // R3 with the inferred role in view: a Sandbox whose name says -test or -uat is a TEST or UAT
         // environment as far as Flowline can tell, so a role-restricted command refuses it here rather

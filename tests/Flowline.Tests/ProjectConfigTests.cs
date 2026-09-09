@@ -337,11 +337,11 @@ public class ProjectConfigTests : IDisposable
     {
         var output = WithSwappedConsole(console =>
         {
-            new ProjectConfig().GetOrUpdateUrl(EnvironmentRole.Dev, "https://contoso-dev.crm4.dynamics.com", null, "URL suffix");
+            new ProjectConfig().GetOrUpdateUrl(EnvironmentRole.Dev, "https://contoso-dev.crm4.dynamics.com", null, "URL name");
             return console.Output;
         });
 
-        output.Should().Contain("Saved to .flowline: DevUrl (inferred from URL suffix)");
+        output.Should().Contain("Saved to .flowline: DevUrl (inferred from URL name)");
     }
 
     [Fact]

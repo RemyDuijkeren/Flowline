@@ -94,12 +94,17 @@ Decision: **accept, modified** (2026-09-08)
 - Role keyword resolves from `.flowline`. A URL not in config: interactive run offers to save
   it under a role, non-interactive run uses it once and prints one info line naming the
   `.flowline` key to add (G3 rejected, so no `env add`). No new flag.
-- Role inference, first hit wins, shared by every command that offers to save: (1) URL suffix
-  `-dev`, `-test`, `-uat` before `.crm`, the same convention `provision --suffix` writes;
-  (2) environment type, Production → `prod`, Developer → `dev`; (3) an unsuffixed Sandbox is
-  not inferred (changed 2026-09-08 in plan review: Dataverse reports test and UAT sandboxes with
-  the same type as DEV): non-interactive fails naming the `.flowline` key, interactive shows the
-  picker with no pre-selection.
+- Role inference, shared by every command that offers to save, in order: (1) a Production
+  type is `prod` whatever the name says (Dataverse fact beats naming convention, changed
+  2026-09-09); (2) a keyword in the URL's host label: `dev`, `develop`, `development`; `test`,
+  `tst`, `testing`, `qa`, `sit`; `uat`, `acc`, `acceptance`, `acceptatie`, `preprod`, `staging`,
+  `stage`, `stg`; whole hyphen-separated token, any position, trailing digits ignored, last
+  match wins, so `-dev` from `provision --suffix` still hits (table and any-position match
+  extended 2026-09-09 from the three suffixes); (3) the same keywords in the display name
+  (added 2026-09-09); (4) a Developer type is `dev`; (5) a Sandbox with no keyword hit is not
+  inferred (changed 2026-09-08 in plan review: Dataverse reports test and UAT sandboxes with the
+  same type as DEV): non-interactive fails naming the `.flowline` key, interactive shows the
+  picker with no pre-selection. Left out on purpose: `sandbox`, `int`, `demo`, `train`, `hotfix`.
   Interactive: picker pre-selected with the inferred role. Non-interactive: inferred role
   used, printed as "Saved as dev (inferred from environment type). Change it in `.flowline`."
 - `clone <solution> --env <url>` saves the URL through that same resolver, because clone

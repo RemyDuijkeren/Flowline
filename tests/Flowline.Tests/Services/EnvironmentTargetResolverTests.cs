@@ -123,7 +123,7 @@ public class EnvironmentTargetResolverTests
         result.Role.Should().Be(EnvironmentRole.Dev);
         result.Url.Should().Be(DevUrl);
         config.DevUrl.Should().Be(DevUrl);
-        output.Should().Contain("Saved to .flowline: DevUrl (inferred from URL suffix)");
+        output.Should().Contain("Saved to .flowline: DevUrl (inferred from URL name)");
     }
 
     [Fact]
