@@ -172,6 +172,42 @@ public sealed class ConfigureApplyService
     /// Projection, not extraction: PAC owns these sections and a write must return them byte-identical, so
     /// they stay in the bag and are only read from here.
     /// </remarks>
+    /// <summary>
+    /// Whether applying this document would actually act on one named component (KTD12).
+    /// </summary>
+    /// <remarks>
+    /// The inline surface warns that the next push will override a change it just made, and the honest
+    /// question is not whether the file mentions the component but whether a push would touch it. An empty
+    /// value is skipped by the tiers above, so a file that names a variable with no value would never
+    /// override anything — warning about it would train an operator to ignore the warning.
+    ///
+    /// Lives here rather than in the command because the answer is this class's own skip rule. The command
+    /// project cannot see <see cref="ReadValues"/>, and a second copy of the parse would be free to drift
+    /// from the behaviour it is supposed to predict.
+    /// </remarks>
+    public static bool WouldApply(SettingsDocument document, ConfigurableComponentKind kind, string name)
+    {
+        bool NamedInValues(string section, string nameProperty, string valueProperty) =>
+            ReadValues(document, section, nameProperty, valueProperty)
+                .Any(v => string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase)
+                          && !string.IsNullOrWhiteSpace(v.Value));
+
+        bool NamedInStates(IEnumerable<ComponentStateEntry> entries) =>
+            entries.Any(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
+
+        return kind switch
+        {
+            ConfigurableComponentKind.EnvironmentVariable =>
+                NamedInValues(EnvironmentVariablesSection, "SchemaName", "Value"),
+            ConfigurableComponentKind.ConnectionReference =>
+                NamedInValues(ConnectionReferencesSection, "LogicalName", "ConnectionId"),
+            ConfigurableComponentKind.CloudFlow => NamedInStates(document.CloudFlows),
+            ConfigurableComponentKind.Workflow => NamedInStates(document.Workflows),
+            ConfigurableComponentKind.PluginStep => NamedInStates(document.PluginSteps),
+            _ => false,
+        };
+    }
+
     internal static IReadOnlyList<DeclaredValue> ReadValues(
         SettingsDocument document, string section, string nameProperty, string valueProperty)
     {
