@@ -354,16 +354,36 @@ namespace Flowline
                   .WithExample("diff", "v1.2.0", "v1.3.0")
                   .WithExample("diff", "v1.2.0...v1.3.0");
 
-            // configure = apply a per-environment settings file. Sits beside deploy rather than inside it: the
-            // values and component states a settings file carries change on their own schedule, and re-running a
-            // whole import to flip one flow back on is the wrong unit of work.
-            config.AddCommand<ConfigureCommand>("configure")
-                  .WithDescription("Apply a settings file to an environment (dev, test, uat, prod, or a URL): environment variable values, connection references, and flow and plugin step state. Only components the file names are touched. Re-running the same file changes nothing, so it is safe in a pipeline. Use --dry-run to see what would change first, or --pull to write the file from the environment instead of applying it.")
-                  .WithExample("configure", "test")
-                  .WithExample("configure", "prod", "--dry-run")
-                  .WithExample("configure", "test", "--pull")
-                  .WithExample("configure", "test", "--settings-file", "settings.test.json")
-                  .WithExample("configure", "https://contoso-test.crm4.dynamics.com/", "--solution-name", "ContosoCustomizations");
+            // settings = the per-environment configuration surface. Sits beside deploy rather than inside it:
+            // the values and component states a settings file carries change on their own schedule, and
+            // re-running a whole import to flip one flow back on is the wrong unit of work.
+            //
+            // A branch rather than one leaf with mode flags: five component kinds plus apply and capture do
+            // not fit one verb without a flag-contradiction matrix for every pair.
+            //
+            // Registration order is the grouping (KTD18). Spectre renders commands in the order they are
+            // added, not alphabetically, so the two whole-file operations come before the five component
+            // kinds and the help reads as two groups with no mechanism. Leaf descriptions are one line each,
+            // against the paragraph style the top-level commands carry: a leaf inside a branch is scanned,
+            // not discovered.
+            config.AddBranch("settings", settings =>
+            {
+                settings.SetDescription("Read or change one environment's configuration: environment variable values, connection references, and flow, workflow and plugin step state.");
+
+                settings.SetDefaultCommand<SettingsCommand>();
+
+                settings.AddCommand<SettingsPushCommand>("push")
+                        .WithDescription("Apply a settings file to an environment. Only components the file names are touched, and re-running the same file changes nothing.")
+                        .WithExample("settings", "push", "test")
+                        .WithExample("settings", "push", "prod", "--dry-run")
+                        .WithExample("settings", "push", "test", "--settings-file", "settings.test.json");
+
+                settings.AddCommand<SettingsPullCommand>("pull")
+                        .WithDescription("Write a settings file from an environment. Omit the environment to capture every environment the project configures.")
+                        .WithExample("settings", "pull", "test")
+                        .WithExample("settings", "pull")
+                        .WithExample("settings", "pull", "https://contoso-test.crm4.dynamics.com/", "--solution-name", "ContosoCustomizations");
+            });
 
             // scaffold = write a project template locally; needs no Dataverse connection
             config.AddCommand<ScaffoldCommand>("scaffold")

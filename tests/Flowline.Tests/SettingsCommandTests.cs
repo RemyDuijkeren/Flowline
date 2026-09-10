@@ -6,11 +6,11 @@ using Flowline.Core.Configure;
 
 namespace Flowline.Tests;
 
-public class ConfigureCommandTests : IDisposable
+public class SettingsCommandTests : IDisposable
 {
     readonly string _dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
 
-    public ConfigureCommandTests() => Directory.CreateDirectory(_dir);
+    public SettingsCommandTests() => Directory.CreateDirectory(_dir);
 
     public void Dispose()
     {
@@ -19,9 +19,9 @@ public class ConfigureCommandTests : IDisposable
 
     void WithProject() => File.WriteAllText(Path.Combine(_dir, ProjectConfig.s_configFileName), "{}");
 
-    // ── The --pull artifact seam ─────────────────────────────────────────────
+    // ── The --from artifact seam ─────────────────────────────────────────────
 
-    // This is what decides whether a pull hands `pac` --solution-zip or --solution-folder, and getting it
+    // This is what decides whether a capture hands `pac` --solution-zip or --solution-folder, and getting it
     // wrong fails inside the subprocess, where the cause is hard to read. It is a pure function, so the
     // branch that needs a real `pac` is the only part these cannot reach.
 
@@ -31,7 +31,7 @@ public class ConfigureCommandTests : IDisposable
         var folder = Path.Combine(_dir, "Solution", "src");
         Directory.CreateDirectory(folder);
 
-        var (path, isZip) = ConfigureCommand.ResolveSolutionInput(folder);
+        var (path, isZip) = SettingsSupport.ResolveSolutionInput(folder);
 
         isZip.Should().BeFalse();
         path.Should().Be(Path.GetFullPath(folder));
@@ -43,7 +43,7 @@ public class ConfigureCommandTests : IDisposable
         var zip = Path.Combine(_dir, "ContosoCustomizations.zip");
         File.WriteAllText(zip, "not really a zip, but it exists");
 
-        var (path, isZip) = ConfigureCommand.ResolveSolutionInput(zip);
+        var (path, isZip) = SettingsSupport.ResolveSolutionInput(zip);
 
         isZip.Should().BeTrue();
         path.Should().Be(Path.GetFullPath(zip));
@@ -62,7 +62,7 @@ public class ConfigureCommandTests : IDisposable
         {
             Directory.SetCurrentDirectory(_dir);
 
-            var (path, _) = ConfigureCommand.ResolveSolutionInput("Solution");
+            var (path, _) = SettingsSupport.ResolveSolutionInput("Solution");
 
             Path.IsPathRooted(path).Should().BeTrue();
             path.Should().Be(Path.GetFullPath(folder));
@@ -78,7 +78,7 @@ public class ConfigureCommandTests : IDisposable
     {
         var missing = Path.Combine(_dir, "no-such-solution.zip");
 
-        var act = () => ConfigureCommand.ResolveSolutionInput(missing);
+        var act = () => SettingsSupport.ResolveSolutionInput(missing);
 
         act.Should().Throw<FlowlineException>()
             .Which.ExitCode.Should().Be(ExitCode.NotFound);
@@ -89,7 +89,7 @@ public class ConfigureCommandTests : IDisposable
     [Fact]
     public void ResolveStandalone_SolutionNameAndNoProject_IsStandalone()
     {
-        ConfigureCommand.ResolveStandalone("ContosoCustomizations", null, _dir).Should().BeTrue();
+        SettingsSupport.ResolveStandalone("ContosoCustomizations", null, _dir).Should().BeTrue();
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public class ConfigureCommandTests : IDisposable
         // disagreed with it would apply a settings file against a solution the checkout does not describe.
         WithProject();
 
-        ConfigureCommand.ResolveStandalone("ContosoCustomizations", null, _dir).Should().BeFalse();
+        SettingsSupport.ResolveStandalone("ContosoCustomizations", null, _dir).Should().BeFalse();
     }
 
     [Theory]
@@ -108,7 +108,7 @@ public class ConfigureCommandTests : IDisposable
     [InlineData("   ")]
     public void ResolveStandalone_NeitherFlag_IsNotStandalone(string? solutionName)
     {
-        ConfigureCommand.ResolveStandalone(solutionName, null, _dir).Should().BeFalse();
+        SettingsSupport.ResolveStandalone(solutionName, null, _dir).Should().BeFalse();
     }
 
     // A stand-alone pull names the solution through the artifact rather than through --solution-name. Judged
@@ -116,7 +116,7 @@ public class ConfigureCommandTests : IDisposable
     [Fact]
     public void ResolveStandalone_PullArtifactAndNoProject_IsStandalone()
     {
-        ConfigureCommand.ResolveStandalone(null, "ContosoCustomizations.zip", _dir).Should().BeTrue();
+        SettingsSupport.ResolveStandalone(null, "ContosoCustomizations.zip", _dir).Should().BeTrue();
     }
 
     [Fact]
@@ -124,7 +124,7 @@ public class ConfigureCommandTests : IDisposable
     {
         WithProject();
 
-        ConfigureCommand.ResolveStandalone(null, "ContosoCustomizations.zip", _dir).Should().BeFalse();
+        SettingsSupport.ResolveStandalone(null, "ContosoCustomizations.zip", _dir).Should().BeFalse();
     }
 
     // A bare --pull inside no project still is not stand-alone: the flag carries no value, so nothing names
@@ -132,26 +132,19 @@ public class ConfigureCommandTests : IDisposable
     [Fact]
     public void ResolveStandalone_BarePullWithNoValue_IsNotStandalone()
     {
-        ConfigureCommand.ResolveStandalone(null, null, _dir).Should().BeFalse();
+        SettingsSupport.ResolveStandalone(null, null, _dir).Should().BeFalse();
     }
 
     // ── Flag validation ──────────────────────────────────────────────────────
 
-    [Fact]
-    public void ValidateFlags_PullWithSettingsFile_IsRejectedNamingBothFlags()
-    {
-        var error = ConfigureCommand.ValidateFlags(
-            pullRequested: true, settingsFile: "settings.json", standalone: false, solutionName: null, projectFound: true);
-
-        error.Should().NotBeNull();
-        error.Should().Contain("--pull").And.Contain("--settings-file");
-    }
+    // The --pull with --settings-file contradiction the single leaf carried is gone with the flag: the
+    // grammar makes that pair unreachable rather than invalid, and --settings-file now names a capture's
+    // destination. One rejection is left.
 
     [Fact]
     public void ValidateFlags_SolutionNameInsideAProject_IsRejected()
     {
-        var error = ConfigureCommand.ValidateFlags(
-            pullRequested: false, settingsFile: null, standalone: false, solutionName: "ContosoCustomizations", projectFound: true);
+        var error = SettingsSupport.ValidateFlags(standalone: false, solutionName: "ContosoCustomizations", projectFound: true);
 
         error.Should().NotBeNull();
         error.Should().Contain("--solution-name");
@@ -160,36 +153,15 @@ public class ConfigureCommandTests : IDisposable
     [Fact]
     public void ValidateFlags_SolutionNameOutsideAProject_IsAccepted()
     {
-        ConfigureCommand.ValidateFlags(
-            pullRequested: false, settingsFile: null, standalone: true, solutionName: "ContosoCustomizations", projectFound: false)
+        SettingsSupport.ValidateFlags(standalone: true, solutionName: "ContosoCustomizations", projectFound: false)
             .Should().BeNull();
     }
 
     [Fact]
-    public void ValidateFlags_PullAlone_IsAccepted()
+    public void ValidateFlags_NoFlags_IsAccepted()
     {
-        ConfigureCommand.ValidateFlags(
-            pullRequested: true, settingsFile: null, standalone: false, solutionName: null, projectFound: true)
+        SettingsSupport.ValidateFlags(standalone: false, solutionName: null, projectFound: true)
             .Should().BeNull();
-    }
-
-    [Fact]
-    public void ValidateFlags_SettingsFileAlone_IsAccepted()
-    {
-        ConfigureCommand.ValidateFlags(
-            pullRequested: false, settingsFile: "settings.test.json", standalone: false, solutionName: null, projectFound: true)
-            .Should().BeNull();
-    }
-
-    // Each rejection names its own flags rather than a shared "invalid mode" — an unattended caller has to
-    // know which flag to drop, and one catch-all message tells it nothing.
-    [Fact]
-    public void ValidateFlags_TheTwoRejections_DoNotShareWording()
-    {
-        var pullClash = ConfigureCommand.ValidateFlags(true, "settings.json", false, null, true);
-        var solutionClash = ConfigureCommand.ValidateFlags(false, null, false, "Contoso", true);
-
-        pullClash.Should().NotBe(solutionClash);
     }
 
     // ── Messages ─────────────────────────────────────────────────────────────
@@ -197,7 +169,7 @@ public class ConfigureCommandTests : IDisposable
     [Fact]
     public void BuildStandaloneRoleError_NamesTheRoleAndTheWayOut()
     {
-        var error = ConfigureCommand.BuildStandaloneRoleError("prod");
+        var error = SettingsSupport.BuildStandaloneRoleError("prod");
 
         error.Should().Contain("prod");
         error.Should().Contain("URL", "the message has to say what to pass instead");
@@ -212,7 +184,7 @@ public class ConfigureCommandTests : IDisposable
         var location = new SettingsFileLocation(
             Path.Combine("C:", "repo", "Solution", "settings.test.json"), SettingsFileSource.RoleConvention, Exists: true);
 
-        var note = ConfigureCommand.BuildResolutionNote(location);
+        var note = SettingsSupport.BuildResolutionNote(location);
 
         note.Should().Contain("settings.test.json");
     }
@@ -225,13 +197,13 @@ public class ConfigureCommandTests : IDisposable
     {
         var location = new SettingsFileLocation("settings.json", source, Exists: true);
 
-        ConfigureCommand.BuildResolutionNote(location).Should().Contain(expected);
+        SettingsSupport.BuildResolutionNote(location).Should().Contain(expected);
     }
 
     [Fact]
     public void BuildDryRunCompleteMessage_SaysNothingWasWrittenAndHowToApply()
     {
-        var message = ConfigureCommand.BuildDryRunCompleteMessage("Contoso PROD");
+        var message = SettingsSupport.BuildDryRunCompleteMessage("Contoso PROD");
 
         message.Should().Contain("Contoso PROD");
         message.Should().Contain("untouched");
@@ -243,7 +215,7 @@ public class ConfigureCommandTests : IDisposable
     [Fact]
     public void BuildAppliedMessage_NamesTheEnvironmentAndSaysReRunningIsSafe()
     {
-        var message = ConfigureCommand.BuildAppliedMessage("Contoso TEST");
+        var message = SettingsSupport.BuildAppliedMessage("Contoso TEST");
 
         message.Should().Contain("Contoso TEST");
         message.Should().Contain("Re-run");
@@ -254,12 +226,12 @@ public class ConfigureCommandTests : IDisposable
     [Fact]
     public void BuildCancelledMessage_SaysWhatLandedAndWhatDidnt()
     {
-        var message = ConfigureCommand.BuildCancelledMessage("Contoso TEST");
+        var message = SettingsSupport.BuildCancelledMessage("Contoso TEST");
 
         message.Should().Contain("Contoso TEST");
         message.Should().Contain("the rest weren't");
         message.Should().Contain("Re-run");
-        message.Should().NotBe(ConfigureCommand.BuildAppliedMessage("Contoso TEST"));
+        message.Should().NotBe(SettingsSupport.BuildAppliedMessage("Contoso TEST"));
     }
 
     [Fact]
@@ -267,7 +239,7 @@ public class ConfigureCommandTests : IDisposable
     {
         // A pull's dry run leaves a file unwritten; saying the environment is untouched would describe the
         // wrong thing entirely, since a pull never writes to one.
-        var message = ConfigureCommand.BuildPullDryRunMessage("Solution/deploymentSettings.test.json");
+        var message = SettingsSupport.BuildPullDryRunMessage("Solution/deploymentSettings.test.json");
 
         message.Should().Contain("deploymentSettings.test.json");
         message.Should().Contain("wasn't written");
@@ -278,7 +250,7 @@ public class ConfigureCommandTests : IDisposable
     [InlineData(46, "46 components in this solution aren't in the file")]
     public void BuildUndeclaredWarning_ReadsAsAColleagueWroteIt(int count, string expected)
     {
-        ConfigureCommand.BuildUndeclaredWarning(count).Should().StartWith(expected);
+        SettingsSupport.BuildUndeclaredWarning(count).Should().StartWith(expected);
     }
 
     // ── Force vocabulary (KTD10) ─────────────────────────────────────────────
@@ -290,5 +262,67 @@ public class ConfigureCommandTests : IDisposable
     public void ForceVocabulary_CarriesNoConfigureSpecificSpecifier()
     {
         FlowlineSettings.ConfigOnlyValidSpecifiers.Should().BeEquivalentTo(["config", "all"]);
+    }
+
+    // ── The bare branch form ─────────────────────────────────────────────────
+
+    // KTD18: the seven operations are two kinds of thing, and a flat list says so nowhere. Registration
+    // order is what groups them, so the order here is the contract, not a presentation detail.
+
+    [Fact]
+    public void Groups_ListTheWholeFileOperationsBeforeTheComponentKinds()
+    {
+        var names = SettingsCommand.Groups.SelectMany(g => g.Operations.Select(o => o.Name)).ToArray();
+
+        names.Should().Equal("push", "pull", "flow", "workflow", "plugin", "envvar", "connref");
+    }
+
+    [Fact]
+    public void Groups_SeparateWholeFileWorkFromSingleComponentWork()
+    {
+        SettingsCommand.Groups.Should().HaveCount(2);
+        SettingsCommand.Groups[0].Operations.Select(o => o.Name).Should().BeEquivalentTo("push", "pull");
+        SettingsCommand.Groups[1].Operations.Should().HaveCount(5);
+    }
+
+    [Fact]
+    public void Groups_EveryOperationCarriesADescription()
+    {
+        SettingsCommand.Groups
+            .SelectMany(g => g.Operations)
+            .Should().OnlyContain(o => !string.IsNullOrWhiteSpace(o.Description));
+    }
+
+    // ── Capture destination ──────────────────────────────────────────────────
+
+    // KTD17: the one thing a capture must never do is fall back to the shared, un-suffixed file. That file
+    // is a live fallback for every environment, so one environment's connection ids written there would be
+    // applied everywhere.
+    [Fact]
+    public void BuildUninferrableRoleError_NamesTheTargetAndTheFlagThatFixesIt()
+    {
+        var error = SettingsSupport.BuildUninferrableRoleError("https://contoso.crm4.dynamics.com");
+
+        error.Should().Contain("contoso.crm4.dynamics.com");
+        error.Should().Contain("--settings-file");
+    }
+
+    [Fact]
+    public void BuildSweepDestinationError_SaysWhyOnePathCannotServeASweep()
+    {
+        var error = SettingsSupport.BuildSweepDestinationError();
+
+        error.Should().Contain("--settings-file");
+        error.Should().Contain("every configured environment");
+    }
+
+    // ── Stand-alone detection after the flag rename ──────────────────────────
+
+    // The artifact flag is --from now, not --pull, but the rule it feeds is unchanged: a flag naming the
+    // solution plus no project to read one from.
+    [Fact]
+    public void ResolveStandalone_ArtifactFlagOutsideAProject_IsStandalone()
+    {
+        SettingsSupport.ResolveStandalone(null, "artifacts/ContosoCustomizations.zip", _dir).Should().BeTrue();
     }
 }

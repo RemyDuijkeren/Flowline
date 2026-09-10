@@ -23,17 +23,6 @@ public class ManagedFlagBindingTests
         }
     }
 
-    sealed class ConfigureProbeCommand : Command<ConfigureCommand.Settings>
-    {
-        public static ConfigureCommand.Settings? Captured;
-
-        protected override int Execute(CommandContext context, ConfigureCommand.Settings settings, CancellationToken cancellationToken)
-        {
-            Captured = settings;
-            return 0;
-        }
-    }
-
     sealed class SyncProbeCommand : Command<SyncCommand.Settings>
     {
         public static SyncCommand.Settings? Captured;
@@ -148,50 +137,5 @@ public class ManagedFlagBindingTests
             .GetCustomAttribute<DescriptionAttribute>()!;
 
         Assert.EndsWith("(saved to .flowline)", description.Description);
-    }
-
-    // Regression: --pull is a FlagValue<string> and carried [DefaultValue(false)], copied from the
-    // FlagValue<bool> options above. Spectre assigns a declared default straight into FlagValue<T>.Value,
-    // so binding threw InvalidCastException (Boolean -> String) before the command body ran — every
-    // `configure` invocation failed with a stack trace, and the helper-level unit tests stayed green
-    // because they never go through the binder. Same reason the tests above exist.
-    [Fact]
-    public void Configure_PullFlagBare_IsSetWithNoValue()
-    {
-        var app = new CommandApp<ConfigureProbeCommand>();
-        app.Configure(config => config.PropagateExceptions());
-
-        var result = app.Run(["test", "--pull"]);
-
-        Assert.Equal(0, result);
-        Assert.NotNull(ConfigureProbeCommand.Captured!.Pull);
-        Assert.True(ConfigureProbeCommand.Captured!.Pull.IsSet);
-        Assert.Null(ConfigureProbeCommand.Captured!.Pull.Value);
-    }
-
-    [Fact]
-    public void Configure_PullFlagWithValue_CarriesTheValue()
-    {
-        var app = new CommandApp<ConfigureProbeCommand>();
-        app.Configure(config => config.PropagateExceptions());
-
-        var result = app.Run(["test", "--pull", "artifacts/solution.zip"]);
-
-        Assert.Equal(0, result);
-        Assert.True(ConfigureProbeCommand.Captured!.Pull.IsSet);
-        Assert.Equal("artifacts/solution.zip", ConfigureProbeCommand.Captured!.Pull.Value);
-    }
-
-    [Fact]
-    public void Configure_PullFlagAbsent_IsNotSet()
-    {
-        var app = new CommandApp<ConfigureProbeCommand>();
-        app.Configure(config => config.PropagateExceptions());
-
-        var result = app.Run(["test"]);
-
-        Assert.Equal(0, result);
-        Assert.NotNull(ConfigureProbeCommand.Captured!.Pull);
-        Assert.False(ConfigureProbeCommand.Captured!.Pull.IsSet);
     }
 }
