@@ -128,15 +128,36 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// The non-interactive half lives here. An unattended caller gets the names it could have passed and a
     /// typed failure naming the argument — never a prompt it cannot answer, which would hang the run.
     /// </remarks>
-    protected virtual Task<string> ResolveMissingNameAsync(
+    protected virtual async Task<string> ResolveMissingNameAsync(
         ConfigurableComponentKind kind, IReadOnlyList<InventoryComponent> candidates, CancellationToken ct)
     {
-        foreach (var candidate in candidates.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
-            Console.WriteLine(candidate.Name);
+        var ordered = candidates.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToArray();
 
-        throw new FlowlineException(ExitCode.ValidationFailed,
-            $"Name which {SettingsComponentNames.Singular(kind)} to address — the ones in this solution are listed above.");
+        // The capability check comes before the prompt is built, not around showing it — the order every
+        // other prompt in this codebase uses. An unattended caller must never reach a prompt it cannot
+        // answer, because that hangs the run rather than failing it.
+        if (!IsInteractive())
+        {
+            foreach (var candidate in ordered)
+                Console.WriteLine(candidate.Name);
+
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"Name which {SettingsComponentNames.Singular(kind)} to address — the ones in this solution are listed above.");
+        }
+
+        // Single-select with search rather than a multi-select: exactly one component changes per
+        // invocation, and typing part of a name is what makes a long solution navigable. The inventory
+        // spinner has already closed by the time this runs — Spectre forbids a prompt inside a status
+        // display (KTD10).
+        var prompt = new SelectionPrompt<InventoryComponent>()
+            .Title(FlowlineConsoleExtensions.Question($"Pick a {SettingsComponentNames.Singular(kind)}:"))
+            .UseConverter(c => SettingsComponentOutcomes.DescribeCandidate(c, kind))
+            .EnableSearch()
+            .AddChoices(ordered);
+
+        return (await Console.PromptAsync(prompt, ct)).Name;
     }
+
 
     /// <summary>
     /// Warns that the next push will put this component back the way the file says (R4, R15, KTD12).
@@ -214,6 +235,21 @@ internal static class SettingsComponentOutcomes
         kind is ConfigurableComponentKind.EnvironmentVariable or ConfigurableComponentKind.ConnectionReference
             ? outcome.PriorValue is { Length: > 0 } value ? value : "unset"
             : outcome.WasSuspended ? "suspended" : outcome.PriorEnabled == true ? "on" : "off";
+
+    /// <summary>How a component reads in the picker: its addressable name, then what it currently is.</summary>
+    /// <remarks>
+    /// The name comes first because it is what the caller would otherwise have typed, and what the search
+    /// filters on.
+    ///
+    /// A value kind shows its name alone. An environment variable's value is not on the inventory row at
+    /// all, and a connection reference's is a connection id nobody recognizes — and filling the label with
+    /// values would print a Dataverse-stored secret into the picker, which is the exposure the read path
+    /// already accepts and this one has no reason to add to.
+    /// </remarks>
+    public static string DescribeCandidate(InventoryComponent component, ConfigurableComponentKind kind) =>
+        kind is ConfigurableComponentKind.EnvironmentVariable or ConfigurableComponentKind.ConnectionReference
+            ? component.Name
+            : $"{component.Name} — {(component.Suspended ? "suspended" : component.Enabled == true ? "on" : "off")}";
 
     /// <summary>
     /// The typed code a single-component outcome earns.

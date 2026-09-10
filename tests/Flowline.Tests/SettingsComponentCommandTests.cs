@@ -144,4 +144,47 @@ public class SettingsComponentCommandTests
             SettingsComponentNames.Singular(kind).Should().NotBe(kind.ToString());
         }
     }
+
+    // ── Picker labels ────────────────────────────────────────────────────────
+
+    // R9: the picker exists so nobody has to know the exact name, so the label leads with the name the
+    // search filters on and that the caller would otherwise have typed.
+
+    static InventoryComponent Component(ConfigurableComponentKind kind, string name, bool? enabled = null,
+        bool suspended = false, string? value = null) =>
+        new(kind, name, Guid.NewGuid(), enabled, value, Suspended: suspended);
+
+    [Fact]
+    public void APickerLabel_LeadsWithTheAddressableName()
+    {
+        SettingsComponentOutcomes
+            .DescribeCandidate(Component(ConfigurableComponentKind.CloudFlow, "ApprovalFlow", enabled: true),
+                ConfigurableComponentKind.CloudFlow)
+            .Should().StartWith("ApprovalFlow");
+    }
+
+    [Theory]
+    [InlineData(true, false, "on")]
+    [InlineData(false, false, "off")]
+    [InlineData(false, true, "suspended")]
+    public void AStateKindLabel_SaysWhatItCurrentlyIs(bool enabled, bool suspended, string expected)
+    {
+        SettingsComponentOutcomes
+            .DescribeCandidate(Component(ConfigurableComponentKind.Workflow, "contoso_AutoNumber", enabled, suspended),
+                ConfigurableComponentKind.Workflow)
+            .Should().EndWith(expected);
+    }
+
+    // A value kind shows its name alone. Putting the value in the label would print a Dataverse-stored
+    // secret into the picker — an exposure the read path already accepts and this one need not add to.
+    [Fact]
+    public void AValueKindLabel_CarriesNoValue()
+    {
+        var label = SettingsComponentOutcomes.DescribeCandidate(
+            Component(ConfigurableComponentKind.ConnectionReference, "contoso_Mailbox", value: "super-secret-id"),
+            ConfigurableComponentKind.ConnectionReference);
+
+        label.Should().Be("contoso_Mailbox");
+        label.Should().NotContain("super-secret-id");
+    }
 }
