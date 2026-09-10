@@ -40,19 +40,8 @@ public class SettingsPushCommand(
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        var standalone = IsStandalone(settings);
-        var projectFound = FindFlowlineProjectRoot(Directory.GetCurrentDirectory()) is not null;
-
-        var flagError = SettingsSupport.ValidateFlags(standalone, settings.SolutionName, projectFound);
-        if (flagError is not null)
-            throw new FlowlineException(ExitCode.ValidationFailed, flagError);
-
-        // A role keyword has nothing to resolve against outside a project: Config is a bare ProjectConfig
-        // there, so every role would fall through to a config-shaped "URL is required" pointing at a
-        // .flowline that was never expected to exist.
-        var role = DriftCommand.TryResolveRole(settings.Target);
-        if (standalone && role is not null)
-            throw new FlowlineException(ExitCode.ConfigInvalid, SettingsSupport.BuildStandaloneRoleError(settings.Target));
+        var (standalone, _) = ResolveProjectMode(settings);
+        var role = ResolveRoleOrThrow(settings.Target, standalone);
 
         var (env, profile) = await ResolveEnvironmentAsync(settings.Target, role, settings, cancellationToken);
         var solutionName = await ResolveSolutionNameAsync(settings, standalone, null, env, cancellationToken);
@@ -95,15 +84,10 @@ public class SettingsPushCommand(
             switch (component.Outcome)
             {
                 case ComponentOutcomeKind.Applied when mode.IsReportOnly():
-                    Console.Info($"Would change [bold]{name}[/]");
+                    Console.Info(SettingsSupport.BuildWouldChangeLine(component.Name));
                     break;
                 case ComponentOutcomeKind.Applied:
-                    // The wording holds in both directions: a suspended flow is either activated again or
-                    // moved to draft, and either way what the reader needs to know is that it had stopped
-                    // itself, so a re-suspension after this run is not a surprise.
-                    Console.Ok(component.WasSuspended
-                        ? $"[bold]{name}[/] updated — it was suspended before this run"
-                        : $"[bold]{name}[/] updated");
+                    Console.Ok(SettingsSupport.BuildUpdatedLine(component.Name, component.WasSuspended));
                     break;
                 case ComponentOutcomeKind.Unchanged:
                     Console.Verbose($"{name} already matches");

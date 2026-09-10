@@ -41,8 +41,6 @@ public sealed record PullResult(
 /// </remarks>
 public sealed class ConfigurePullService
 {
-    const string EnvironmentVariablesSection = "EnvironmentVariables";
-    const string ConnectionReferencesSection = "ConnectionReferences";
 
     /// <summary><c>environmentvariabledefinition.type</c> for a Secret.</summary>
     public const int SecretType = 100000005;
@@ -86,8 +84,8 @@ public sealed class ConfigurePullService
 
         FillConnectionReferences(document, existing, inventory, added);
 
-        SettingsSectionEntries.CarryVanished(document, existing, EnvironmentVariablesSection, "SchemaName", vanished);
-        SettingsSectionEntries.CarryVanished(document, existing, ConnectionReferencesSection, "LogicalName", vanished);
+        SettingsSectionEntries.CarryVanished(document, existing, SettingsSectionEntries.EnvironmentVariables, "SchemaName", vanished);
+        SettingsSectionEntries.CarryVanished(document, existing, SettingsSectionEntries.ConnectionReferences, "LogicalName", vanished);
 
         WriteStateSections(document, existing, inventory, added, vanished);
 
@@ -103,19 +101,19 @@ public sealed class ConfigurePullService
         List<string> placeholders,
         CancellationToken ct)
     {
-        foreach (var entry in SettingsSectionEntries.In(document, EnvironmentVariablesSection))
+        foreach (var entry in SettingsSectionEntries.In(document, SettingsSectionEntries.EnvironmentVariables))
         {
             var name = entry["SchemaName"]?.GetValue<string>();
             if (string.IsNullOrWhiteSpace(name)) continue;
 
-            var declared = SettingsSectionEntries.ExistingValue(existing, EnvironmentVariablesSection, "SchemaName", name, "Value");
+            var declared = SettingsSectionEntries.ExistingValue(existing, SettingsSectionEntries.EnvironmentVariables, "SchemaName", name, "Value");
             if (!string.IsNullOrWhiteSpace(declared))
             {
                 entry["Value"] = declared;
                 continue;
             }
 
-            if (!SettingsSectionEntries.Declares(existing, EnvironmentVariablesSection, "SchemaName", name))
+            if (!SettingsSectionEntries.Declares(existing, SettingsSectionEntries.EnvironmentVariables, "SchemaName", name))
                 added.Add($"EnvironmentVariable: {name}");
 
             var match = inventory.Match(ConfigurableComponentKind.EnvironmentVariable, name);
@@ -157,19 +155,19 @@ public sealed class ConfigurePullService
         SolutionInventory inventory,
         List<string> added)
     {
-        foreach (var entry in SettingsSectionEntries.In(document, ConnectionReferencesSection))
+        foreach (var entry in SettingsSectionEntries.In(document, SettingsSectionEntries.ConnectionReferences))
         {
             var name = entry["LogicalName"]?.GetValue<string>();
             if (string.IsNullOrWhiteSpace(name)) continue;
 
-            var declared = SettingsSectionEntries.ExistingValue(existing, ConnectionReferencesSection, "LogicalName", name, "ConnectionId");
+            var declared = SettingsSectionEntries.ExistingValue(existing, SettingsSectionEntries.ConnectionReferences, "LogicalName", name, "ConnectionId");
             if (!string.IsNullOrWhiteSpace(declared))
             {
                 entry["ConnectionId"] = declared;
                 continue;
             }
 
-            if (!SettingsSectionEntries.Declares(existing, ConnectionReferencesSection, "LogicalName", name))
+            if (!SettingsSectionEntries.Declares(existing, SettingsSectionEntries.ConnectionReferences, "LogicalName", name))
                 added.Add($"ConnectionReference: {name}");
 
             var match = inventory.Match(ConfigurableComponentKind.ConnectionReference, name);
@@ -177,13 +175,6 @@ public sealed class ConfigurePullService
         }
     }
 
-    /// <summary>
-    /// Appends entries the existing file declares that the regenerated skeleton no longer has (R12b).
-    /// </summary>
-    /// <remarks>
-    /// Appended rather than merged in place, so the skeleton's own order — which is what a diff against the
-    /// previous pull compares to — is untouched.
-    /// </remarks>
     /// <summary>
     /// Writes the state classes, listing only the components that are currently off (R12).
     /// </summary>

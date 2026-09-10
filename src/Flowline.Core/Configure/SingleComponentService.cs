@@ -96,9 +96,9 @@ public static class SingleComponentService
     /// <param name="desiredValue">The target value, or <c>null</c> to read the current one instead of writing.</param>
     /// <remarks>
     /// An environment variable's value lives in its own row rather than on the inventory component, which
-    /// deliberately leaves it unset (<see cref="SolutionComponentInventory"/>), so both the read path and the
-    /// write path's prior-value report need one further lookup for that kind. A connection reference's bound
-    /// connection is already on the inventory row.
+    /// deliberately leaves it unset (<see cref="SolutionComponentInventory"/>), so a read of that kind costs
+    /// one further Dataverse query. A connection reference's bound connection is already on the inventory
+    /// row, so reading one costs nothing.
     /// </remarks>
     /// <exception cref="FlowlineException">
     /// <see cref="ExitCode.NotFound"/> when no component of this kind matches <paramref name="name"/>;
@@ -114,16 +114,20 @@ public static class SingleComponentService
         CancellationToken ct)
     {
         var component = Resolve(inventory, kind, name);
-        var priorValue = await CurrentValueAsync(service, component, ct).ConfigureAwait(false);
 
+        // Read only on the path that reports it. An environment variable's value costs a Dataverse query,
+        // and only a read prints it — a write reports what it did, not what was there, and the writer runs
+        // its own comparison query anyway. Fetching it up front billed every write for two round trips
+        // where one does.
         if (desiredValue is null)
-            return new SingleComponentOutcome(component, SingleComponentActionKind.Read, PriorValue: priorValue);
+            return new SingleComponentOutcome(component, SingleComponentActionKind.Read,
+                PriorValue: await CurrentValueAsync(service, component, ct).ConfigureAwait(false));
 
         // KTD9: --value is a flag, so an empty one is a deliberate request rather than an omission. The
         // file-apply path silently skips an empty declared value so a captured file re-applies as a no-op;
         // a hand-typed empty value gets an explicit refusal instead, naming the deferred clear capability.
         if (desiredValue.Length == 0)
-            return new SingleComponentOutcome(component, SingleComponentActionKind.Skipped, PriorValue: priorValue,
+            return new SingleComponentOutcome(component, SingleComponentActionKind.Skipped,
                 Detail: $"'{component.Name}' can't be set to an empty value. Clearing a value isn't supported yet.");
 
         var write = component.Kind == ConfigurableComponentKind.EnvironmentVariable
@@ -132,7 +136,7 @@ public static class SingleComponentService
             : await ComponentValueWriter.ApplyConnectionReferenceAsync(service, component, desiredValue, mode, ct)
                 .ConfigureAwait(false);
 
-        return FromWrite(write, component, priorValue: priorValue);
+        return FromWrite(write, component);
     }
 
     static async Task<string?> CurrentValueAsync(

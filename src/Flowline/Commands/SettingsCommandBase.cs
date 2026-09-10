@@ -1,3 +1,4 @@
+using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Configure;
 using Flowline.Core.Console;
@@ -39,6 +40,42 @@ public abstract class SettingsCommandBase<TSettings>(
     // The vocabulary is deliberately empty of settings-specific specifiers rather than absent — recorded
     // here so nobody later invents a PROD confirmation and breaks every CI job already running these.
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
+
+    /// <summary>
+    /// Works out whether this run has a project behind it, and rejects a flag that needs one (or doesn't).
+    /// </summary>
+    /// <remarks>
+    /// Every operation on this branch asks the same two questions before it touches anything, and answers
+    /// them the same way. Kept here rather than at each leaf so a later operation cannot answer them
+    /// slightly differently.
+    /// </remarks>
+    protected (bool Standalone, bool ProjectFound) ResolveProjectMode(TSettings settings)
+    {
+        var standalone = IsStandalone(settings);
+        var projectFound = FindFlowlineProjectRoot(Directory.GetCurrentDirectory()) is not null;
+
+        var flagError = SettingsSupport.ValidateFlags(standalone, settings.SolutionName, projectFound);
+        if (flagError is not null)
+            throw new FlowlineException(ExitCode.ValidationFailed, flagError);
+
+        return (standalone, projectFound);
+    }
+
+    /// <summary>Reads a role keyword out of the target, or fails when there is nothing to resolve it against.</summary>
+    /// <remarks>
+    /// A role keyword has nothing to resolve against outside a project: the config is a bare
+    /// <see cref="ProjectConfig"/> there, so every role would fall through to a config-shaped "URL is
+    /// required" pointing at a <c>.flowline</c> that was never expected to exist.
+    /// </remarks>
+    protected static EnvironmentRole? ResolveRoleOrThrow(string target, bool standalone)
+    {
+        var role = DriftCommand.TryResolveRole(target);
+
+        if (standalone && role is not null)
+            throw new FlowlineException(ExitCode.ConfigInvalid, SettingsSupport.BuildStandaloneRoleError(target));
+
+        return role;
+    }
 
     /// <summary>
     /// Resolves a role through the shared role path and anything else as a URL.

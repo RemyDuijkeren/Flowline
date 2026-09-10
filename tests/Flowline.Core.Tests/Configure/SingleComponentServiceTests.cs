@@ -235,4 +235,37 @@ public class SingleComponentServiceTests
         outcome.WasSuspended.Should().BeTrue();
         await service.Received(1).UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
     }
+
+    // ── One round trip per write ─────────────────────────────────────────────
+
+    // An environment variable's value costs a Dataverse query, and the writer already runs one to decide
+    // changed-versus-unchanged. Reading it again up front billed every write for two where one does, and
+    // no write outcome ever reported the value it fetched.
+    [Fact]
+    public async Task ReadOrWriteValue_WritingAVariable_QueriesTheValueRowOnlyOnce()
+    {
+        var inventory = new SolutionInventory([Variable("cr123_ApiUrl")]);
+        var service = Service(environmentVariableValue: "old");
+
+        await SingleComponentService.ReadOrWriteValueAsync(
+            service, inventory, ConfigurableComponentKind.EnvironmentVariable, "cr123_ApiUrl",
+            desiredValue: "new", RunMode.Normal, CancellationToken.None);
+
+        await service.Received(1).RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
+    }
+
+    // A refusal reaches Dataverse not at all: the answer does not depend on what is currently there.
+    [Fact]
+    public async Task ReadOrWriteValue_RefusingAnEmptyValue_QueriesNothing()
+    {
+        var inventory = new SolutionInventory([Variable("cr123_ApiUrl")]);
+        var service = Service(environmentVariableValue: "old");
+
+        var outcome = await SingleComponentService.ReadOrWriteValueAsync(
+            service, inventory, ConfigurableComponentKind.EnvironmentVariable, "cr123_ApiUrl",
+            desiredValue: "", RunMode.Normal, CancellationToken.None);
+
+        outcome.Action.Should().Be(SingleComponentActionKind.Skipped);
+        await service.DidNotReceive().RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
+    }
 }

@@ -34,8 +34,6 @@ public sealed record TemplateMergeResult(
 /// </remarks>
 public static class SettingsTemplateService
 {
-    const string EnvironmentVariablesSection = "EnvironmentVariables";
-    const string ConnectionReferencesSection = "ConnectionReferences";
 
     /// <summary>Merges the PAC skeleton into the existing shared template, with no live state.</summary>
     public static TemplateMergeResult Merge(SettingsDocument skeleton, SettingsDocument? existing)
@@ -53,11 +51,11 @@ public static class SettingsTemplateService
         foreach (var section in skeleton.PassThrough)
             document.PassThrough[section.Key] = section.Value?.DeepClone();
 
-        FillSection(document, existing, EnvironmentVariablesSection, "SchemaName", "Value", added);
-        FillSection(document, existing, ConnectionReferencesSection, "LogicalName", "ConnectionId", added);
+        FillSection(document, existing, SettingsSectionEntries.EnvironmentVariables, "SchemaName", "Value", added);
+        FillSection(document, existing, SettingsSectionEntries.ConnectionReferences, "LogicalName", "ConnectionId", added);
 
-        SettingsSectionEntries.CarryVanished(document, existing, EnvironmentVariablesSection, "SchemaName", vanished);
-        SettingsSectionEntries.CarryVanished(document, existing, ConnectionReferencesSection, "LogicalName", vanished);
+        SettingsSectionEntries.CarryVanished(document, existing, SettingsSectionEntries.EnvironmentVariables, "SchemaName", vanished);
+        SettingsSectionEntries.CarryVanished(document, existing, SettingsSectionEntries.ConnectionReferences, "LogicalName", vanished);
 
         return new TemplateMergeResult(document, added, vanished);
     }

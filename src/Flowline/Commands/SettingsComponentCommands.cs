@@ -71,12 +71,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         if (operationFlagError is not null)
             throw new FlowlineException(ExitCode.ValidationFailed, operationFlagError);
 
-        var standalone = IsStandalone(settings);
-        var projectFound = FindFlowlineProjectRoot(Directory.GetCurrentDirectory()) is not null;
-
-        var flagError = SettingsSupport.ValidateFlags(standalone, settings.SolutionName, projectFound);
-        if (flagError is not null)
-            throw new FlowlineException(ExitCode.ValidationFailed, flagError);
+        var (standalone, _) = ResolveProjectMode(settings);
 
         // Without a solution there is no inventory to address a name against, so this fails here rather
         // than later with nothing to read.
@@ -84,9 +79,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
             throw new FlowlineException(ExitCode.ConfigInvalid,
                 "Couldn't tell which solution this is. Pass --solution-name.");
 
-        var role = DriftCommand.TryResolveRole(settings.Target);
-        if (standalone && role is not null)
-            throw new FlowlineException(ExitCode.ConfigInvalid, SettingsSupport.BuildStandaloneRoleError(settings.Target));
+        var role = ResolveRoleOrThrow(settings.Target, standalone);
 
         var (env, profile) = await ResolveEnvironmentAsync(settings.Target, role, settings, cancellationToken);
         var solutionName = await ResolveSolutionNameAsync(settings, standalone, null, env, cancellationToken);
@@ -113,9 +106,10 @@ public abstract class SettingsComponentCommandBase<TSettings>(
 
         var outcome = await RunAsync(service, inventory, kind, name, settings, mode, cancellationToken);
 
-        Report(outcome, kind, mode);
+        var isWrite = IsWrite(settings);
+        Report(outcome, kind, mode, isWrite);
 
-        if (IsWrite(settings) && outcome.Action == SingleComponentActionKind.Applied)
+        if (isWrite && outcome.Action == SingleComponentActionKind.Applied)
             await WarnIfTheFileWouldOverrideAsync(kind, outcome.Component.Name, role, standalone, cancellationToken);
 
         return (int)SettingsComponentOutcomes.ExitCodeFor(outcome);
@@ -186,7 +180,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
             "the next 'settings push' will put it back. Change the file too to make this stick.");
     }
 
-    void Report(SingleComponentOutcome outcome, ConfigurableComponentKind kind, RunMode mode)
+    void Report(SingleComponentOutcome outcome, ConfigurableComponentKind kind, RunMode mode, bool isWrite)
     {
         var name = Markup.Escape(outcome.Component.Name);
 
@@ -196,12 +190,10 @@ public abstract class SettingsComponentCommandBase<TSettings>(
                 Console.Info($"[bold]{name}[/] is {Markup.Escape(SettingsComponentOutcomes.DescribeCurrent(outcome, kind))}");
                 break;
             case SingleComponentActionKind.Applied when mode.IsReportOnly():
-                Console.Info($"Would change [bold]{name}[/]");
+                Console.Info(SettingsSupport.BuildWouldChangeLine(outcome.Component.Name));
                 break;
             case SingleComponentActionKind.Applied:
-                Console.Ok(outcome.WasSuspended
-                    ? $"[bold]{name}[/] updated — it was suspended before this run"
-                    : $"[bold]{name}[/] updated");
+                Console.Ok(SettingsSupport.BuildUpdatedLine(outcome.Component.Name, outcome.WasSuspended));
                 break;
             case SingleComponentActionKind.Unchanged:
                 Console.Info($"[bold]{name}[/] already matches — nothing written");
@@ -214,7 +206,14 @@ public abstract class SettingsComponentCommandBase<TSettings>(
                 break;
         }
 
-        if (outcome.Action == SingleComponentActionKind.Applied && mode.IsReportOnly())
+        // One finish line, always last, on every dry run that meant to write — the same contract the file
+        // path keeps. It used to fire only when the component would actually have changed, so a dry run
+        // against a component already in the requested state said "already matches" and then nothing,
+        // leaving the reader to wonder whether the run had finished.
+        //
+        // A read is the exception, not an oversight: --dry-run is inert on a read (KTD11), and announcing
+        // a dry run that was never going to write anything would imply it had been.
+        if (isWrite && mode.IsReportOnly())
             Console.Done("Dry run complete — nothing was written. Run without --dry-run to apply.");
     }
 

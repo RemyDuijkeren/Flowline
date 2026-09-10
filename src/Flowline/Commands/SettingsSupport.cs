@@ -83,6 +83,25 @@ public static class SettingsSupport
         _ => "shared fallback",
     };
 
+    /// <summary>What a dry run says it would do to a component.</summary>
+    /// <remarks>
+    /// Shared with the single-component path. The two report methods keep separate outcome types by
+    /// decision (KTD8), but the words a reader sees for the same event are not part of that split, and two
+    /// copies would be free to drift apart.
+    /// </remarks>
+    public static string BuildWouldChangeLine(string name) => $"Would change [bold]{Markup.Escape(name)}[/]";
+
+    /// <summary>What a real write says it did.</summary>
+    /// <remarks>
+    /// The suspended wording holds in both directions: a suspended flow is either activated again or moved
+    /// to draft, and either way what the reader needs to know is that it had stopped itself, so a
+    /// re-suspension after this run is not a surprise.
+    /// </remarks>
+    public static string BuildUpdatedLine(string name, bool wasSuspended) =>
+        wasSuspended
+            ? $"[bold]{Markup.Escape(name)}[/] updated — it was suspended before this run"
+            : $"[bold]{Markup.Escape(name)}[/] updated";
+
     /// <summary>Dry-run completion wording, in the statement form the other commands use.</summary>
     public static string BuildDryRunCompleteMessage(string environment) =>
         $"Dry run complete — {Markup.Escape(environment)} is untouched. Run without --dry-run to apply.";

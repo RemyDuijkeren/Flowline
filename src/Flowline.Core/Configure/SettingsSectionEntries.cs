@@ -17,6 +17,16 @@ namespace Flowline.Core.Configure;
 /// </remarks>
 internal static class SettingsSectionEntries
 {
+    /// <summary>The two PAC-native sections Flowline reads and writes entries in, by name.</summary>
+    /// <remarks>
+    /// Here rather than three times over. The literals are what every caller of the methods below has to
+    /// agree on, so a copy that drifts breaks the same agreement this type exists to keep.
+    /// </remarks>
+    public const string EnvironmentVariables = "EnvironmentVariables";
+
+    /// <inheritdoc cref="EnvironmentVariables"/>
+    public const string ConnectionReferences = "ConnectionReferences";
+
     /// <summary>Every object entry in one pass-through section, or nothing when the section is absent.</summary>
     public static IEnumerable<JsonObject> In(SettingsDocument document, string section) =>
         document.PassThrough.TryGetValue(section, out var node) && node is JsonArray array

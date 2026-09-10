@@ -48,12 +48,7 @@ public class SettingsPullCommand(
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        var standalone = IsStandalone(settings);
-        var projectFound = FindFlowlineProjectRoot(Directory.GetCurrentDirectory()) is not null;
-
-        var flagError = SettingsSupport.ValidateFlags(standalone, settings.SolutionName, projectFound);
-        if (flagError is not null)
-            throw new FlowlineException(ExitCode.ValidationFailed, flagError);
+        var (standalone, projectFound) = ResolveProjectMode(settings);
 
         var mode = settings.DryRun ? RunMode.DryRun : RunMode.Normal;
 
@@ -129,9 +124,8 @@ public class SettingsPullCommand(
     async Task<int> CaptureOneAsync(
         Settings settings, string target, bool standalone, RunMode mode, bool sweeping, CancellationToken ct)
     {
-        var role = DriftCommand.TryResolveRole(target);
-        if (standalone && role is not null)
-            throw new FlowlineException(ExitCode.ConfigInvalid, SettingsSupport.BuildStandaloneRoleError(target));
+        // Per target, not per run: a sweep resolves a role for each one it captures.
+        var role = ResolveRoleOrThrow(target, standalone);
 
         var (env, profile) = await ResolveEnvironmentAsync(target, role, settings, ct);
         var solutionName = await ResolveSolutionNameAsync(settings, standalone, settings.From, env, ct);

@@ -20,8 +20,6 @@ public sealed record DeclaredValue(string Name, string Value);
 /// </remarks>
 public sealed class ConfigureApplyService
 {
-    const string EnvironmentVariablesSection = "EnvironmentVariables";
-    const string ConnectionReferencesSection = "ConnectionReferences";
 
     /// <summary>Applies every component the file declares, in tier order.</summary>
     public async Task<ApplyOutcome> ApplyAsync(
@@ -60,7 +58,7 @@ public sealed class ConfigureApplyService
         CancellationToken ct)
     {
         // Tier 1 — values and connection references.
-        foreach (var declared in ReadValues(document, EnvironmentVariablesSection, "SchemaName", "Value"))
+        foreach (var declared in ReadValues(document, SettingsSectionEntries.EnvironmentVariables, "SchemaName", "Value"))
         {
             // Same rule as the connection references below, for the same reason: `pac solution
             // create-settings` writes an empty Value for a variable nobody has filled in, and a pull writes
@@ -78,7 +76,7 @@ public sealed class ConfigureApplyService
                 .ConfigureAwait(false));
         }
 
-        foreach (var declared in ReadValues(document, ConnectionReferencesSection, "LogicalName", "ConnectionId"))
+        foreach (var declared in ReadValues(document, SettingsSectionEntries.ConnectionReferences, "LogicalName", "ConnectionId"))
         {
             // An empty ConnectionId is what `pac solution create-settings` emits for a reference nobody has
             // filled in yet. Binding to nothing would clear a working binding, so it is left alone.
@@ -166,13 +164,6 @@ public sealed class ConfigureApplyService
     }
 
     /// <summary>
-    /// Reads a PAC-native section out of the pass-through bag without moving it.
-    /// </summary>
-    /// <remarks>
-    /// Projection, not extraction: PAC owns these sections and a write must return them byte-identical, so
-    /// they stay in the bag and are only read from here.
-    /// </remarks>
-    /// <summary>
     /// Whether applying this document would actually act on one named component (KTD12).
     /// </summary>
     /// <remarks>
@@ -198,9 +189,9 @@ public sealed class ConfigureApplyService
         return kind switch
         {
             ConfigurableComponentKind.EnvironmentVariable =>
-                NamedInValues(EnvironmentVariablesSection, "SchemaName", "Value"),
+                NamedInValues(SettingsSectionEntries.EnvironmentVariables, "SchemaName", "Value"),
             ConfigurableComponentKind.ConnectionReference =>
-                NamedInValues(ConnectionReferencesSection, "LogicalName", "ConnectionId"),
+                NamedInValues(SettingsSectionEntries.ConnectionReferences, "LogicalName", "ConnectionId"),
             ConfigurableComponentKind.CloudFlow => NamedInStates(document.CloudFlows),
             ConfigurableComponentKind.Workflow => NamedInStates(document.Workflows),
             ConfigurableComponentKind.PluginStep => NamedInStates(document.PluginSteps),
@@ -208,6 +199,13 @@ public sealed class ConfigureApplyService
         };
     }
 
+    /// <summary>
+    /// Reads a PAC-native section out of the pass-through bag without moving it.
+    /// </summary>
+    /// <remarks>
+    /// Projection, not extraction: PAC owns these sections and a write must return them byte-identical, so
+    /// they stay in the bag and are only read from here.
+    /// </remarks>
     internal static IReadOnlyList<DeclaredValue> ReadValues(
         SettingsDocument document, string section, string nameProperty, string valueProperty)
     {
