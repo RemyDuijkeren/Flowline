@@ -1,21 +1,25 @@
 ---
-title: Configure Inline Component Change - Plan
+title: Settings Inline Component Change - Plan
 type: feat
 date: 2026-09-06
 topic: configure-inline-component
 artifact_contract: ce-unified-plan/v1
-artifact_readiness: requirements-only
+artifact_readiness: implementation-ready
 product_contract_source: ce-brainstorm
 execution: code
 ---
 
-# Configure Inline Component Change - Plan
+# Settings Inline Component Change - Plan
 
 ## Goal Capsule
 
-- **Objective:** An operator can turn one flow, workflow or plugin step on or off, or set one environment variable value, in a named environment, in a single command, without editing a file.
-- **Product authority:** This document, for the inline surface only. The settings file, the apply path, discovery, ordering and exit codes belong to [`2026-09-05-1332-feat-environment-configure-command-plan.md`](2026-09-05-1332-feat-environment-configure-command-plan.md).
-- **Open blockers:** Component addressing is undesigned. See Outstanding Questions.
+- **Objective:** An operator can read one component's current state, or turn one flow, workflow or plugin step on or off, or set one environment variable value or connection reference, in a named environment, in a single command, without editing a file; and the settings template lists what the solution actually declares, without anyone remembering to refresh it.
+- **Means:** A `settings` branch whose operations are the five component kinds, each taking the environment as its first argument, where a supplied `--on`, `--off` or `--value` writes and the absence of one reads (KTD1, KTD4, KTD5).
+- **Product authority:** This document, for the whole `settings` command surface. The settings file format, the apply pipeline, component discovery, tier ordering and the apply exit codes belong to [`2026-09-05-1332-feat-environment-configure-command-plan.md`](2026-09-05-1332-feat-environment-configure-command-plan.md).
+- **Open blockers:** None. The two questions this document opened under "Resolve Before Planning" are settled as KTD4 and KTD5.
+- **Execution profile:** Standard. Seven units. Most of the risk sits in U2, which moves two safety guards into the writers so no caller can reach an unguarded write. U7 is the one unit outside the `settings` surface, touching `clone` and `pull`; it shares the skeleton generation and merge with `pull`'s capture path, which is why it lives here rather than in its own plan.
+- **Product Contract preservation:** R1-R6 unchanged in meaning; R1's wording follows the command rename and the argument order. R7-R18 added, and R17 carries a second outcome the original document did not scope. Two Scope Boundaries entries moved into scope (the picker, and reading state), both by session decision. Three "Deferred to Planning" questions resolved into KTD5, KTD8 and KTD9.
+- **Tail ownership:** This plan carries the rename through documentation (U6), and U7 through `clone` and `pull`. It does not update review P10 or C15 in [`docs/reviews/2026-09-08-cli-command-surface-design-review.md`](../reviews/2026-09-08-cli-command-surface-design-review.md), which record the deferral this plan closes.
 
 ---
 
@@ -23,7 +27,7 @@ execution: code
 
 ### Summary
 
-Extend `flowline configure <env>` to accept one component on the command line instead of a settings file, changing that component's state or value directly.
+Replace `flowline configure <target>` with a `flowline settings` branch whose operations are `push`, `pull`, and the five component kinds, each taking the environment as its first argument. Naming a component and a target state or value changes it directly; naming a component without one reads it.
 
 ### Problem Frame
 
@@ -31,57 +35,501 @@ Turning a flow on at go-live, or off during an incident, currently means the mak
 
 This was the fourth of four priorities when the configure command was scoped, and it is the only part of that command whose grammar was never settled. It was lifted out of v1 so the rest could be planned without it.
 
+Settling that grammar forces the command's own shape. One leaf with mode flags carried apply and capture; it does not carry apply, capture, read, write and list without a flag-contradiction matrix for every pair. The command has become a resource with operations, so it is modelled as one.
+
 <!-- ce-section: work-relationships -->
 ### How This Work Fits Together
 
-This plan owns the **inline surface** of `configure`.
+This plan owns the **`settings` command surface**, including the rename it requires.
 
-- **The configure command** ([`2026-09-05-1332-feat-environment-configure-command-plan.md`](2026-09-05-1332-feat-environment-configure-command-plan.md)) — *Depends on* it entirely. This plan adds an input shape to a command that plan defines, and reuses its apply path, its exit codes and its stand-alone mode.
-- **A read primitive for CI gates** ("is this flow on in PROD, exit 0 or 1") — *Shares* whatever addressing grammar this plan settles. Deciding them together is cheaper than deciding them apart, since a grammar that reads well for a write should read well for a read.
+- **The configure command** ([`2026-09-05-1332-feat-environment-configure-command-plan.md`](2026-09-05-1332-feat-environment-configure-command-plan.md)) — *Depends on* it entirely. The apply pipeline, the inventory, the settings file model and the exit codes are that plan's, and this work reuses them unchanged except where U2 names.
+- **Review P10 and C15** ([`docs/reviews/2026-09-08-cli-command-surface-design-review.md`](../reviews/2026-09-08-cli-command-surface-design-review.md)) — *Closes* both. P10 deferred the `configure` grammar to this work; C15 deferred the `--pull [zip-or-folder]` overload to P10. R12 settles the first and KTD3 the second.
+- **`deploy --settings-file`** (P5b in the same review) — *Shares* the `--settings-file` flag name, which R12 keeps on `push`.
+- **`clone` and `pull`** — *Extended by* U7, which adds the shared-template refresh to both. This is the only part of the work outside the `settings` branch, and it reaches into those commands rather than changing what they already do.
 
 ### Key Decisions
 
-- **The inline surface lives inside `configure`.** It is the same reconcile with a smaller input, so it inherits `--dry-run`, the exit codes, and the stand-alone rules. Governs R1.
-- **The settings file stays authoritative.** An inline change writes the environment and nothing else; the file is not updated. Governs R4.
+- **The command is a noun branch named `settings`.** The command grew past what one verb carries, and the file it reads and writes is already called a settings file. (session-settled: user-directed — chosen over keeping `configure` as one leaf with mode flags, and over a `configure` branch: five operations need contradiction checks on one verb, and `configure get` does not read as English.) Governs R1, R12.
+- **Each operation takes the environment as its own first positional argument, after the operation name.** This matches `deploy`, `drift` and today's `configure`, which all take a mandatory environment positional after their verb, and it keeps Spectre's generated usage line correct without a mitigation. (session-settled: user-directed — chosen over naming the environment before the operation, which drops the positional from every generated usage line, and over a mandatory `--env` flag, which no command in this CLI has: every `--env` today is omittable.) Governs R12.
+- **The five component kinds are the operations, and the presence of a target state or value decides read from write.** One grammar covers all five classes without separate `set`, `get` and `list` verbs. (session-settled: user-directed — chosen over explicit verbs with the kind as data: the verbs the user asked to remove, and the parser then enforces that exactly one kind is named.) Governs R7, R8.
+- **Exactly one component changes per invocation.** (session-settled: user-directed — chosen over multi-select: the user preferred type-to-filter over bulk ticking, and bulk changes are what the settings file already does.) Governs R10.
+- **The picker is a fallback for a missing argument, never a mode or a flag.** (session-settled: user-approved — chosen over a `--pick` flag: an interactive-only mode would be unreachable for the unattended runs that are most of this CLI's use.) Governs R9.
+- **A component named on the command line but absent from the target fails.** A file apply skips it because the file describes many components; an operator who typed one name gets an error. (session-settled: user-approved — chosen over matching the file path's skip: a skip would exit `Inconclusive`, whose meaning does not transfer to a hand-typed name.) Governs R11.
+- **The write direction is `push`, matching `pull`.** The top-level commands already split this way, so the verbs mean one direction each and the noun says which payload. (session-settled: user-directed — chosen over `apply`: `apply` and `pull` are a mismatched pair, one naming a file operation and the other a direction.) Governs R12.
+- **The settings file stays authoritative.** An inline change writes the environment and nothing else; the file is not updated. Governs R4, R15.
 
 ### Requirements
 
-- R1. `flowline configure <env>` accepts one component on the command line instead of a settings file, changing that component's state or value.
+**Command surface**
+
+- R1. `flowline settings <kind> <target>` accepts one component on the command line instead of a settings file, changing that component's state or value.
+- R7. The component kind is the operation name, and the environment and the component name follow it as positional arguments in that order, for all five classes in R2.
+- R12. Every operation takes the environment as its first positional argument; the file apply becomes `push` and the file capture becomes `pull`. Both name the settings file with `--settings-file`, which `push` reads and `pull` writes; `pull` also takes `--from` for the solution artifact.
+- R18. `settings pull` against an environment named by URL derives the file name from the role inferred for that environment, saying it was inferred; when no role can be inferred and no `--settings-file` is given, it fails naming the flag rather than writing the shared file.
+- R13. Invoking `settings` with no operation prints the available operations grouped as whole-file and single-component, and fails, without reading or writing any environment.
+- R16. `settings pull` with no environment named captures every environment the project configures, writing one role-named file each and reporting each environment on its own line.
+- R17. `clone` and `pull` generate the shared settings template from the unpacked solution, listing the environment variables and connection references the solution declares with no values, adding what appeared and reporting what vanished, without connecting to any environment.
+
+**Reading and writing one component**
+
 - R2. Component types covered are flows, classic workflows, plugin steps, environment variable values and connection references — the same classes the settings file covers.
 - R3. Setting a state and setting a value are both supported, since two of the five classes carry a value rather than an on-or-off state.
-- R4. When the environment's settings file also names the component, the command warns that the next full apply will override the change, naming the file. The file is not modified.
-- R5. `--dry-run` reports what would change and writes nothing, as it does for a file apply.
+- R8. A supplied `--on`, `--off` or `--value` writes the component; without one the command reads and prints the component's current state or value.
+- R10. Exactly one component changes per invocation.
+- R11. A component named on the command line but absent from the target fails, naming the addressing key that was searched.
 - R6. An address that matches no component fails, and one that matches more than one fails naming the candidates, rather than picking one.
+
+**Interactive fallback**
+
+- R9. When the component name is omitted, an interactive session shows a searchable single-select picker over that kind; a non-interactive session lists the components and fails naming the missing argument.
+- R14. When the target holds no component of the named kind, the command says so and stops without failing.
+
+**Safety and reporting**
+
+- R4. When the environment's settings file also names the component, the command warns that the next push will override the change, naming the file. The file is not modified.
+- R15. In stand-alone mode the R4 warning is omitted, because without a project there is no settings file to compare against, and silence must not read as "no file names it".
+- R5. `--dry-run` reports what would change and writes nothing, as it does for a file apply.
 
 ### Acceptance Examples
 
-- AE1. `configure prod` addressing a flow that the PROD settings file declares off turns the flow on and warns that the next full apply will turn it off again, naming the file. Covers R1, R4.
+- AE1. `settings flow prod "ApprovalFlow" --on`, against a flow the PROD settings file declares off, turns the flow on and warns that the next push will turn it off again, naming the file. Covers R1, R4.
 - AE2. The same command with `--dry-run` reports the change and leaves the flow untouched. Covers R5.
 - AE3. An address matching two components in the solution fails, names both, and changes nothing. Covers R6.
 - AE4. Setting an environment variable value inline changes the value in the target and leaves every other component alone. Covers R2, R3.
+- AE5. `settings flow prod "ApprovalFlow"` prints the flow's current state and exits 0, writing nothing. Covers R8.
+- AE6. `settings flow prod` in a non-interactive session lists the solution's flows and fails naming the missing name argument. Covers R9.
+- AE7. A flow Dataverse has suspended, addressed with `--off`, is moved to Draft, and the run reports that it had been suspended. Covers R3.
+- AE8. Setting a value on an environment variable whose secret cannot be read is refused, and the variable is unchanged. Covers R2.
+- AE9. `settings` with no operation prints the operations, grouped as whole-file and single-component, and exits `ValidationFailed`, without connecting to any environment. Covers R13.
+- AE10. `settings pull` in a project configuring test, uat and prod writes three role-named files and reports each. With prod unreachable it still writes the other two, names prod as failed, and exits `PartialSuccess`. Covers R16.
+- AE12. `settings pull https://contoso-test.crm4.dynamics.com` writes the TEST-named settings file and says the role was inferred. The same command against an environment whose name carries no role keyword fails naming `--settings-file`, and writes nothing. Covers R18.
+- AE11. A solution gains an environment variable. The next `pull` adds its key to the shared template with an empty value, leaves every value already there untouched, and changes nothing in any environment. Covers R17.
 
 ### Scope Boundaries
 
 Outside this work:
 
+- Capturing live environment state automatically during `clone` or `pull`. Considered and rejected: it would turn a declaration into a mirror, so drift introduced in a portal would be recorded as intent and pushed back as such, and it would make a DEV solution export depend on reaching every other tenant. U7 generates the template from the solution source instead, which needs no connection.
+- Seeding the shared template with DEV's values. The un-suffixed file is a live fallback rather than an inert one, so a DEV value would be applied to any environment that falls back to it, and a flow switched off for development would declare itself off for production.
+
 - Writing the inline change back into the settings file. The configure plan settled that the file is authoritative and an inline change is deliberate drift, surfaced by R4's warning.
-- An interactive picker for users who do not know a component's name.
-- Reading state for CI gates. It shares this plan's grammar and is listed as a relationship, not as scope.
+- Clearing an environment variable value. KTD9 refuses an empty `--value`, so clearing needs its own flag and is not designed here.
+- Bulk state changes across several components. The settings file and `push` already do this.
+
+- Masking a secret on the read path. A read of an environment variable prints whatever the value row holds, including a Dataverse-stored secret. The capture path refuses to read such a value at all, substituting a placeholder, and this surface deliberately does not: see Risks.
+
+#### Deferred to Follow-Up Work
+
+- Masking or refusing a secret value on the read path and in the picker's labels, mirroring what the capture path already does.
+- A non-positional source for a secret value, such as standard input or a file, alongside `--value`.
+- Clearing a role's URL from the project config when its environment is torn down. Without it a repo whose DEV has been destroyed exits `PartialSuccess` on every sweep, because an unreachable environment is a failure by decision. This belongs to `provision`, not to this surface.
+- A pipeline gate that exits non-zero when a component is off. KTD11 keeps the read form at exit 0 and defers gating to an opt-in flag, following the `--exit-code` precedent on `drift` and `diff`.
+- A `pull settings` alias, so the capture is reachable from the top-level `pull` as well as from `settings`. One command class can be registered under two branches, so this stays cheap to add later.
+- Updating review P10 and C15 to record that this plan closed them.
+- Covering the value flag in the invocation-log redaction pattern. KTD5 chose a flag over a positional because redaction is anchored on flag names, but the pattern matches only `--client-secret` and `/mfaClientSecret:` today (`src/Flowline/Diagnostics/SubprocessCapture.cs:108`), and `src/Flowline/Program.cs:104` runs it over raw argv for the line `src/Flowline/Commands/FlowlineCommand.cs:135` logs on every invocation. Until it covers `--value`, a secret written inline is logged in clear text every run. Belongs with secret handling, in [`2026-09-05-1406-feat-configure-secret-resolution-plan.md`](2026-09-05-1406-feat-configure-secret-resolution-plan.md), which owns that authority. Raised by the 2026-09-10 review and deferred by decision.
+- Restating the accepted read-path secret risk to say it persists on every invocation. The Risks entry says the read is unsafe in a logged pipeline, which reads as safe interactively; the console render hook (`src/Flowline/Program.cs:174`) and the unconditional debug-level file sink mean printed output reaches Flowline's own log either way. This is a correction to this document's own Risks section. Raised by the 2026-09-10 review and deferred by decision.
+- Documenting the template refresh on the `pull` and getting-started wiki pages. U6 covers only the rename and is sequenced before U7, so no unit documents the behaviour U7 adds to `clone` and `pull`. This is a correction to U7's own file list. Raised by the 2026-09-10 review and deferred by decision.
+- Correcting the version cited in KTD18. It names the Flowline build the registration-order behaviour was verified against, inside a sentence about the parser, which reads as a stale parser version. The pinned parser is Spectre.Console.Cli 0.55.0 and that is what the tested build links, so the claim holds and only the citation misleads. Raised by the 2026-09-10 review and deferred by decision.
 
 ### Outstanding Questions
 
-**Resolve Before Planning**
+None blocking. Two questions are deferred to implementation and named in U5 and U1 respectively: the picker's page size against a large solution, and whether `pull`'s stand-alone detection reads better as a separate resolver once it is no longer a flag.
 
-- How a component is addressed. Options include a type-and-name pair (`flow "Order Processing"`), a logical or schema name, or a single qualified token. The choice has to work for all five classes in R2, read well under an agent's quoting rules, and extend to the read primitive.
-- How a target state or value is expressed. A `--on`/`--off` pair reads well for the three state classes and breaks for the two value classes; a single `--value` reads well for values and awkwardly for states.
+### Risks
 
-**Deferred to Planning**
-
-- Whether display names, logical names, or both are accepted, and how a name containing quotes or spaces is handled.
-- Whether a bare component type with no name is a useful form, meaning apply just that section of the file — the `--scope` question the configure plan deferred here.
-- Whether an inline change against a component absent from the target is a skip, matching the configure plan, or a failure, since the operator named it explicitly.
+- **A read prints a Dataverse-stored secret in clear text, and the picker's labels do the same.** The capture path never queries the value row for such a variable, so the secret never enters memory there; this surface reads and prints it. The exposure reaches the terminal and any log capturing that output. Accepted deliberately for this iteration to keep the read simple, on the understanding that the remedy is the deferred masking item above and that the same guard the capture path uses is the thing to reuse. Anyone shipping this before that item lands should know the read is not safe to run against a production variable in a logged pipeline.
 
 ### Sources / Research
 
-- [`2026-09-05-1332-feat-environment-configure-command-plan.md`](2026-09-05-1332-feat-environment-configure-command-plan.md) — the command this extends, including the naming decision that kept the inline surface inside `configure` rather than promoting it to `set`/`get`.
+- [`2026-09-05-1332-feat-environment-configure-command-plan.md`](2026-09-05-1332-feat-environment-configure-command-plan.md) — the command this extends. KTD8, KTD9 and KTD10 in that plan govern addressing keys, suspended-flow semantics and the absence of force gating, and all three carry into this surface unchanged.
+- [`docs/reviews/2026-09-08-cli-command-surface-design-review.md`](../reviews/2026-09-08-cli-command-surface-design-review.md) — P10 deferred this grammar; C15 deferred the `--pull [zip-or-folder]` overload into P10.
 - [`docs/ideation/2026-07-01-post-deploy-environment-config-ideation.html`](../ideation/2026-07-01-post-deploy-environment-config-ideation.html) — idea 8 proposes the inline and interactive modes, and is the closest thing to a prior design.
+- [`.claude/skills/cli-for-agents/SKILL.md`](../../.claude/skills/cli-for-agents/SKILL.md) — flag-first input, the `IsInteractive()` guard, exit-code selection, and the rule that `GeneralError` is never a shortcut. Governs R9, R11, R13.
+- [`docs/solutions/runtime-errors/spectre-console-status-prompt-exclusivity.md`](../solutions/runtime-errors/spectre-console-status-prompt-exclusivity.md) — Spectre.Console forbids an interactive prompt inside a status spinner. Governs KTD10.
+- [`docs/solutions/architecture-patterns/ai-agent-consumable-cli-contract-2026-06-07.md`](../solutions/architecture-patterns/ai-agent-consumable-cli-contract-2026-06-07.md) — typed exit codes, `WithDescription` and `WithExample` on every command, `[Description]` on every option.
+- Spectre.Console.Cli 0.55 behaviour, verified against a scratch application during planning rather than inferred: a branch may carry a positional argument and a default command that consumes it; a branch-declared option binds only when it appears before the subcommand token, and is silently ignored after it; `SelectionPrompt<T>` exposes `EnableSearch()` while `MultiSelectionPrompt<T>` does not; leaf usage lines omit the branch positional, and `WithExample` renders the true form; one command class may be registered under several names, with the invoked name available from the command context.
+
+---
+
+## Planning Contract
+
+### Key Technical Decisions
+
+- KTD1. **The branch carries no settings of its own; every operation declares its own environment positional and its own options.** A branch-declared positional is dropped from every leaf's generated usage line, and a branch-declared option binds only before the operation token and is silently discarded after it, so a trailing `--dry-run` would be accepted and ignored. Keeping the branch empty avoids both, and each leaf's generated usage line is then correct without a mitigation. Governs R5, R12.
+- KTD2. **Bare `settings` routes to a default command that prints the operations and throws `ValidationFailed`.** Spectre's own missing-command path returns 1, which is `GeneralError`, and the agent contract forbids that as a shortcut. A default command with no required arguments fires cleanly on the bare invocation and owns the exit code, while every named operation still routes normally. Its output is ours to lay out rather than Spectre's, so it carries the grouping KTD18 describes. Governs R13.
+- KTD3. **`pull` becomes an operation and `--pull [zip-or-folder]` disappears, with the artifact moving to `--from <zip|folder>`.** This closes C15's overload without a separate change. Stand-alone detection currently keys off the `--pull` flag value and moves to the `pull` leaf; the `--pull` with `--settings-file` contradiction check disappears entirely, because the grammar makes that pair unreachable rather than invalid. Governs R12.
+- KTD16. **`--settings-file` names the settings file on both `push` and `pull`, and the operation decides whether it is read or written.** The capture path needs an explicit destination that today it cannot have: outside a project there is no layout to derive one from, and a URL target carries no role to name the file after. The two path flags on `pull` name different objects rather than different directions, since `--from` names the solution artifact the key list comes from and `--settings-file` names the settings file, and the verb already carries the direction. One name for one object also holds across `deploy --settings-file`, which is where the flag name comes from. Governs R12, R18. (session-settled: user-directed — chosen over `-o/--output`, which would give the same file two names depending on which way it moves.)
+- KTD17. **A URL target names its file from the inferred role, and refuses to fall back to the shared file.** `EnvironmentRoleInference` in the core services already derives a role from the host label and the display name, returns nothing rather than guessing when no keyword matches, and never infers production from a name at all, since production comes only from the environment type Dataverse reports. So a bad sandbox name cannot cause a capture to land on the production file. When inference returns nothing the run fails naming `--settings-file`: the un-suffixed file is a live fallback for every environment, so a capture written there would apply one environment's connection identifiers everywhere. A file already present at the derived path is overwritten without a prompt or a check, on either the inferred or the keyword path. Inference confuses only the three non-production roles with each other, since production comes from the environment type Dataverse reports rather than from any name, so the worst case is one non-production capture landing on another non-production file, and the file is regenerable by re-running the capture. Guarding it would put a prompt in the path operators run most, where re-capturing an environment is the ordinary case. Governs R18. (session-settled: user-directed — chosen over treating a collision on an inferred path as a failed inference, and over guarding every capture including the keyword path.)
+- KTD18. **The seven operations stay under the one noun, grouped by registration order and one-line descriptions.** Two of the seven move a whole file and five touch a single component, and nothing in a flat list says so. Spectre renders commands in registration order rather than alphabetically, verified against a Release build of v0.18.1-alpha, so registering the two file operations first and the five kinds after produces the grouping with no mechanism. It also prints each description in full, and Flowline's top-level descriptions run to a paragraph, which is what makes seven of them a long screen; a leaf inside a branch is scanned rather than discovered, so these take one line each. Governs R13. (session-settled: user-directed, after an options pass — chosen over moving the file operations under the top-level `push` and `pull` verbs, which converts two working leaves into branches and scatters one payload across three places in the help, and over registering them in both places, which adds a second spelling of every example rather than shortening anything. The runner-up becomes right if a second payload ever wants applying and capturing too.)
+- KTD4. **Two command classes serve the five kinds, each registered under its operation names and discriminated by the invoked name.** One class covers the three state kinds and one the two value kinds, which is what lets KTD5 scope the flags per class. The split is by flag set, not by behaviour: both map onto the same component-kind enum and call the same single-component service. Governs R7. (session-settled: user-directed — chosen over a `<kind>` positional validated as data: the parser rejects an unknown kind for free, and the help lists the kinds.)
+- KTD15. **The operation names are `flow`, `workflow`, `plugin`, `envvar` and `connref`.** `envvar` and `connref` are the abbreviations the Power Platform community already uses for these two classes, and `plugin` says plugin registration rather than a step inside a flow, which is what a bare `step` reads as in a product whose other operations are flows. `flow` stays unqualified because a bare flow in this CLI is always a cloud flow; the classic kind carries the qualifier instead, as `workflow`. Governs R7. (session-settled: user-directed — chosen over `variable`, `connection` and `step`, which read as generic and collide with unrelated meanings, and over `cloudflow`, which pays a qualifier the ambiguity does not require.)
+- KTD5. **The target state or value is a flag, and each operation declares only the flags its class can use.** The three state operations offer `--on` and `--off`; the two value operations offer `--value`. Because the kind is the operation, the parser rejects `--value` on a flow and `--on` on a variable with no hand-written check, so the only validation left is `--on` together with `--off`. Governs R8, R3. (session-settled: user-directed — chosen over a positional value: Flowline logs every invocation's arguments and redacts them with a pattern anchored on flag names, which structurally cannot match a bare positional, so a secret passed positionally would be written to the log on every run.)
+- KTD6. **The secret and placeholder guard moves into the value writers themselves, and the orchestrator's private wrapper stops existing.** The public value writer has no placeholder check and no unreadable-secret check today; those live only in the orchestrator's private method. Adding a second, guarded entry point beside the unguarded one would leave the inline write safe only by convention, so the guard goes where every caller already arrives. Both value writers get it, so the environment-variable and connection-reference paths cannot diverge, even though only the first carries a secret. Governs R2, and AE8 proves it.
+- KTD7. **Every inline state write passes the suspended flag explicitly.** The state writer takes it as an optional parameter defaulting to false, and a suspended flow reads as not-enabled, so omitting it makes `off` report "unchanged" and leave the flow suspended. That is the exact failure the configure plan's KTD8 exists to prevent, reachable by one missing argument. Governs R3, and AE7 proves it.
+- KTD8. **Inline results use their own outcome type, not the file-apply outcome.** The apply outcome reports every solution component the file does not declare, which for a one-component invocation is everything else in the solution, and it maps an all-skipped run to `Inconclusive`. Neither is right for a single named component. Governs R11.
+- KTD9. **Addressing uses the unique, schema or logical name, case-insensitively, and an empty `--value` is rejected rather than written.** The inventory already matches case-insensitively on those keys, and display names are not addressable, so the not-found message names which key was searched. Because the value is a flag, `--value ""` is a deliberate request rather than an omission, so it is refused naming the deferred clear capability: the apply path skips empty values precisely so a captured file re-applies as a no-op. Governs R7, R8, R11.
+- KTD10. **The picker runs after the inventory spinner closes, over the already-materialized inventory.** Spectre forbids a prompt inside a status display, and the inventory read currently sits inside one. Governs R9.
+- KTD11. **The read form always exits 0, and `--dry-run` is inert on it.** Exit codes that answer a question stay opt-in on this CLI, as `drift` and `diff` show. A read that writes nothing is unaffected by a dry run, and the help says so rather than leaving the flag silently accepted. Governs R8, R5.
+- KTD14. **The shared template is derived from the solution, never from an environment, and carries keys without values.** The skeleton generator already takes a solution path, so the key list comes from the unpacked source and needs no connection, no authentication and no secret read. Values stay empty because the apply path skips an empty value for both value classes, which is what makes a shared file that any environment can fall back to safe to write automatically. The state sections are omitted entirely: a flow's state is a boolean with no inert form, so listing one at all would declare it, and DEV is exactly where flows are switched off. Governs R17.
+- KTD13. **The capture sweep is project-only, covers every configured role, and isolates failures per environment.** The roles come from the project config, which holds one URL per role, so outside a project there is nothing to enumerate and the environment must be named. No role is exempt: the apply side already accepts DEV as a target, and a DEV branched from production carries connection references bound to connections that do not exist there, so a DEV file has a real consumer. Each environment is captured on its own and reported on its own line, so one bad environment does not lose the captures that succeeded. An environment that cannot be reached is a failure, not a skip: the sweep names it and the run exits `PartialSuccess`, because a configured role that no longer answers is something the operator has to fix rather than something to pass over quietly. Governs R16.
+- KTD12. **The R4 warning needs a project, so stand-alone mode omits it rather than reporting no match.** Locating the settings file needs the project layout, which stand-alone mode does not have. The check also tests whether `push` would actually touch the component, not merely whether the file names it, because the apply path skips entries with an empty value. Governs R4, R15.
+
+### High-Level Technical Design
+
+The command surface, as directional guidance rather than a registration specification:
+
+```text
+flowline settings                                            operations + ValidationFailed
+flowline settings push   <target> [--settings-file <path>] [--dry-run]
+flowline settings pull   [target] [--from <zip|folder>] [--settings-file <path>]
+                                                             no target: every configured role
+flowline settings flow     <target> [name] [--on|--off]  [--dry-run]
+flowline settings workflow <target> [name] [--on|--off]  [--dry-run]
+flowline settings plugin   <target> [name] [--on|--off]  [--dry-run]
+flowline settings envvar   <target> [name] [--value <v>] [--dry-run]
+flowline settings connref  <target> [name] [--value <v>] [--dry-run]
+```
+
+What the bare form prints, per KTD18, as the shape rather than the final wording:
+
+```text
+Settings for one environment.
+
+  Whole file
+    push      apply a settings file to an environment
+    pull      write a settings file from an environment
+
+  One component
+    flow      turn a cloud flow on or off
+    workflow  turn a classic workflow on or off
+    plugin    turn a plugin step on or off
+    envvar    set an environment variable value
+    connref   bind a connection reference
+
+Run 'flowline settings <operation> --help' for arguments.
+```
+
+How a kind operation resolves its optional name argument and decides read from write:
+
+```mermaid
+flowchart TB
+  START[kind operation invoked] --> NAME{name given?}
+  NAME -->|no| TTY{interactive?}
+  TTY -->|yes| PICK[searchable single-select over this kind]
+  TTY -->|no| LIST[list components, ValidationFailed naming the argument]
+  NAME -->|yes| MATCH{inventory match}
+  MATCH -->|none| NF[NotFound naming the key searched]
+  MATCH -->|several| AMB[ValidationFailed naming the candidates]
+  MATCH -->|one| VAL{state or value flag given?}
+  PICK --> VAL
+  VAL -->|no| READ[print state or value, exit 0]
+  VAL -->|yes| GUARD[shared guards: secret, placeholder, suspended]
+  GUARD --> DRY{dry run?}
+  DRY -->|yes| REPORT[report the change, write nothing]
+  DRY -->|no| WRITE[write, report, warn if the file declares it]
+```
+
+### Assumptions
+
+- The five component kinds stay fixed at the classes the settings file covers. A sixth kind would be a new registration plus an inventory change, not a grammar change.
+- `configure` has no users to migrate. It sits under `[Unreleased]` in the changelog, so the rename ships as one breaking entry with no alias and no deprecation cycle.
+
+### Sequencing
+
+`Flowline.Core` guards first, then the command surface, then the interactive layer, then documentation, with the template refresh last. U7 depends on U1 only for the settings-file location rules, so it can be built at any point after that and left out of a first release without affecting the rest. U2 lands before U3 so the only writer the inline path can reach is already guarded, rather than being written against an unguarded one and corrected later.
+
+---
+
+## Implementation Units
+
+### U1. The `settings` branch, with `push` and `pull` as operations
+
+**Goal:** Replace the `configure` leaf with a `settings` branch whose `push` and `pull` operations each take the environment as their first argument and do what the leaf's apply and `--pull` paths do today.
+
+**Requirements:** R12, R13, R16, R18; KTD1, KTD2, KTD3, KTD13, KTD16, KTD17, KTD18
+
+**Dependencies:** None
+
+**Files:**
+- `src/Flowline/Program.cs`
+- `src/Flowline/Commands/ConfigureCommand.cs` (split into the push and pull commands, plus a shared settings base declaring the environment positional the operations inherit)
+- `tests/Flowline.Tests/ConfigureCommandTests.cs`
+
+**Approach:**
+1. Register the branch with no settings of its own, per KTD1. The environment positional lives on a settings base that each operation's own settings type inherits, so every leaf declares it at position 0.
+2. Split the existing command's apply and pull halves into two leaf commands, each with its own settings type carrying its own options.
+3. Add the default command from KTD2, which takes no required arguments, renders the operation list and throws `ValidationFailed`. The list is grouped under a whole-file heading and a single-component heading, per KTD18, and closes by naming the per-operation help.
+4. Register `push` and `pull` before the five kinds, and give every leaf on this branch a one-line description rather than the paragraph the top-level commands carry, per KTD18.
+5. Rework stand-alone detection: it currently keys off the `--pull` flag value, which no longer exists. On `pull`, the artifact argument is `--from`; on `push`, `--solution-name` alone decides.
+6. Make `pull`'s environment argument optional. With one named, it captures that environment as today. With none, it enumerates every role the project configures and captures each in turn per KTD13. Outside a project, omitting it fails naming the argument, since there are no configured roles to enumerate.
+7. Give `pull` its own `--settings-file`, per KTD16. With one, it is the destination. Without one, the destination is derived as today from the role, and a URL target derives it from the inferred role per KTD17, failing on `--settings-file` when nothing can be inferred. `--settings-file` together with the no-target sweep is a contradiction, since one path cannot name several files, and fails naming both.
+8. Delete the `--pull` with `--settings-file` contradiction check and its test. The grammar makes the pair unreachable, so a runtime check for it is dead code rather than a guard.
+9. Give every operation a description and at least one `WithExample`, as the agent-facing CLI contract requires of every command.
+
+**Execution note:** Item 5 leaves one shape question open. Stand-alone detection is currently a pure static helper on the single command; with two operations resolving it from different flags, decide during the work whether it stays a shared helper or becomes a small resolver each operation calls. Either is testable without a checkout, which is the property to preserve.
+
+**Patterns to follow:** The `sln` branch in `src/Flowline/Program.cs` is the existing branch registration. The command-level helper style, pure `internal static` methods tested without a checkout, is established across the deploy and drift commands.
+
+**Test scenarios:**
+- The environment resolves identically for `push` and `pull` given the same role keyword.
+- Stand-alone detection returns true for `pull` with an artifact and no project, and false inside a project.
+- Stand-alone detection returns true for `push` with a solution name and no project.
+- `--solution-name` inside a project still produces its own error naming the flag.
+- A role keyword with no project still produces the stand-alone role error.
+- Covers AE9. The default command throws `ValidationFailed` and its message names the available operations under both group headings.
+- The branch's help lists the two file operations before the five kinds.
+- Covers AE10. A sweep over a project configuring three roles produces three captures, and a failure against one still writes the other two and exits `PartialSuccess`.
+- A sweep covers every configured role, including DEV, and a role the project leaves unset is not enumerated.
+- Omitting the environment outside a project fails naming the argument rather than enumerating nothing.
+- Covers AE12. A URL target whose name carries a role keyword writes the role-named file, and the output line says the role was inferred.
+- A URL target with no inferable role and no `--settings-file` fails naming the flag, and never resolves to the shared un-suffixed file.
+- `--settings-file` on a capture writes exactly that path, inside a project and stand-alone alike.
+- `--settings-file` with no environment named fails naming both, rather than writing every role's capture to one path.
+
+**Verification:** `flowline settings --help` from a Release build lists the operations; `flowline settings push --help` shows the environment argument alongside `--settings-file` and `--dry-run`; a run of `settings pull <url> --from <zip>` outside a project behaves as `configure <url> --pull <zip>` did.
+
+### U2. Close the unguarded write path
+
+**Goal:** Put the placeholder and unreadable-secret checks inside the value writers and make the suspended state a required input, so no caller can reach an unguarded write.
+
+**Requirements:** R2, R3; KTD6, KTD7
+
+**Dependencies:** None
+
+**Files:**
+- `src/Flowline.Core/Configure/ConfigureApplyService.cs`
+- `src/Flowline.Core/Configure/ComponentValueWriter.cs`
+- `src/Flowline.Core/Configure/ComponentStateWriter.cs`
+- `tests/Flowline.Core.Tests/Configure/ComponentValueWriterTests.cs`
+- `tests/Flowline.Core.Tests/Configure/ComponentStateWriterTests.cs`
+
+**Approach:**
+1. Move the placeholder and unreadable-secret refusals out of the orchestrator's private wrapper and into the public environment-variable writer, so the guard sits on the path every caller already takes rather than on a second one beside it.
+2. Give the connection-reference writer the same shape, so the two value writers cannot drift apart. It carries a connection identifier rather than a credential, so this is symmetry rather than exposure.
+3. Retire the orchestrator's private wrapper and point the apply path at the guarded writer, so its behavior is unchanged and its existing tests still prove it.
+4. Make the suspended state a required input on the state write rather than an optional argument defaulting to false, so a caller cannot omit it silently.
+
+**Execution note:** Characterize first. The two guards have no direct coverage on the writers today, only through the orchestrator, so add tests that pin the current refusals before moving them.
+
+**Patterns to follow:** The existing core services take `IOrganizationServiceAsync2` and are tested against an NSubstitute substitute.
+
+**Test scenarios:**
+- Covers AE8. Writing a value to an environment variable whose secret cannot be read is refused at the writer, and no update reaches Dataverse.
+- No caller can reach an environment-variable or connection-reference write that skips the refusals, checked by there being one entry point per writer rather than two.
+- Writing the literal placeholder string as a value is refused.
+- A suspended flow with a target state of off produces a state update rather than an unchanged outcome.
+- A suspended flow with a target state of on is activated, and the outcome carries the prior suspended state.
+- A plugin step, which has no third state, is unaffected by the change.
+- The existing apply path produces identical outcomes for every case its tests already cover.
+
+**Verification:** The configure core test project passes unchanged apart from the added cases, proving the move preserved apply behavior.
+
+### U3. Single-component read and write service
+
+**Goal:** Add a core service that resolves one component by kind and name, reads its current state or value, and writes a new one, reporting an outcome shaped for a single component.
+
+**Requirements:** R6, R8, R10, R11; KTD8, KTD9
+
+**Dependencies:** U2
+
+**Files:**
+- `src/Flowline.Core/Configure/` (new single-component service and its outcome type)
+- `tests/Flowline.Core.Tests/Configure/` (new test file for the service)
+
+**Approach:**
+1. Resolve the component through the existing inventory match, which already returns either one component or the ambiguous candidates.
+2. Map the three match results onto outcomes: one component proceeds, none is not-found naming the key that was searched, several is ambiguous naming the candidates.
+3. Read returns the current state or value. For the three state kinds and for connection references the inventory already carries it; an environment variable's value lives in its own row and needs one further read, because the inventory deliberately leaves it unset.
+4. Write routes through the writers U2 guarded, choosing the state or value path by kind.
+5. Return an outcome type carrying the component, the action taken and the prior value, with no undeclared-component report and no all-skipped exit mapping, per KTD8.
+
+**Test scenarios:**
+- A name matching one flow returns its current state on a read.
+- A name matching nothing returns not-found, and the message names the unique-name key.
+- Covers AE3. A name matching two workflows returns ambiguous and names both.
+- Covers AE4. A write to an environment variable changes only that variable.
+- A write to a connection reference binds it and leaves other components untouched.
+- An empty `--value` is refused, and no write reaches Dataverse.
+- A dry run returns the same outcome as a write and issues no update request.
+- Matching is case-insensitive on the addressing key.
+
+**Verification:** The service returns the same component set for a solution as the file apply path sees, checked against a substituted client with a shared inventory fixture.
+
+### U4. The five kind operations
+
+**Goal:** Register the five component kinds as operations on the `settings` branch, dispatching read or write by whether a value was supplied.
+
+**Requirements:** R7, R8, R10, R11, R14; KTD4, KTD5, KTD11, KTD12, KTD18
+
+**Dependencies:** U1, U3
+
+**Files:**
+- `src/Flowline/Program.cs`
+- `src/Flowline/Commands/` (new component command)
+- `tests/Flowline.Tests/` (new test file for the component command)
+
+**Approach:**
+1. Register two command classes, one for the three state kinds and one for the two value kinds, each under its own operation names, mapping the invoked name onto the component-kind enum per KTD4. They register after `push` and `pull`, in the order the design lists them, and carry one-line descriptions per KTD18. Both settings types inherit the environment positional from U1's shared base and add the optional name positional after it.
+2. Dispatch on the positionals: no name goes to U5's fallback, name without value reads, name with value writes.
+3. Give the three state operations a settings type carrying `--on` and `--off`, and the two value operations one carrying `--value`, per KTD5. The only contradiction to check by hand is `--on` together with `--off`.
+4. Report through the same console helpers the apply path uses, one line per outcome, so the render hook logs it the same way.
+5. Give both settings types the same `--solution-name` option `push` carries, and resolve the solution through the stand-alone path when there is no project and the project path otherwise. Without it the inventory has nothing to read and R15's stand-alone case cannot run.
+6. Apply KTD12's warning: locate the settings file, check whether a push would actually act on this component, and stay silent in stand-alone mode.
+7. Keep the read form at exit 0 and document `--dry-run` as inert on it, per KTD11.
+
+**Patterns to follow:** The apply path's report method renders one line per component outcome with the console extension helpers rather than a table; match that shape. Every option needs a `[Description]`, and every registration a description and an example.
+
+**Test scenarios:**
+- Covers AE5. A read prints the state and returns success.
+- Covers AE1. A write against a component the settings file declares differently emits the override warning naming the file.
+- A write against a component the settings file names with an empty value emits no warning, because a push would skip it.
+- A write in stand-alone mode resolves the solution from `--solution-name`, and emits no warning and no claim that the file was checked.
+- A component operation outside a project with no `--solution-name` fails naming the flag, rather than failing later with nothing to read.
+- `--on` and `--off` together fail with `ValidationFailed` naming both flags.
+- A free-string `--value` is accepted verbatim for a variable, including one containing spaces or a leading dash.
+- Covers AE2. A dry-run write reports the change and returns success without writing.
+- A dry run on a read is accepted and changes nothing about the output.
+- Covers AE7. A suspended flow addressed with off reports that it had been suspended.
+- A not-found component exits `NotFound`, and an ambiguous one exits `ValidationFailed`.
+
+**Verification:** From a Release build, each of the five operations reads and writes against a live TEST environment, and `--dry-run` leaves the environment unchanged.
+
+### U5. Interactive picker and the non-interactive fallback
+
+**Goal:** When the component name is omitted, let an interactive operator pick one by typing part of its name, and make a non-interactive run fail in a way that names what was missing.
+
+**Requirements:** R9, R14; KTD10
+
+**Dependencies:** U4
+
+**Files:**
+- `src/Flowline/Commands/` (the component command, plus a picker helper)
+- `tests/Flowline.Tests/` (the component command test file)
+
+**Approach:**
+1. Read the inventory for the named kind, then close the status display before prompting, per KTD10.
+2. Interactive: show a single-select prompt with search enabled, labelled with each component's name and current state, and page it.
+3. Non-interactive: print the component names as plain lines, then throw `ValidationFailed` naming the missing name argument.
+4. Empty inventory for that kind: report it and stop without failing, per R14.
+5. After a pick, fall through to the same read or write path U4 uses, so the picker only supplies the name.
+
+**Execution note:** The picker's page size against a solution with hundreds of components is an execution-time question. Start with the default and adjust once it has been seen against a real solution.
+
+**Patterns to follow:** Every existing prompt in this codebase checks the interactive capability first and throws with a message naming the flag before constructing the prompt. Follow that order rather than constructing the prompt and guarding the show.
+
+**Test scenarios:**
+- Covers AE6. A non-interactive run with no name lists the components and exits `ValidationFailed` naming the argument.
+- The failure message names the argument the caller should supply, not a flag that does not exist.
+- An empty inventory for the kind returns success and says the target holds none of that kind.
+- The picker is never constructed when the session is not interactive.
+- A supplied name skips the picker entirely.
+
+**Verification:** From a Release build, running a kind operation with no name in a terminal shows the picker and filters as characters are typed; the same command piped to a file lists and fails.
+
+### U6. Documentation and the published contract
+
+**Goal:** Carry the rename and the new operations into every place the old command is documented.
+
+**Requirements:** R1, R12
+
+**Dependencies:** U1, U4, U5
+
+**Files:**
+- `README.md`
+- `CHANGELOG.md`
+- `CONCEPTS.md`
+- `STRATEGY.md`
+- `../Flowline.wiki/04-Command-Reference.md`
+- `../Flowline.wiki/13-Planned-Features.md`
+- `../Flowline.wiki/Home.md`
+
+**Approach:**
+1. Rewrite the unreleased changelog entry for the configure command to describe `settings` and its operations, as one breaking entry rather than a rename note on top of the old one.
+2. Update the command table in the readme.
+3. Rewrite the command reference's configure section as the settings branch, one subsection per operation.
+4. Remove the inline single-value edit item from the planned features page, since this work ships it.
+5. Update the declared-configuration entry in the concepts glossary, which names `flowline configure` by name.
+6. Update the four references to `configure` in the strategy document: two deferred items gated on the command shipping, the workflow-restoration item that argues a planned feature contradicts it, and the roadmap line about rendering settings-file changes. Its link to the predecessor plan is a file path, not a command name, and stays.
+
+**Execution note:** The wiki is a separate checkout and has its own agent instructions governing page shape, naming and link anchors. Read those before editing any page there. If the checkout is not present, say so rather than skipping the wiki silently.
+
+**Test expectation:** none — documentation only. The behavior it describes is proven by U1 through U5.
+
+**Verification:** No occurrence of `flowline configure` survives outside the changelog's historical entries and the review documents, which record the decision rather than the contract.
+
+### U7. Shared settings template on clone and pull
+
+**Goal:** Keep the un-suffixed settings template listing what the solution declares, refreshed whenever the solution source is written, with no environment connection.
+
+**Requirements:** R17; KTD14
+
+**Dependencies:** U1
+
+**Files:**
+- `src/Flowline/Commands/CloneCommand.cs`
+- `src/Flowline/Commands/SyncCommand.cs`
+- `src/Flowline.Core/Configure/` (the template write and merge, reusing the skeleton and merge the capture path already drives)
+- `tests/Flowline.Core.Tests/Configure/` (new test file for the template merge)
+- `tests/Flowline.Tests/`
+
+**Approach:**
+1. Generate the skeleton from the unpacked solution folder, the same generator the capture path already drives, so the key list comes from source and no environment is contacted.
+2. Merge it into the shared template rather than overwriting: values already present survive, keys that appeared are added empty, keys whose components left the solution are reported rather than dropped.
+3. Drop the state sections from the merged result, per KTD14. Only the environment-variable and connection-reference sections belong in a template that every environment can fall back to.
+4. Place the write after `pull`'s uncommitted-changes check, so a generated file cannot trip the gate the command applies to the unpacked source.
+5. On `clone` this is first creation; on `pull` it is a refresh. Report it in one line either way, and say which keys appeared or vanished rather than restating the whole file.
+
+**Execution note:** The claim that the skeleton generator runs without a live environment connection is recorded as an unverified assumption in the predecessor plan. Confirm it against a real solution folder before building on it, because the whole unit rests on it.
+
+**Patterns to follow:** The capture path already composes a skeleton, an existing file and live state into one document, and already reports what appeared and what vanished. This unit is that pipeline with the live-state input removed.
+
+**Test scenarios:**
+- Covers AE11. A solution gaining an environment variable adds its key with an empty value on the next refresh.
+- A value already in the template is preserved across a refresh.
+- A key whose component left the solution is reported, not deleted.
+- The merged template carries no cloud flow, workflow or plugin step section.
+- The refresh contacts no environment, proven by a run with no authentication available.
+- A refresh on a repo with uncommitted solution source does not change the outcome of the command's own clean-tree check.
+- On a first clone the template is created; on a repeat run it is merged rather than replaced.
+
+**Verification:** From a Release build, adding an environment variable in DEV, running `pull`, and confirming the shared template gains the key with an empty value while the role-named files are untouched.
+
+---
+
+## Verification Contract
+
+| Gate | Command | Applies to |
+|---|---|---|
+| Build | `dotnet build Flowline.slnx` | All units |
+| Core tests | `dotnet test tests/Flowline.Core.Tests/Flowline.Core.Tests.csproj` | U2, U3, U7 |
+| CLI tests | `dotnet test tests/Flowline.Tests/Flowline.Tests.csproj` | U1, U4, U5, U7 |
+| Full suite | `dotnet test Flowline.slnx` | Before finishing, since the rename is cross-cutting |
+| User-facing output | Run the CLI from a Release build | U1, U4, U5 |
+
+The Release-build rule is not optional for checking messages or exit codes. A Debug build propagates exceptions instead of rendering them, so correct error handling looks like a stack trace.
+
+Live verification against a TEST environment covers what a substituted client cannot: that a state write actually changes the component, and that a connection binding lands.
+
+---
+
+## Definition of Done
+
+**Global**
+
+- Every changed behavior has focused test coverage, and the full suite passes.
+- User-facing text follows [`docs/tone-of-voice.md`](../tone-of-voice.md): a glyph prefix on every status line, errors that say what to do next, and no raw markup in place of the console helpers.
+- Every new registration has a description and at least one example, and every option a description.
+- Exit codes are the specific typed ones; `GeneralError` appears nowhere in this work.
+- The readme, the wiki and the changelog describe `settings`, and no dead-end abandoned approach survives in the diff.
+
+**Per unit**
+
+| Unit | Done when |
+|---|---|
+| U1 | `settings push <target>` and `settings pull [target]` do what the old leaf did, the sweep captures every configured role, a capture can name its own destination, and the bare form prints the grouped operations and fails with the typed code |
+| U2 | There is no unguarded way to write a value, the suspended state cannot be omitted, and the apply path's behavior is provably unchanged |
+| U3 | One component resolves, reads and writes, with the three match results mapped to distinct outcomes |
+| U4 | All five kinds read and write from the command line, with the override warning correct in project and stand-alone modes |
+| U5 | An omitted name prompts interactively and fails by name otherwise |
+| U6 | No published document still tells a user to run `flowline configure` |
+| U7 | The shared template lists what the solution declares, refreshes without contacting an environment, and preserves values already filled in |
