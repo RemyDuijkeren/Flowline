@@ -325,4 +325,105 @@ public class SettingsCommandTests : IDisposable
     {
         SettingsSupport.ResolveStandalone(null, "artifacts/ContosoCustomizations.zip", _dir).Should().BeTrue();
     }
+
+    // ── The sweep ────────────────────────────────────────────────────────────
+
+    // The bug this pins: the sweep passed each role's .flowline config key ("DevUrl") where the role
+    // parser only accepts a keyword ("dev"). Every role resolved to nothing and was treated as a URL, so
+    // every environment in the sweep failed. Nothing in the type system objects to either string.
+    [Theory]
+    [InlineData(EnvironmentRole.Prod)]
+    [InlineData(EnvironmentRole.Uat)]
+    [InlineData(EnvironmentRole.Test)]
+    [InlineData(EnvironmentRole.Dev)]
+    public void EveryRoleKeyword_RoundTripsBackToItsRole(EnvironmentRole role) =>
+        EnvironmentRoles.TryParse(role.Keyword()).Should().Be(role);
+
+    [Theory]
+    [InlineData(EnvironmentRole.Prod)]
+    [InlineData(EnvironmentRole.Dev)]
+    public void ARolesConfigKey_IsNotAKeywordTheParserAccepts(EnvironmentRole role) =>
+        EnvironmentRoles.TryParse(role.ConfigKey()).Should().BeNull();
+
+    // One unreachable environment must not cost the captures that would have succeeded — the whole
+    // reason the sweep captures each role on its own.
+    [Fact]
+    public async Task ASweep_KeepsGoingAfterOneEnvironmentFails()
+    {
+        var attempted = new List<EnvironmentRole>();
+        var reported = new List<EnvironmentRole>();
+
+        var failed = await SettingsPullCommand.CaptureEachAsync(
+            [EnvironmentRole.Dev, EnvironmentRole.Test, EnvironmentRole.Prod],
+            role =>
+            {
+                attempted.Add(role);
+                return role == EnvironmentRole.Test
+                    ? throw new InvalidOperationException("unreachable")
+                    : Task.CompletedTask;
+            },
+            (role, _) => reported.Add(role),
+            CancellationToken.None);
+
+        attempted.Should().Equal(EnvironmentRole.Dev, EnvironmentRole.Test, EnvironmentRole.Prod);
+        failed.Should().Equal(EnvironmentRole.Test);
+        reported.Should().Equal(EnvironmentRole.Test);
+    }
+
+    [Fact]
+    public async Task ASweep_WhereEveryEnvironmentAnswers_ReportsNoFailures()
+    {
+        var failed = await SettingsPullCommand.CaptureEachAsync(
+            [EnvironmentRole.Dev, EnvironmentRole.Prod],
+            _ => Task.CompletedTask,
+            (_, _) => throw new Xunit.Sdk.XunitException("nothing failed, so nothing should be reported"),
+            CancellationToken.None);
+
+        failed.Should().BeEmpty();
+    }
+
+    // Cancellation stops the run. Reporting the roles it never reached as unreachable would describe
+    // something that was never attempted.
+    [Fact]
+    public async Task ASweep_TreatsCancellationAsStoppingRatherThanAsAFailedEnvironment()
+    {
+        var reported = new List<EnvironmentRole>();
+
+        var act = async () => await SettingsPullCommand.CaptureEachAsync(
+            [EnvironmentRole.Dev, EnvironmentRole.Test],
+            _ => throw new OperationCanceledException(),
+            (role, _) => reported.Add(role),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        reported.Should().BeEmpty();
+    }
+
+    // ── Shared report wording ────────────────────────────────────────────────
+
+    [Fact]
+    public void BuildWouldChangeLine_NamesTheComponentAndPromisesNothingYet()
+    {
+        var line = SettingsSupport.BuildWouldChangeLine("ApprovalFlow");
+
+        line.Should().Contain("ApprovalFlow");
+        line.Should().StartWith("Would change");
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void BuildUpdatedLine_SaysWhetherItHadSuspendedItself(bool wasSuspended, bool expectMention)
+    {
+        var line = SettingsSupport.BuildUpdatedLine("ApprovalFlow", wasSuspended);
+
+        line.Should().Contain("ApprovalFlow").And.Contain("updated");
+        line.Contains("suspended").Should().Be(expectMention);
+    }
+
+    // Markup in a component name would otherwise be parsed as console styling.
+    [Fact]
+    public void BuildUpdatedLine_EscapesAComponentNameThatLooksLikeMarkup() =>
+        SettingsSupport.BuildUpdatedLine("Flow [red]x[/]", wasSuspended: false)
+            .Should().Contain("[[red]]");
 }

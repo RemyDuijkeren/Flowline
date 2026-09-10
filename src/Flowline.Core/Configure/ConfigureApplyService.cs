@@ -164,37 +164,50 @@ public sealed class ConfigureApplyService
     }
 
     /// <summary>
-    /// Whether applying this document would actually act on one named component (KTD12).
+    /// Whether the next apply of this document would change one named component back (KTD12).
     /// </summary>
     /// <remarks>
-    /// The inline surface warns that the next push will override a change it just made, and the honest
-    /// question is not whether the file mentions the component but whether a push would touch it. An empty
-    /// value is skipped by the tiers above, so a file that names a variable with no value would never
-    /// override anything — warning about it would train an operator to ignore the warning.
+    /// The inline surface warns that the next push will undo the change it just made, and the honest
+    /// question is not whether the file mentions the component but whether a push would move it. Two
+    /// things make it not.
     ///
-    /// Lives here rather than in the command because the answer is this class's own skip rule. The command
-    /// project cannot see <see cref="ReadValues"/>, and a second copy of the parse would be free to drift
-    /// from the behaviour it is supposed to predict.
+    /// An empty value is skipped by the tiers above, so a file naming a variable with no value would
+    /// override nothing. And a file that already declares what was just written would apply the same
+    /// thing again, which changes nothing either. Warning in either case teaches an operator to ignore
+    /// the warning, which costs them the one case that matters.
+    ///
+    /// Lives here rather than in the command because the answer is this class's own apply rule. The
+    /// command project cannot see <see cref="ReadValues"/>, and a second copy of the parse would be free
+    /// to drift from the behaviour it is supposed to predict.
     /// </remarks>
-    public static bool WouldApply(SettingsDocument document, ConfigurableComponentKind kind, string name)
+    /// <param name="writtenEnabled">The state just written, for a state kind; <c>null</c> for a value kind.</param>
+    /// <param name="writtenValue">The value just written, for a value kind; <c>null</c> for a state kind.</param>
+    public static bool WouldOverride(
+        SettingsDocument document,
+        ConfigurableComponentKind kind,
+        string name,
+        bool? writtenEnabled = null,
+        string? writtenValue = null)
     {
-        bool NamedInValues(string section, string nameProperty, string valueProperty) =>
+        bool DisagreesOnValue(string section, string nameProperty, string valueProperty) =>
             ReadValues(document, section, nameProperty, valueProperty)
                 .Any(v => string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase)
-                          && !string.IsNullOrWhiteSpace(v.Value));
+                          && !string.IsNullOrWhiteSpace(v.Value)
+                          && !string.Equals(v.Value, writtenValue, StringComparison.Ordinal));
 
-        bool NamedInStates(IEnumerable<ComponentStateEntry> entries) =>
-            entries.Any(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
+        bool DisagreesOnState(IEnumerable<ComponentStateEntry> entries) =>
+            entries.Any(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase)
+                             && e.Enabled != writtenEnabled);
 
         return kind switch
         {
             ConfigurableComponentKind.EnvironmentVariable =>
-                NamedInValues(SettingsSectionEntries.EnvironmentVariables, "SchemaName", "Value"),
+                DisagreesOnValue(SettingsSectionEntries.EnvironmentVariables, "SchemaName", "Value"),
             ConfigurableComponentKind.ConnectionReference =>
-                NamedInValues(SettingsSectionEntries.ConnectionReferences, "LogicalName", "ConnectionId"),
-            ConfigurableComponentKind.CloudFlow => NamedInStates(document.CloudFlows),
-            ConfigurableComponentKind.Workflow => NamedInStates(document.Workflows),
-            ConfigurableComponentKind.PluginStep => NamedInStates(document.PluginSteps),
+                DisagreesOnValue(SettingsSectionEntries.ConnectionReferences, "LogicalName", "ConnectionId"),
+            ConfigurableComponentKind.CloudFlow => DisagreesOnState(document.CloudFlows),
+            ConfigurableComponentKind.Workflow => DisagreesOnState(document.Workflows),
+            ConfigurableComponentKind.PluginStep => DisagreesOnState(document.PluginSteps),
             _ => false,
         };
     }

@@ -388,25 +388,25 @@ namespace Flowline
                 // rejects --value on a flow and --on on a variable with no hand-written check, and the only
                 // contradiction left to check by hand is --on together with --off.
                 settings.AddCommand<SettingsStateCommand>("flow")
-                        .WithDescription("Turn a cloud flow on or off, or read its state.")
+                        .WithDescription("Turn a cloud flow on or off, or read its state. Run it any time without a deploy; the flow must already be in the target's copy of the solution, and the settings file still wins on the next push.")
                         .WithExample("settings", "flow", "prod", "ApprovalFlow", "--off")
                         .WithExample("settings", "flow", "test", "ApprovalFlow");
 
                 settings.AddCommand<SettingsStateCommand>("workflow")
-                        .WithDescription("Turn a classic workflow on or off, or read its state.")
+                        .WithDescription("Turn a classic workflow on or off, or read its state. Run it any time without a deploy; the workflow must already be in the target's copy of the solution, and the settings file still wins on the next push.")
                         .WithExample("settings", "workflow", "prod", "contoso_AutoNumber", "--on");
 
                 settings.AddCommand<SettingsStateCommand>("plugin")
-                        .WithDescription("Turn a plugin step on or off, or read its state.")
+                        .WithDescription("Turn a plugin step on or off, or read its state. Run it any time without a deploy; the step must already be registered in the target, and the settings file still wins on the next push.")
                         .WithExample("settings", "plugin", "prod", "Contoso.Plugins.AccountPreCreate", "--off");
 
                 settings.AddCommand<SettingsValueCommand>("envvar")
-                        .WithDescription("Set an environment variable's value, or read it.")
+                        .WithDescription("Set an environment variable's value, or read it. Run it any time without a deploy; the variable must already be in the target's copy of the solution, and an empty value is refused.")
                         .WithExample("settings", "envvar", "prod", "contoso_ApiUrl", "--value", "https://api.contoso.com")
                         .WithExample("settings", "envvar", "test", "contoso_ApiUrl");
 
                 settings.AddCommand<SettingsValueCommand>("connref")
-                        .WithDescription("Bind a connection reference to a connection, or read its binding.")
+                        .WithDescription("Bind a connection reference to a connection, or read its binding. Run it any time without a deploy; the value is a connection id that must already exist in the target, not a display name.")
                         .WithExample("settings", "connref", "prod", "contoso_SharedMailbox", "--value", "a1b2c3d4e5f6");
             });
 

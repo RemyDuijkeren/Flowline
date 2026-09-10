@@ -102,7 +102,7 @@ public static class SettingsFileReader
     {
         if (!File.Exists(path))
             throw new FlowlineException(ExitCode.NotFound,
-                $"No settings file at '{path}'. Run 'flowline configure <env> --pull' to create one.");
+                $"No settings file at '{path}'. Run 'flowline settings pull <env>' to create one.");
 
         return Parse(File.ReadAllText(path));
     }

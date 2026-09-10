@@ -60,8 +60,15 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// <summary>Whether this invocation writes, as opposed to reading the current state or value.</summary>
     protected abstract bool IsWrite(TSettings settings);
 
+    // Outside a project this operation is stand-alone whether or not --solution-name was given, unlike
+    // push and capture where the flag is what distinguishes the two modes.
+    //
+    // Keying it on the flag made the error naming that flag unreachable: without the flag the run was
+    // judged project mode, and the base class's project gate threw "No Flowline project found — run
+    // flowline clone" first. Someone outside a project was told to clone a project rather than to pass
+    // the one flag that would have worked.
     protected override bool IsStandalone(TSettings settings) =>
-        SettingsSupport.ResolveStandalone(settings.SolutionName, null, Directory.GetCurrentDirectory());
+        FindFlowlineProjectRoot(Directory.GetCurrentDirectory()) is null;
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
@@ -107,10 +114,22 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         var outcome = await RunAsync(service, inventory, kind, name, settings, mode, cancellationToken);
 
         var isWrite = IsWrite(settings);
-        Report(outcome, kind, mode, isWrite);
 
-        if (isWrite && outcome.Action == SingleComponentActionKind.Applied)
-            await WarnIfTheFileWouldOverrideAsync(kind, outcome.Component.Name, role, standalone, cancellationToken);
+        Report(outcome, kind, mode);
+
+        // Before the finish line, not after it: the finish line is documented as always last, and a
+        // warning printed under it reads as belonging to the next command.
+        //
+        // Unchanged counts. A component already in the state the file disagrees with is exactly when the
+        // next push moves it, and skipping the warning there hid the case most worth warning about — the
+        // operator sees "already matches" and concludes there is nothing to reconcile.
+        if (isWrite && outcome.Action is SingleComponentActionKind.Applied or SingleComponentActionKind.Unchanged)
+            await WarnIfTheFileWouldOverrideAsync(kind, outcome, settings, role, standalone, cancellationToken);
+
+        if (isWrite)
+            Console.Done(mode.IsReportOnly()
+                ? "Dry run complete — nothing was written. Run without --dry-run to apply."
+                : "Done. The settings file still decides this on the next push.");
 
         return (int)SettingsComponentOutcomes.ExitCodeFor(outcome);
     }
@@ -166,21 +185,29 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// "no file names it" — which is a different, and unearned, claim.
     /// </remarks>
     async Task WarnIfTheFileWouldOverrideAsync(
-        ConfigurableComponentKind kind, string name, EnvironmentRole? role, bool standalone, CancellationToken ct)
+        ConfigurableComponentKind kind, SingleComponentOutcome outcome, TSettings settings,
+        EnvironmentRole? role, bool standalone, CancellationToken ct)
     {
         if (standalone) return;
 
         var location = await ResolveSettingsFileAsync(null, role, standalone: false, null, forWriting: false, ct);
         if (!location.Exists) return;
 
-        if (!ConfigureApplyService.WouldApply(SettingsFileReader.Read(location.Path), kind, name)) return;
+        var (writtenEnabled, writtenValue) = WrittenBy(settings);
+
+        if (!ConfigureApplyService.WouldOverride(
+                SettingsFileReader.Read(location.Path), kind, outcome.Component.Name, writtenEnabled, writtenValue))
+            return;
 
         Console.Warning(
-            $"{Markup.Escape(Path.GetFileName(location.Path))} also declares {Markup.Escape(name)} — " +
-            "the next 'settings push' will put it back. Change the file too to make this stick.");
+            $"{Markup.Escape(Path.GetFileName(location.Path))} declares {Markup.Escape(outcome.Component.Name)} " +
+            "differently — the next 'settings push' will put it back. Change the file too to make this stick.");
     }
 
-    void Report(SingleComponentOutcome outcome, ConfigurableComponentKind kind, RunMode mode, bool isWrite)
+    /// <summary>What this invocation asked to write, for the override comparison.</summary>
+    protected abstract (bool? Enabled, string? Value) WrittenBy(TSettings settings);
+
+    void Report(SingleComponentOutcome outcome, ConfigurableComponentKind kind, RunMode mode)
     {
         var name = Markup.Escape(outcome.Component.Name);
 
@@ -196,7 +223,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
                 Console.Ok(SettingsSupport.BuildUpdatedLine(outcome.Component.Name, outcome.WasSuspended));
                 break;
             case SingleComponentActionKind.Unchanged:
-                Console.Info($"[bold]{name}[/] already matches — nothing written");
+                Console.Skip($"{name} already matches — nothing written");
                 break;
             case SingleComponentActionKind.Skipped:
                 Console.Error(Markup.Escape(outcome.Detail ?? $"{outcome.Component.Name} was refused"));
@@ -205,16 +232,6 @@ public abstract class SettingsComponentCommandBase<TSettings>(
                 Console.Error(Markup.Escape(outcome.Detail ?? $"{outcome.Component.Name} failed"));
                 break;
         }
-
-        // One finish line, always last, on every dry run that meant to write — the same contract the file
-        // path keeps. It used to fire only when the component would actually have changed, so a dry run
-        // against a component already in the requested state said "already matches" and then nothing,
-        // leaving the reader to wonder whether the run had finished.
-        //
-        // A read is the exception, not an oversight: --dry-run is inert on a read (KTD11), and announcing
-        // a dry run that was never going to write anything would imply it had been.
-        if (isWrite && mode.IsReportOnly())
-            Console.Done("Dry run complete — nothing was written. Run without --dry-run to apply.");
     }
 
 }
@@ -345,6 +362,9 @@ public class SettingsStateCommand(
 
     protected override bool IsWrite(Settings settings) => settings.On || settings.Off;
 
+    protected override (bool? Enabled, string? Value) WrittenBy(Settings settings) =>
+        (IsWrite(settings) ? settings.On : null, null);
+
     protected override Task<SingleComponentOutcome> RunAsync(
         IOrganizationServiceAsync2 service, SolutionInventory inventory, ConfigurableComponentKind kind,
         string name, Settings settings, RunMode mode, CancellationToken ct) =>
@@ -383,6 +403,8 @@ public class SettingsValueCommand(
     };
 
     protected override bool IsWrite(Settings settings) => settings.Value is not null;
+
+    protected override (bool? Enabled, string? Value) WrittenBy(Settings settings) => (null, settings.Value);
 
     protected override Task<SingleComponentOutcome> RunAsync(
         IOrganizationServiceAsync2 service, SolutionInventory inventory, ConfigurableComponentKind kind,

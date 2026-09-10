@@ -89,13 +89,56 @@ public class SettingsPullCommand(
                 "No environments are configured in .flowline, so there's nothing to capture. " +
                 "Run 'flowline provision' or name an environment.");
 
-        var failed = new List<string>();
+        var failed = await CaptureEachAsync(
+            roles,
+            // A keyword, not the config key: the config key is the .flowline JSON property name, and the
+            // role parser does not accept it. Passing it resolved every role to nothing and sent each one
+            // down the URL path instead.
+            role => CaptureOneAsync(settings, role.Keyword(), standalone: false, mode, sweeping: true, ct),
+            (role, ex) =>
+            {
+                Console.Error($"{role.UpperLabel()} failed — {Markup.Escape(ex.Message)}");
+                Logger.LogWarning(ex, "Sweep capture failed for {Role}", role.UpperLabel());
+            },
+            ct);
+
+        if (failed.Count == 0)
+        {
+            Console.Done($"Captured {roles.Length} environment{(roles.Length == 1 ? "" : "s")}.");
+            return (int)ExitCode.Success;
+        }
+
+        Console.Warning($"Couldn't reach {string.Join(", ", failed.Select(r => r.UpperLabel()))} — " +
+                        "the rest were captured. Fix those and re-run.");
+        return (int)ExitCode.PartialSuccess;
+    }
+
+    /// <summary>
+    /// Runs one capture per role, letting a failure stop that role and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// Separated from the capture itself so the isolation can be tested without an environment: hand it a
+    /// delegate that throws for one role and the rest must still run. That property is the whole point of
+    /// the sweep, and it is not observable from any of the pure helpers around it.
+    ///
+    /// Cancellation is not a per-role failure. A cancelled run has stopped, and reporting the remaining
+    /// roles as unreachable would describe something that was never attempted.
+    /// </remarks>
+    internal static async Task<IReadOnlyList<EnvironmentRole>> CaptureEachAsync(
+        IReadOnlyList<EnvironmentRole> roles,
+        Func<EnvironmentRole, Task> capture,
+        Action<EnvironmentRole, Exception> onFailure,
+        CancellationToken ct)
+    {
+        var failed = new List<EnvironmentRole>();
 
         foreach (var role in roles)
         {
+            ct.ThrowIfCancellationRequested();
+
             try
             {
-                await CaptureOneAsync(settings, role.ConfigKey(), standalone: false, mode, sweeping: true, ct);
+                await capture(role);
             }
             catch (OperationCanceledException)
             {
@@ -104,20 +147,12 @@ public class SettingsPullCommand(
             catch (Exception ex)
             {
                 // Named, not swallowed. The next role still gets its capture.
-                failed.Add(role.UpperLabel());
-                Console.Error($"{role.UpperLabel()} failed — {Markup.Escape(ex.Message)}");
-                Logger.LogWarning(ex, "Sweep capture failed for {Role}", role.UpperLabel());
+                failed.Add(role);
+                onFailure(role, ex);
             }
         }
 
-        if (failed.Count == 0)
-        {
-            Console.Done($"Captured {roles.Length} environment{(roles.Length == 1 ? "" : "s")}.");
-            return (int)ExitCode.Success;
-        }
-
-        Console.Warning($"Couldn't reach {string.Join(", ", failed)} — the rest were captured. Fix those and re-run.");
-        return (int)ExitCode.PartialSuccess;
+        return failed;
     }
 
     /// <summary>Captures one environment into one settings file.</summary>

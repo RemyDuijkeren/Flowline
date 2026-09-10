@@ -20,6 +20,21 @@ public static class EnvironmentRoles
         _ => throw new ArgumentOutOfRangeException(nameof(role))
     };
 
+    /// <summary>The lower-case keyword a user types and <see cref="TryParse"/> accepts ("dev").</summary>
+    /// <remarks>
+    /// Named rather than composed at each call site, because the one thing it must do is round-trip
+    /// through <see cref="TryParse"/>. Passing <see cref="ConfigKey"/> where this belongs reads plausibly
+    /// and resolves to nothing, which is a failure no type checker catches.
+    /// </remarks>
+    public static string Keyword(this EnvironmentRole role) => role switch
+    {
+        EnvironmentRole.Prod => "prod",
+        EnvironmentRole.Uat  => "uat",
+        EnvironmentRole.Test => "test",
+        EnvironmentRole.Dev  => "dev",
+        _ => throw new ArgumentOutOfRangeException(nameof(role))
+    };
+
     /// <summary>The upper-case label status lines use ("DEV set to ...").</summary>
     public static string UpperLabel(this EnvironmentRole role) => role switch
     {

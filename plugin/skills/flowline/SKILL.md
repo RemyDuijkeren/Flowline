@@ -71,13 +71,19 @@ routine post-deploy step.
    runs every pre-flight (DTAP gate, git-clean, drift, pack, solution checker, orphan report) plus a
    labeled backup, then stops before importing; it ends with `Dry run complete`.
 
-6. `flowline configure <env>` after a deploy, when the environment needs values or component state a
+6. `flowline settings push <env>` after a deploy, when the environment needs values or component state a
    deploy can't carry: environment variable values, connection reference bindings, and the cloud flows,
    classic workflows or plugin steps that must be off. It reads `Solution/deploymentSettings.<env>.json`
    and touches only what that file names — `CloudFlows`, `Workflows` and `PluginSteps` are name-to-boolean
    maps, and business process flows and business rules are outside its reach entirely. Re-running it changes nothing, so it is safe on every pipeline run; `--dry-run` reports
-   the change set and writes nothing. `flowline configure <env> --pull` writes the file from the
-   environment instead — use it to create the first one, then commit it.
+   the change set and writes nothing. `flowline settings pull <env>` writes the file from the
+   environment instead — use it to create the first one, then commit it. Omit the environment and it
+   captures every configured one, exiting 18 if it couldn't reach one.
+
+   To change a single component without the file, use `flowline settings flow|workflow|plugin <env> <name>
+   --on|--off` or `flowline settings envvar|connref <env> <name> --value <v>`. Leave the flag off and it
+   reads and prints the current state instead. Leave the name off in a non-interactive run and it lists
+   the names and exits 15. The file still wins on the next push, and the run says so when it would.
 
 `flowline drift <env>` is the read-only preview of what a deploy would flag — safe against prod at any
 time. `flowline diff` is the same question on the git axis: which components changed between two points
@@ -172,7 +178,7 @@ some cleanup failed.
   path resolves against the current folder, and it's rewritten every run), `--exit-code`. Writes nothing
   unless `--write` is passed.
 - Global (every command): `--verbose` (`-v`), `--force <specifier>` (`-f`). Dataverse-touching commands
-  only (`clone`, `push`, `pull`, `deploy`, `provision`, `generate`, `drift`, `configure`): `--no-cache`,
+  only (`clone`, `push`, `pull`, `deploy`, `provision`, `generate`, `drift`, `settings`): `--no-cache`,
   `--auto-select-auth-profile` (`-a`). `--env <role|url>` on `clone`, `push`, `pull`, `generate`,
   `init` and `provision`. On `provision` it names the Production source to copy from, default `prod`.
 - `flowline sln add <path.cdsproj>` wires a `.cdsproj` into the solution file — `dotnet sln add`
@@ -189,7 +195,7 @@ command fails with the valid list.
 | `deploy` | `drift`, `first-import`, `delete-orphans`, `all` |
 | `pull` | `dirty`, `config`, `all` |
 | `provision` | `overwrite`, `config`, `all` |
-| `clone`, `init`, `configure`, `drift`, `generate` | `config`, `all` |
+| `clone`, `init`, `settings`, `drift`, `generate` | `config`, `all` |
 
 `deploy`'s `delete-orphans` is narrower than `push`'s: it gates exactly one unattributable case (a
 Custom API with no plugin type) plus web-resource orphans. Everything else follows the table above.
@@ -212,12 +218,12 @@ Exit codes are a stable public API — they don't change meaning across Flowline
 | 15 | ValidationFailed | Missing dependencies, invalid `--force` value, an unknown option, schema mismatch, or contradictory flags | Read the error; a flag conflict names both flags, an unknown option names it |
 | 16 | Timeout | PAC CLI 60-minute limit exceeded | Retry; check environment health |
 | 17 | ForceRequired | Destructive operation needs explicit confirmation, including a declined confirmation prompt (e.g. `deploy`'s first-import prompt, `provision`'s overwrite prompt) | Add the `--force <specifier>` the message names |
-| 18 | PartialSuccess | `deploy` imported but some orphan cleanup failed, or `configure` couldn't apply some components | One failure and every failure share this code — read the printed counts. Fix what the output names and re-run; both commands are safe to repeat |
-| 19 | Inconclusive | A check couldn't run to completion — `drift`'s empty-input guard skipped the comparison, a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault), or every component a `configure` settings file declared was missing from the target | Not a pass/fail signal — read the printed reason. For `configure` it usually means the wrong settings file or the wrong environment |
+| 18 | PartialSuccess | `deploy` imported but some orphan cleanup failed, `settings push` couldn't apply some components, or a `settings pull` sweep couldn't reach an environment | One failure and every failure share this code — read the printed counts. Fix what the output names and re-run; both commands are safe to repeat |
+| 19 | Inconclusive | A check couldn't run to completion — `drift`'s empty-input guard skipped the comparison, a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault), or every component a `settings push` file declared was missing from the target | Not a pass/fail signal — read the printed reason. For `settings push` it usually means the wrong settings file or the wrong environment |
 | 20 | WriteTargetOccupied | A file already occupies a path the command would write to (e.g. `scaffold` meeting an existing template file) | Nothing is broken — something valid is in the way. Move the named file aside, or run the command somewhere else |
 | 21 | AssemblyNotRegistered | Deploy imported, but a plug-in package holds an assembly with no registration in the target, or one registered with no plugin types | Create the `pluginassembly` record under that package (sandbox isolation, matching version/culture/public key token), then deploy again so the content write populates its plugin types — repeats every deploy until that record exists |
 | 22 | ChangesFound | `drift --exit-code` or `diff --exit-code` found changes | **Not a failure**: the comparison ran and something differs. Only returned when `--exit-code` is passed; without it a run with changes still exits 0 (`drift`'s default). Branch on it instead of parsing output |
-| 130 | Cancelled | Ctrl+C / SIGINT | An interrupted `configure` still prints the components it applied before stopping; re-run to finish |
+| 130 | Cancelled | Ctrl+C / SIGINT | An interrupted `settings push` still prints the components it applied before stopping; re-run to finish |
 
 Codes 2 and 5 are intentionally unused.
 

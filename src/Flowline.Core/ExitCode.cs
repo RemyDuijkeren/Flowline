@@ -51,7 +51,7 @@ public enum ExitCode
     /// <summary>Destructive or overwriting operation requires --force in non-interactive mode.</summary>
     ForceRequired = 17,
 
-    /// <summary>The run finished but part of it failed: deploy's orphan cleanup couldn't remove some components, or configure couldn't apply some of them. Covers one failure and every failure alike — the printed counts tell those apart, and the recovery is the same either way. Check output for what to fix, then re-run.</summary>
+    /// <summary>The run finished but part of it failed: deploy's orphan cleanup couldn't remove some components, or settings push couldn't apply some of them. Covers one failure and every failure alike — the printed counts tell those apart, and the recovery is the same either way. Check output for what to fix, then re-run.</summary>
     PartialSuccess = 18,
 
     /// <summary>Check could not run to completion — an empty-input guard skipped the comparison (e.g. no local or no live components), a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault), or every component a settings file declared was absent from the target, which usually means the wrong file or the wrong environment. Not a pass/fail signal; investigate the printed reason before trusting the result.</summary>
