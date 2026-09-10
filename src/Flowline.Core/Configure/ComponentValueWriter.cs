@@ -25,8 +25,18 @@ namespace Flowline.Core.Configure;
 /// </remarks>
 public static class ComponentValueWriter
 {
-    /// <summary>Sets an environment variable's value for this environment.</summary>
+    /// <summary>Sets an environment variable's value for this environment, unless doing so would write over a secret (R13).</summary>
     /// <param name="definitionId">The <c>environmentvariabledefinition</c> row the value belongs to.</param>
+    /// <remarks>
+    /// The pull side refuses to read a secret it cannot safely round-trip and writes a placeholder in its
+    /// place. Without the matching refusal here, that placeholder is just a non-empty value: a pull followed
+    /// by an apply would overwrite the real secret with the literal text <c>&lt;set-this-secret&gt;</c>. A
+    /// fail-closed pull and a fail-open apply is the same as no protection at all.
+    ///
+    /// Both halves are checked. The placeholder catches a file that has been through a pull; the definition's
+    /// own type and store catch a value typed in by hand against a variable Flowline will not manage, which
+    /// no amount of care with the file could otherwise prevent.
+    /// </remarks>
     public static async Task<ComponentOutcome> ApplyEnvironmentVariableAsync(
         IOrganizationServiceAsync2 service,
         InventoryComponent component,
@@ -34,6 +44,14 @@ public static class ComponentValueWriter
         RunMode mode,
         CancellationToken ct)
     {
+        if (string.Equals(declaredValue, ConfigurePullService.SecretPlaceholder, StringComparison.Ordinal))
+            return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,
+                $"'{component.Name}' still holds the pull placeholder — set its real value in the settings file, or in the maker portal.");
+
+        if (ConfigurePullService.IsUnreadableSecret(component))
+            return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,
+                $"'{component.Name}' is a secret Flowline won't write — set it in the maker portal.");
+
         try
         {
             var existing = await FindValueRowAsync(service, component.Id, ct).ConfigureAwait(false);
@@ -81,6 +99,10 @@ public static class ComponentValueWriter
     /// it, and a caller with nothing to pass silently turned every apply into a write — which is what shipped
     /// first, and what made a file applied straight back to the environment it came from report Applied
     /// instead of Unchanged (AE1).
+    ///
+    /// Carries the same placeholder and unreadable-secret checks as the environment-variable writer above
+    /// (KTD6), so the two value writers cannot drift apart even though a connection reference carries a
+    /// connection identifier rather than a credential and never actually trips the secret check.
     /// </remarks>
     public static async Task<ComponentOutcome> ApplyConnectionReferenceAsync(
         IOrganizationServiceAsync2 service,
@@ -89,6 +111,14 @@ public static class ComponentValueWriter
         RunMode mode,
         CancellationToken ct)
     {
+        if (string.Equals(connectionId, ConfigurePullService.SecretPlaceholder, StringComparison.Ordinal))
+            return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,
+                $"'{component.Name}' still holds the pull placeholder — set its real value in the settings file, or in the maker portal.");
+
+        if (ConfigurePullService.IsUnreadableSecret(component))
+            return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,
+                $"'{component.Name}' is a secret Flowline won't write — set it in the maker portal.");
+
         if (string.Equals(component.CurrentValue, connectionId, StringComparison.OrdinalIgnoreCase))
             return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Unchanged);
 

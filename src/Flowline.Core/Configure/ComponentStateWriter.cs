@@ -65,7 +65,10 @@ public static class ComponentStateWriter
     /// <summary>Applies one declared state, or reports why it could not be applied.</summary>
     /// <param name="currentlySuspended">
     /// Whether the component was Suspended before this call, which only a caller reading the raw statecode
-    /// can know — <see cref="InventoryComponent.Enabled"/> flattens Suspended to not-active.
+    /// can know — <see cref="InventoryComponent.Enabled"/> flattens Suspended to not-active. Required, not
+    /// defaulted: a suspended flow reads as not-enabled, so a caller that silently omitted this would have a
+    /// declared-off flow report Unchanged and stay Suspended (KTD7, KTD8). A plugin step has no third state,
+    /// so its caller always passes <c>false</c>.
     /// </param>
     public static async Task<ComponentOutcome> ApplyAsync(
         IOrganizationServiceAsync2 service,
@@ -73,7 +76,7 @@ public static class ComponentStateWriter
         bool desiredEnabled,
         RunMode mode,
         CancellationToken ct,
-        bool currentlySuspended = false)
+        bool currentlySuspended)
     {
         if (component.Enabled == desiredEnabled && !currentlySuspended)
             return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Unchanged);

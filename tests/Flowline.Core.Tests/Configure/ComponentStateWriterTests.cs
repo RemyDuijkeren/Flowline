@@ -82,7 +82,7 @@ public class ComponentStateWriterTests
     {
         var service = Substitute.For<IOrganizationServiceAsync2>();
 
-        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(true), desiredEnabled: true, RunMode.Normal, CancellationToken.None);
+        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(true), desiredEnabled: true, RunMode.Normal, CancellationToken.None, currentlySuspended: false);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Unchanged);
         await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
@@ -93,7 +93,7 @@ public class ComponentStateWriterTests
     {
         var service = Substitute.For<IOrganizationServiceAsync2>();
 
-        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(false), desiredEnabled: true, RunMode.Normal, CancellationToken.None);
+        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(false), desiredEnabled: true, RunMode.Normal, CancellationToken.None, currentlySuspended: false);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Applied);
         await service.Received(1).UpdateAsync(Arg.Is<Entity>(e => State(e) == 1), Arg.Any<CancellationToken>());
@@ -126,6 +126,22 @@ public class ComponentStateWriterTests
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Applied);
     }
 
+    // A plugin step has no third state, so the required suspended flag is always false for one and has no
+    // effect on the outcome — the class carrying no Suspended concept is unaffected by KTD7.
+    [Fact]
+    public async Task ApplyAsync_PluginStep_IsUnaffectedByTheSuspendedFlag()
+    {
+        var service = Substitute.For<IOrganizationServiceAsync2>();
+
+        var outcome = await ComponentStateWriter.ApplyAsync(
+            service, Step(false), desiredEnabled: true, RunMode.Normal, CancellationToken.None, currentlySuspended: false);
+
+        outcome.Outcome.Should().Be(ComponentOutcomeKind.Applied);
+        outcome.WasSuspended.Should().BeFalse();
+        await service.Received(1).UpdateAsync(
+            Arg.Is<Entity>(e => e.LogicalName == "sdkmessageprocessingstep"), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task ApplyAsync_DataverseFault_ReportsFailedAndKeepsRunning()
     {
@@ -134,7 +150,7 @@ public class ComponentStateWriterTests
             .Returns<Task>(_ => throw new FaultException<OrganizationServiceFault>(
                 new OrganizationServiceFault { ErrorCode = unchecked((int)0x80040265) }, "boom"));
 
-        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(false), true, RunMode.Normal, CancellationToken.None);
+        var outcome = await ComponentStateWriter.ApplyAsync(service, Flow(false), true, RunMode.Normal, CancellationToken.None, currentlySuspended: false);
 
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Failed);
         outcome.Detail.Should().Contain("order_processing");

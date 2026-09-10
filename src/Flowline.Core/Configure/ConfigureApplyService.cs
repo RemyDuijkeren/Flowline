@@ -73,7 +73,8 @@ public sealed class ConfigureApplyService
             declaredNames.Add((ConfigurableComponentKind.EnvironmentVariable, declared.Name));
             outcomes.Add(await ApplyOneAsync(inventory, ConfigurableComponentKind.EnvironmentVariable,
                 declared.Name,
-                component => ApplyEnvironmentVariableAsync(service, component, declared.Value, mode, ct))
+                component => ComponentValueWriter.ApplyEnvironmentVariableAsync(
+                    service, component, declared.Value, mode, ct))
                 .ConfigureAwait(false));
         }
 
@@ -116,40 +117,11 @@ public sealed class ConfigureApplyService
         {
             declaredNames.Add((ConfigurableComponentKind.PluginStep, entry.Name));
             outcomes.Add(await ApplyOneAsync(inventory, ConfigurableComponentKind.PluginStep, entry.Name,
-                component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct))
+                // A plugin step has no third state, so its caller always passes false (KTD7).
+                component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct,
+                    currentlySuspended: false))
                 .ConfigureAwait(false));
         }
-    }
-
-    /// <summary>
-    /// Sets an environment variable's value, unless doing so would write over a secret (R13).
-    /// </summary>
-    /// <remarks>
-    /// The pull side refuses to read a secret it cannot safely round-trip and writes a placeholder in its
-    /// place. Without the matching refusal here, that placeholder is just a non-empty value: a pull followed
-    /// by an apply would overwrite the real secret with the literal text <c>&lt;set-this-secret&gt;</c>. A
-    /// fail-closed pull and a fail-open apply is the same as no protection at all.
-    ///
-    /// Both halves are checked. The placeholder catches a file that has been through a pull; the definition's
-    /// own type and store catch a value typed in by hand against a variable Flowline will not manage, which
-    /// no amount of care with the file could otherwise prevent.
-    /// </remarks>
-    static Task<ComponentOutcome> ApplyEnvironmentVariableAsync(
-        IOrganizationServiceAsync2 service,
-        InventoryComponent component,
-        string declaredValue,
-        RunMode mode,
-        CancellationToken ct)
-    {
-        if (string.Equals(declaredValue, ConfigurePullService.SecretPlaceholder, StringComparison.Ordinal))
-            return Task.FromResult(new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,
-                $"'{component.Name}' still holds the pull placeholder — set its real value in the settings file, or in the maker portal."));
-
-        if (ConfigurePullService.IsUnreadableSecret(component))
-            return Task.FromResult(new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,
-                $"'{component.Name}' is a secret Flowline won't write — set it in the maker portal."));
-
-        return ComponentValueWriter.ApplyEnvironmentVariableAsync(service, component, declaredValue, mode, ct);
     }
 
     /// <summary>

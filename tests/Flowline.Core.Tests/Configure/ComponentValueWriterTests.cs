@@ -15,6 +15,10 @@ public class ComponentValueWriterTests
     static InventoryComponent Variable(Guid? id = null) =>
         new(ConfigurableComponentKind.EnvironmentVariable, "cr123_ApiUrl", id ?? Guid.NewGuid(), null);
 
+    static InventoryComponent UnreadableSecretVariable() =>
+        new(ConfigurableComponentKind.EnvironmentVariable, "cr123_ApiKey", Guid.NewGuid(), null,
+            Type: ConfigurePullService.SecretType, SecretStore: 1);
+
     static InventoryComponent Reference(string? currentConnectionId = null) =>
         new(ConfigurableComponentKind.ConnectionReference, "cr123_shared_dataverse", Guid.NewGuid(), null,
             CurrentValue: currentConnectionId);
@@ -127,6 +131,49 @@ public class ComponentValueWriterTests
         outcome.Outcome.Should().Be(ComponentOutcomeKind.Failed);
         outcome.Detail.Should().NotContain("hunter2");
         outcome.Detail.Should().Contain("cr123_ApiUrl");
+    }
+
+    // AE8: a secret Flowline could not safely pull must not be overwritten either — a fail-closed pull paired
+    // with a fail-open apply is no protection at all (R13). The guard now lives on the writer itself rather
+    // than only on the orchestrator that used to wrap it, so no caller can reach around it (KTD6).
+    [Fact]
+    public async Task EnvironmentVariable_UnreadableSecret_IsRefusedAndNothingReachesDataverse()
+    {
+        var service = ServiceReturning();
+
+        var outcome = await ComponentValueWriter.ApplyEnvironmentVariableAsync(
+            service, UnreadableSecretVariable(), "typed-in-by-hand", RunMode.Normal, CancellationToken.None);
+
+        outcome.Outcome.Should().Be(ComponentOutcomeKind.Skipped);
+        await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().CreateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task EnvironmentVariable_PlaceholderValue_IsRefused()
+    {
+        var service = ServiceReturning();
+
+        var outcome = await ComponentValueWriter.ApplyEnvironmentVariableAsync(
+            service, Variable(), ConfigurePullService.SecretPlaceholder, RunMode.Normal, CancellationToken.None);
+
+        outcome.Outcome.Should().Be(ComponentOutcomeKind.Skipped);
+        await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().CreateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    // KTD6: both value writers carry the same two checks so the environment-variable and connection-reference
+    // paths cannot diverge, even though a connection reference never actually trips the secret check.
+    [Fact]
+    public async Task ConnectionReference_PlaceholderValue_IsRefused()
+    {
+        var service = Substitute.For<IOrganizationServiceAsync2>();
+
+        var outcome = await ComponentValueWriter.ApplyConnectionReferenceAsync(
+            service, Reference(currentConnectionId: "old"), ConfigurePullService.SecretPlaceholder, RunMode.Normal, CancellationToken.None);
+
+        outcome.Outcome.Should().Be(ComponentOutcomeKind.Skipped);
+        await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
