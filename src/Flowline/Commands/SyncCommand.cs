@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Configure;
 using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
@@ -162,6 +163,11 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         await WriteSyncReportAsync(summary, Console, slnFolder, srcPath, projectSln.UniqueName,
             devEnv.DisplayName, settings.Verbose, cancellationToken);
 
+        // R17/KTD14: after the uncommitted-changes gate above and after the fresh sync, so a generated
+        // template can never be mistaken for uncommitted solution source by that gate, and so its key list
+        // reflects what DEV just synced rather than what was on disk before this run.
+        await RefreshSharedTemplateAsync(Console, dataverseSolutionFolder, RootFolder, _capture, Logger, cancellationToken);
+
         Console.Done(summary.TotalFiles == 0
             ? $"Synced {tagVersion} — no component changes, nothing to deploy."
             : $"Synced {tagVersion}. Commit, then 'git tag {tagVersion}' when ready to deploy. ◝(ᵔᵕᵔ)◜");
@@ -228,4 +234,78 @@ public class SyncCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     /// <summary>The terminal line for a sync that pulled nothing. Escaped: an environment name is user data.</summary>
     internal static string NoChangesLine(string? envDisplayName) =>
         $"No changes pulled from {Markup.Escape(envDisplayName ?? "DEV")}.";
+
+    /// <summary>
+    /// Refreshes the shared, un-suffixed settings template from the solution source already on disk (R17,
+    /// KTD14). Shared between <c>sync</c> (this class, aliased as <c>pull</c>) and <c>clone</c> — both write
+    /// fresh solution source and then owe the template a refresh, so the orchestration lives here once
+    /// rather than twice.
+    /// </summary>
+    /// <remarks>
+    /// Talks only to `pac` against the unpacked solution folder on disk and to the two settings files — no
+    /// environment, no service, no auth (KTD14). The merge itself is <see cref="SettingsTemplateService"/>;
+    /// this is the skeleton generation, the existing-file read and the one-line report a pure Core service
+    /// can't do on its own. <paramref name="dataverseSolutionFolder"/> is the folder beside the
+    /// <c>.cdsproj</c> (<see cref="Core.Services.SolutionFileLayout.DataverseSolutionFolder"/>) — the same
+    /// anchor <see cref="Commands.SettingsCommandBase{TSettings}.ResolveSettingsFileAsync"/> uses for a
+    /// project-mode capture, so the template lands beside the role-named files it refreshes alongside.
+    /// </remarks>
+    internal static async Task RefreshSharedTemplateAsync(
+        IAnsiConsole console, string dataverseSolutionFolder, string rootFolder, SubprocessCapture capture,
+        ILogger logger, CancellationToken ct)
+    {
+        var solutionPath = Path.Combine(dataverseSolutionFolder, "src");
+        // role: null resolves straight to the shared file (SettingsFileLocator.Locate) — there is no role to
+        // name it after, and KTD14 forbids seeding it from any one environment's values anyway.
+        var location = SettingsFileLocator.Locate(dataverseSolutionFolder, role: null, explicitPath: null, forWriting: true);
+        var created = !location.Exists;
+
+        var tempDir = Directory.CreateTempSubdirectory("flowline-template-").FullName;
+        try
+        {
+            var skeletonPath = Path.Combine(tempDir, "settings.json");
+            await PacUtils.CreateSettingsAsync(solutionPath, isZip: false, skeletonPath, capture, ct);
+
+            var skeleton = SettingsFileReader.Read(skeletonPath);
+            var existing = location.Exists ? SettingsFileReader.Read(location.Path) : null;
+
+            var result = SettingsTemplateService.Merge(skeleton, existing);
+            SettingsFileReader.Save(result.Document, location.Path);
+
+            var display = ConsolePath.FormatRelativePath(location.Path, rootFolder);
+            console.Info(FormatTemplateReport(created, display, result.Added, result.Vanished));
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(tempDir))
+                    Directory.Delete(tempDir, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to clean up temp settings-template directory {TempDir}", tempDir);
+            }
+        }
+    }
+
+    /// <summary>
+    /// One line naming what a template refresh changed, instead of restating the whole file (R17). Pure, so
+    /// it's testable without a checkout — see <see cref="RefreshSharedTemplateAsync"/> for the only caller.
+    /// </summary>
+    internal static string FormatTemplateReport(
+        bool created, string display, IReadOnlyList<string> added, IReadOnlyList<string> vanished)
+    {
+        var verb = created ? "Created" : "Refreshed";
+        if (added.Count == 0 && vanished.Count == 0)
+            return $"{verb} {display} — no changes.";
+
+        var parts = new List<string>();
+        if (added.Count > 0)
+            parts.Add($"+{Markup.Escape(string.Join(", ", added))}");
+        if (vanished.Count > 0)
+            parts.Add($"-{Markup.Escape(string.Join(", ", vanished))}");
+
+        return $"{verb} {display} ({string.Join("; ", parts)})";
+    }
 }

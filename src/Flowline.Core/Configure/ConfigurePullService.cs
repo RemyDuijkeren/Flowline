@@ -86,8 +86,8 @@ public sealed class ConfigurePullService
 
         FillConnectionReferences(document, existing, inventory, added);
 
-        CarryVanishedEntries(document, existing, EnvironmentVariablesSection, "SchemaName", vanished);
-        CarryVanishedEntries(document, existing, ConnectionReferencesSection, "LogicalName", vanished);
+        SettingsSectionEntries.CarryVanished(document, existing, EnvironmentVariablesSection, "SchemaName", vanished);
+        SettingsSectionEntries.CarryVanished(document, existing, ConnectionReferencesSection, "LogicalName", vanished);
 
         WriteStateSections(document, existing, inventory, added, vanished);
 
@@ -103,19 +103,19 @@ public sealed class ConfigurePullService
         List<string> placeholders,
         CancellationToken ct)
     {
-        foreach (var entry in EntriesIn(document, EnvironmentVariablesSection))
+        foreach (var entry in SettingsSectionEntries.In(document, EnvironmentVariablesSection))
         {
             var name = entry["SchemaName"]?.GetValue<string>();
             if (string.IsNullOrWhiteSpace(name)) continue;
 
-            var declared = ExistingValue(existing, EnvironmentVariablesSection, "SchemaName", name, "Value");
+            var declared = SettingsSectionEntries.ExistingValue(existing, EnvironmentVariablesSection, "SchemaName", name, "Value");
             if (!string.IsNullOrWhiteSpace(declared))
             {
                 entry["Value"] = declared;
                 continue;
             }
 
-            if (!Declares(existing, EnvironmentVariablesSection, "SchemaName", name))
+            if (!SettingsSectionEntries.Declares(existing, EnvironmentVariablesSection, "SchemaName", name))
                 added.Add($"EnvironmentVariable: {name}");
 
             var match = inventory.Match(ConfigurableComponentKind.EnvironmentVariable, name);
@@ -157,19 +157,19 @@ public sealed class ConfigurePullService
         SolutionInventory inventory,
         List<string> added)
     {
-        foreach (var entry in EntriesIn(document, ConnectionReferencesSection))
+        foreach (var entry in SettingsSectionEntries.In(document, ConnectionReferencesSection))
         {
             var name = entry["LogicalName"]?.GetValue<string>();
             if (string.IsNullOrWhiteSpace(name)) continue;
 
-            var declared = ExistingValue(existing, ConnectionReferencesSection, "LogicalName", name, "ConnectionId");
+            var declared = SettingsSectionEntries.ExistingValue(existing, ConnectionReferencesSection, "LogicalName", name, "ConnectionId");
             if (!string.IsNullOrWhiteSpace(declared))
             {
                 entry["ConnectionId"] = declared;
                 continue;
             }
 
-            if (!Declares(existing, ConnectionReferencesSection, "LogicalName", name))
+            if (!SettingsSectionEntries.Declares(existing, ConnectionReferencesSection, "LogicalName", name))
                 added.Add($"ConnectionReference: {name}");
 
             var match = inventory.Match(ConfigurableComponentKind.ConnectionReference, name);
@@ -184,32 +184,6 @@ public sealed class ConfigurePullService
     /// Appended rather than merged in place, so the skeleton's own order — which is what a diff against the
     /// previous pull compares to — is untouched.
     /// </remarks>
-    static void CarryVanishedEntries(
-        SettingsDocument document,
-        SettingsDocument? existing,
-        string section,
-        string nameProperty,
-        List<string> vanished)
-    {
-        if (existing is null) return;
-
-        var present = EntriesIn(document, section)
-            .Select(e => e[nameProperty]?.GetValue<string>())
-            .Where(n => !string.IsNullOrWhiteSpace(n))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        if (!document.PassThrough.TryGetValue(section, out var node) || node is not JsonArray target) return;
-
-        foreach (var entry in EntriesIn(existing, section))
-        {
-            var name = entry[nameProperty]?.GetValue<string>();
-            if (string.IsNullOrWhiteSpace(name) || present.Contains(name)) continue;
-
-            target.Add(entry.DeepClone());
-            vanished.Add($"{section}: {name}");
-        }
-    }
-
     /// <summary>
     /// Writes the state classes, listing only the components that are currently off (R12).
     /// </summary>
@@ -274,25 +248,5 @@ public sealed class ConfigurePullService
 
         foreach (var name in result.Vanished)
             vanished.Add($"{kind}: {name}");
-    }
-
-    static IEnumerable<JsonObject> EntriesIn(SettingsDocument document, string section) =>
-        document.PassThrough.TryGetValue(section, out var node) && node is JsonArray array
-            ? array.OfType<JsonObject>()
-            : [];
-
-    static bool Declares(SettingsDocument? existing, string section, string nameProperty, string name) =>
-        existing is not null && EntriesIn(existing, section)
-            .Any(e => string.Equals(e[nameProperty]?.GetValue<string>(), name, StringComparison.OrdinalIgnoreCase));
-
-    static string? ExistingValue(
-        SettingsDocument? existing, string section, string nameProperty, string name, string valueProperty)
-    {
-        if (existing is null) return null;
-
-        return EntriesIn(existing, section)
-            .Where(e => string.Equals(e[nameProperty]?.GetValue<string>(), name, StringComparison.OrdinalIgnoreCase))
-            .Select(e => e[valueProperty]?.GetValue<string>())
-            .FirstOrDefault();
     }
 }
