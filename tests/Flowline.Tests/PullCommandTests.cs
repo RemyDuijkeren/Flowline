@@ -7,15 +7,15 @@ using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
-public class SyncCommandTests
+public class PullCommandTests
 {
     // -- R1/R10: --env replaces --dev (U3) --
 
-    sealed class CapturingSyncSettingsCommand : Command<SyncCommand.Settings>
+    sealed class CapturingPullSettingsCommand : Command<PullCommand.Settings>
     {
-        public static Action<SyncCommand.Settings>? OnExecute;
+        public static Action<PullCommand.Settings>? OnExecute;
 
-        protected override int Execute(CommandContext context, SyncCommand.Settings settings, CancellationToken cancellationToken)
+        protected override int Execute(CommandContext context, PullCommand.Settings settings, CancellationToken cancellationToken)
         {
             OnExecute?.Invoke(settings);
             return 0;
@@ -25,10 +25,10 @@ public class SyncCommandTests
     [Fact]
     public void CommandApp_EnvRoleKeyword_BindsEnv()
     {
-        SyncCommand.Settings? captured = null;
+        PullCommand.Settings? captured = null;
         var app = new CommandApp();
-        app.Configure(c => c.AddCommand<CapturingSyncSettingsCommand>("sync").WithAlias("pull"));
-        CapturingSyncSettingsCommand.OnExecute = s => captured = s;
+        app.Configure(c => c.AddCommand<CapturingPullSettingsCommand>("sync").WithAlias("pull"));
+        CapturingPullSettingsCommand.OnExecute = s => captured = s;
 
         var exitCode = app.Run(["pull", "--env", "dev"]);
 
@@ -39,21 +39,21 @@ public class SyncCommandTests
     [Fact]
     public void Settings_HasNoDevUrlProperty_TheOldFlagIsGone()
     {
-        typeof(SyncCommand.Settings).GetProperty("DevUrl").Should().BeNull();
+        typeof(PullCommand.Settings).GetProperty("DevUrl").Should().BeNull();
     }
 
     [Fact]
     public void Settings_Force_ShouldDefaultToEmpty()
     {
-        new SyncCommand.Settings().Force.Should().BeEmpty();
+        new PullCommand.Settings().Force.Should().BeEmpty();
     }
 
     [Fact]
     public void ValidateForce_UnrecognizedValue_ThrowsNamingValidValues()
     {
-        var settings = new SyncCommand.Settings { Force = ["delete-orphans"] };
+        var settings = new PullCommand.Settings { Force = ["delete-orphans"] };
 
-        var act = () => FlowlineSettings.ValidateForce(settings.Force, SyncCommand.ValidSpecifiers, "sync");
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, PullCommand.ValidSpecifiers, "sync");
 
         act.Should().Throw<FlowlineException>()
             .Where(e => e.ExitCode == ExitCode.ValidationFailed
@@ -63,9 +63,9 @@ public class SyncCommandTests
     [Fact]
     public void ValidateForce_ValidValues_DoesNotThrow()
     {
-        var settings = new SyncCommand.Settings { Force = ["dirty"] };
+        var settings = new PullCommand.Settings { Force = ["dirty"] };
 
-        var act = () => FlowlineSettings.ValidateForce(settings.Force, SyncCommand.ValidSpecifiers, "sync");
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, PullCommand.ValidSpecifiers, "sync");
 
         act.Should().NotThrow();
     }
@@ -73,7 +73,7 @@ public class SyncCommandTests
     [Fact]
     public void HasForce_All_ApprovesDirtyAndConfigTogether()
     {
-        var settings = new SyncCommand.Settings { Force = ["all"] };
+        var settings = new PullCommand.Settings { Force = ["all"] };
 
         settings.HasForce("dirty").Should().BeTrue();
         settings.HasForce("config").Should().BeTrue();
@@ -82,7 +82,7 @@ public class SyncCommandTests
     [Fact]
     public void HasForce_ConfigOnly_DoesNotApproveDirty()
     {
-        var settings = new SyncCommand.Settings { Force = ["config"] };
+        var settings = new PullCommand.Settings { Force = ["config"] };
 
         settings.HasForce("config").Should().BeTrue();
         settings.HasForce("dirty").Should().BeFalse();
@@ -91,7 +91,7 @@ public class SyncCommandTests
     [Fact]
     public void Settings_Bump_ShouldDefaultToPatch()
     {
-        new SyncCommand.Settings().Bump.Should().Be(BumpComponent.Patch);
+        new PullCommand.Settings().Bump.Should().Be(BumpComponent.Patch);
     }
 }
 
@@ -105,39 +105,39 @@ public class SyncCommandOutputShapeTests
     [Fact]
     public void ChangesFilePath_IsChangesMdAtTheGivenRoot()
     {
-        SyncCommand.ChangesFilePath(Path.Combine("C:", "repo"))
+        PullCommand.ChangesFilePath(Path.Combine("C:", "repo"))
             .Should().Be(Path.Combine("C:", "repo", "CHANGES.md"));
     }
 
     [Fact]
     public void ProvenanceLine_NamesTheEnvironment()
     {
-        SyncCommand.ProvenanceLine("Contoso Dev").Should().Be("Synced from: Contoso Dev");
+        PullCommand.ProvenanceLine("Contoso Dev").Should().Be("Synced from: Contoso Dev");
     }
 
     [Fact]
     public void ProvenanceLine_WithoutEnvironment_IsOmittedEntirely()
     {
-        SyncCommand.ProvenanceLine(null).Should().BeNull();
+        PullCommand.ProvenanceLine(null).Should().BeNull();
     }
 
     [Fact]
     public void NoChangesLine_NamesTheEnvironment()
     {
-        SyncCommand.NoChangesLine("Contoso Dev").Should().Be("No changes pulled from Contoso Dev.");
+        PullCommand.NoChangesLine("Contoso Dev").Should().Be("No changes pulled from Contoso Dev.");
     }
 
     [Fact]
     public void NoChangesLine_WithoutEnvironment_FallsBackToDev()
     {
-        SyncCommand.NoChangesLine(null).Should().Be("No changes pulled from DEV.");
+        PullCommand.NoChangesLine(null).Should().Be("No changes pulled from DEV.");
     }
 
     [Fact]
     public void NoChangesLine_EscapesMarkupInTheEnvironmentName()
     {
         // An environment display name is user data reaching a Spectre markup renderer.
-        SyncCommand.NoChangesLine("Contoso [Dev]").Should().Be("No changes pulled from Contoso [[Dev]].");
+        PullCommand.NoChangesLine("Contoso [Dev]").Should().Be("No changes pulled from Contoso [[Dev]].");
     }
 }
 
@@ -150,13 +150,13 @@ public class BumpVersionTests
     [InlineData("1.2.5.3", BumpComponent.Major, "2.0.0.0")]
     public void BumpVersion_ShouldIncrementCorrectComponent(string version, BumpComponent component, string expected)
     {
-        SyncCommand.BumpVersion(version, component).Should().Be(expected);
+        PullCommand.BumpVersion(version, component).Should().Be(expected);
     }
 
     [Fact]
     public void BumpVersion_None_ShouldThrow()
     {
-        var act = () => SyncCommand.BumpVersion("1.0.0.1", BumpComponent.None);
+        var act = () => PullCommand.BumpVersion("1.0.0.1", BumpComponent.None);
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -168,7 +168,7 @@ public class BumpVersionTests
     [InlineData("1.3.0.0", "1.3.0")]
     public void ToTagVersion_ShouldReturnThreePart(string version, string expected)
     {
-        SyncCommand.ToTagVersion(version).Should().Be(expected);
+        PullCommand.ToTagVersion(version).Should().Be(expected);
     }
 }
 
@@ -198,7 +198,7 @@ public class SyncReportTests : IDisposable
             ])
         ]);
 
-        await SyncCommand.WriteSyncReportAsync(summary, console, _root, Path.Combine(_root, "src"),
+        await PullCommand.WriteSyncReportAsync(summary, console, _root, Path.Combine(_root, "src"),
             "ContosoSolution", "Contoso Dev", verbose: false, CancellationToken.None);
 
         console.Output.Should().Contain("see CHANGES.md");
@@ -220,7 +220,7 @@ public class SyncReportTests : IDisposable
     static SolutionChangeSummary NoChanges() => new(0, 0, 0, []);
 
     Task Report(SolutionChangeSummary summary, TestConsole console, string? envDisplayName) =>
-        SyncCommand.WriteSyncReportAsync(summary, console, _root, Path.Combine(_root, "Solution", "src"),
+        PullCommand.WriteSyncReportAsync(summary, console, _root, Path.Combine(_root, "Solution", "src"),
             "ContosoCustomizations", envDisplayName, verbose: false);
 
     [Fact]

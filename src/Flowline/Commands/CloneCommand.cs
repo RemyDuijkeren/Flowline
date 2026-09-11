@@ -88,7 +88,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
 
         // R17/KTD14: first creation of the shared settings template — see SyncCommand.RefreshSharedTemplateAsync,
         // which pull (this command's sibling) reuses for its own refresh.
-        await SyncCommand.RefreshSharedTemplateAsync(Console, ProjectScaffolder.ScaffoldedDataverseSolutionFolder(slnFolder),
+        await PullCommand.RefreshSharedTemplateAsync(Console, ProjectScaffolder.ScaffoldedDataverseSolutionFolder(slnFolder),
             slnFolder, _capture, Logger, cancellationToken);
 
         Console.Done("Cloned! Use 'push' and 'pull' to keep it in flow. ヽ(•‿•)ノ");

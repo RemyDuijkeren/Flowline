@@ -23,11 +23,11 @@ public class ManagedFlagBindingTests
         }
     }
 
-    sealed class SyncProbeCommand : Command<SyncCommand.Settings>
+    sealed class SyncProbeCommand : Command<PullCommand.Settings>
     {
-        public static SyncCommand.Settings? Captured;
+        public static PullCommand.Settings? Captured;
 
-        protected override int Execute(CommandContext context, SyncCommand.Settings settings, CancellationToken cancellationToken)
+        protected override int Execute(CommandContext context, PullCommand.Settings settings, CancellationToken cancellationToken)
         {
             Captured = settings;
             return 0;
@@ -112,7 +112,7 @@ public class ManagedFlagBindingTests
     [Fact]
     public void Sync_ManagedOption_TemplateUsesTrueFalsePlaceholder()
     {
-        var option = typeof(SyncCommand.Settings).GetProperty(nameof(SyncCommand.Settings.IncludeManaged))!
+        var option = typeof(PullCommand.Settings).GetProperty(nameof(PullCommand.Settings.IncludeManaged))!
             .GetCustomAttribute<CommandOptionAttribute>()!;
 
         Assert.True(option.ValueIsOptional);
@@ -123,7 +123,7 @@ public class ManagedFlagBindingTests
     [Fact]
     public void Sync_ManagedOption_DescriptionEndsWithSavedToFlowline()
     {
-        var description = typeof(SyncCommand.Settings).GetProperty(nameof(SyncCommand.Settings.IncludeManaged))!
+        var description = typeof(PullCommand.Settings).GetProperty(nameof(PullCommand.Settings.IncludeManaged))!
             .GetCustomAttribute<DescriptionAttribute>()!;
 
         Assert.EndsWith("(saved to .flowline)", description.Description);

@@ -303,9 +303,8 @@ namespace Flowline
                 .WithExample("push", "ContosoCustomizations", "--scope", "webresources")
                 .WithExample("push", "ContosoCustomizations", "--plugin-file", "./bin/Release/Plugins.dll", "--webresources", "./dist");
 
-            // Pull changes to local repo (export solution and unpack). KD9: pull is the primary name,
-            // sync a permanent alias — the command class keeps its original name (SyncCommand).
-            config.AddCommand<SyncCommand>("pull")
+            // Pull changes to local repo (export solution and unpack). KD9: pull is the primary name, sync a permanent alias.
+            config.AddCommand<PullCommand>("pull")
                   .WithDescription("Export solution from DEV, bump the patch version, and unpack to source-controlled XML. Builds afterward to validate the synced source, then writes CHANGES.md and the context docs. Run after testing changes in DEV. Requires no uncommitted changes in the unpacked solution source. Targets DEV only, via --env dev (default) or a DEV environment URL. Alias: sync")
                   .WithAlias("sync")
                   .WithExample("pull")

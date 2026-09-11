@@ -82,7 +82,7 @@ public class FlowlineSettingsTests
     }
 
     [Theory]
-    [InlineData(typeof(SyncCommand.Settings))]
+    [InlineData(typeof(PullCommand.Settings))]
     [InlineData(typeof(GenerateCommand.Settings))]
     [InlineData(typeof(InitCommand.Settings))]
     [InlineData(typeof(CloneCommand.Settings))]

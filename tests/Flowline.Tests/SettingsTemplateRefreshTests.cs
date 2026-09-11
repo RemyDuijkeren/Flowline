@@ -9,8 +9,8 @@ using Xunit;
 namespace Flowline.Tests;
 
 /// <summary>
-/// Covers <see cref="SyncCommand.RefreshSharedTemplateAsync"/> and its report line — the R17/KTD14 refresh
-/// <c>clone</c> and <c>pull</c> (<see cref="SyncCommand"/>) both run after writing fresh solution source.
+/// Covers <see cref="PullCommand.RefreshSharedTemplateAsync"/> and its report line — the R17/KTD14 refresh
+/// <c>clone</c> and <c>pull</c> (<see cref="PullCommand"/>) both run after writing fresh solution source.
 /// The report formatting is plain string composition (no I/O); the location and ordering tests establish
 /// structural facts without a checkout; the end-to-end test runs the real `pac solution create-settings`
 /// against a hand-built unpacked solution folder, which is what proves no environment or PAC login is
@@ -21,21 +21,21 @@ public class SettingsTemplateReportTests
     [Fact]
     public void FormatTemplateReport_FirstCreation_NoChanges_SaysCreated()
     {
-        SyncCommand.FormatTemplateReport(created: true, "deploymentSettings.json", added: [], vanished: [])
+        PullCommand.FormatTemplateReport(created: true, "deploymentSettings.json", added: [], vanished: [])
             .Should().Be("Created deploymentSettings.json — no changes.");
     }
 
     [Fact]
     public void FormatTemplateReport_Refresh_NoChanges_SaysRefreshed()
     {
-        SyncCommand.FormatTemplateReport(created: false, "deploymentSettings.json", added: [], vanished: [])
+        PullCommand.FormatTemplateReport(created: false, "deploymentSettings.json", added: [], vanished: [])
             .Should().Be("Refreshed deploymentSettings.json — no changes.");
     }
 
     [Fact]
     public void FormatTemplateReport_NamesWhatAppearedAndVanished_NotTheWholeFile()
     {
-        var message = SyncCommand.FormatTemplateReport(created: false, "deploymentSettings.json",
+        var message = PullCommand.FormatTemplateReport(created: false, "deploymentSettings.json",
             added: ["EnvironmentVariables: cr123_NewFlag"], vanished: ["ConnectionReferences: cr123_Retired"]);
 
         message.Should().Be("Refreshed deploymentSettings.json (+EnvironmentVariables: cr123_NewFlag; -ConnectionReferences: cr123_Retired)");
@@ -44,7 +44,7 @@ public class SettingsTemplateReportTests
     [Fact]
     public void FormatTemplateReport_EscapesMarkupInAddedAndVanishedNames()
     {
-        var message = SyncCommand.FormatTemplateReport(created: false, "deploymentSettings.json",
+        var message = PullCommand.FormatTemplateReport(created: false, "deploymentSettings.json",
             added: ["EnvironmentVariables: cr123_[Flag]"], vanished: []);
 
         message.Should().Contain("[[Flag]]");
@@ -144,7 +144,7 @@ public class RefreshSharedTemplateAsyncTests : IDisposable
         var console = new TestConsole();
         var capture = new SubprocessCapture(console);
 
-        await SyncCommand.RefreshSharedTemplateAsync(console, _root, _root, capture, NullLogger.Instance, CancellationToken.None);
+        await PullCommand.RefreshSharedTemplateAsync(console, _root, _root, capture, NullLogger.Instance, CancellationToken.None);
 
         var path = Path.Combine(_root, SettingsFileLocator.SharedFileName);
         File.Exists(path).Should().BeTrue();
@@ -160,12 +160,12 @@ public class RefreshSharedTemplateAsyncTests : IDisposable
         var capture = new SubprocessCapture(console);
         var path = Path.Combine(_root, SettingsFileLocator.SharedFileName);
 
-        await SyncCommand.RefreshSharedTemplateAsync(console, _root, _root, capture, NullLogger.Instance, CancellationToken.None);
+        await PullCommand.RefreshSharedTemplateAsync(console, _root, _root, capture, NullLogger.Instance, CancellationToken.None);
         console.Output.Should().Contain("Created");
 
         // Second run against the same, unchanged solution: the file already exists, so this is a merge,
         // not a first creation — and it must not throw or need a connection either.
-        await SyncCommand.RefreshSharedTemplateAsync(console, _root, _root, capture, NullLogger.Instance, CancellationToken.None);
+        await PullCommand.RefreshSharedTemplateAsync(console, _root, _root, capture, NullLogger.Instance, CancellationToken.None);
 
         console.Output.Should().Contain("Refreshed");
         File.Exists(path).Should().BeTrue();
