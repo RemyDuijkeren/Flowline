@@ -179,6 +179,19 @@ public class SettingsFileReaderTests
             .Which.ExitCode.Should().Be(ExitCode.ConfigInvalid);
     }
 
+    // The parser's own message quotes the rest of the document back. A settings file holds connection ids
+    // and variable values, so a stray character used to print all of them to the terminal and the run log.
+    [Fact]
+    public void Parse_MalformedJson_ReportsThePositionWithoutEchoingTheFile()
+    {
+        var act = () => SettingsFileReader.Parse(
+            "fl{ \"ConnectionReferences\": [ { \"ConnectionId\": \"shared-secret-0001\" } ] }");
+
+        var message = act.Should().Throw<FlowlineException>().Which.Message;
+        message.Should().NotContain("shared-secret-0001");
+        message.Should().Contain("line 1").And.Contain("position 2");
+    }
+
     [Fact]
     public void Parse_JsonThatIsNotAnObject_ThrowsConfigInvalid()
     {

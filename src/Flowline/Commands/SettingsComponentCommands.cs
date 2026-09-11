@@ -7,6 +7,7 @@ using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Infrastructure;
 using Flowline.Services;
+using Flowline.Utils;
 using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
@@ -60,6 +61,29 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// <summary>Whether this invocation writes, as opposed to reading the current state or value.</summary>
     protected abstract bool IsWrite(TSettings settings);
 
+    /// <summary>
+    /// Runs the read or write behind a spinner, so the run says what it is waiting on.
+    /// </summary>
+    /// <remarks>
+    /// Turning a flow on is one Dataverse call that can take several seconds, and without this the CLI
+    /// printed the current state and then sat silent long enough to look hung. Indeterminate rather than a
+    /// progress bar: it is a single call with nothing to count.
+    ///
+    /// A prompt cannot run inside a status display, so this deliberately wraps the call alone (KTD10) —
+    /// the spinner opens after an answer and closes before the next question.
+    /// </remarks>
+    Task<SingleComponentOutcome> RunWithSpinnerAsync(
+        IOrganizationServiceAsync2 service, SolutionInventory inventory, ConfigurableComponentKind kind,
+        string name, TSettings settings, RunMode mode, bool isWrite, CancellationToken ct)
+    {
+        // A dry run is checking, not updating: it runs the same comparison and stops before the write.
+        var verb = !isWrite || mode.IsReportOnly() ? "Reading" : "Updating";
+
+        return Console.Status().FlowlineSpinner().StartAsync(
+            $"{verb} [bold]{Markup.Escape(name)}[/]...",
+            _ => RunAsync(service, inventory, kind, name, settings, mode, ct));
+    }
+
     protected override bool IsStandalone(TSettings settings) =>
         SettingsSupport.ResolveComponentStandalone(Directory.GetCurrentDirectory());
 
@@ -101,12 +125,37 @@ public abstract class SettingsComponentCommandBase<TSettings>(
                 return (int)ExitCode.Success;
             }
 
-            name = await ResolveMissingNameAsync(kind, candidates, cancellationToken);
+            // No name in an unattended run is an inventory question, not a malformed invocation: the
+            // answer is the list, and a run that prints what was asked for succeeded.
+            if (!IsInteractive())
+            {
+                ListCandidates(kind, candidates);
+                return (int)ExitCode.Success;
+            }
+
+            name = await PickAsync(kind, candidates, cancellationToken);
         }
 
-        var outcome = await RunAsync(service, inventory, kind, name, settings, mode, cancellationToken);
-
         var isWrite = IsWrite(settings);
+
+        var outcome = await RunWithSpinnerAsync(
+            service, inventory, kind, name, settings, mode, isWrite, cancellationToken);
+
+        // A read at a terminal is someone deciding, not someone reporting. Show what is there, then ask
+        // what it should be — the picker otherwise ends by printing a state the operator just looked at
+        // and offering no way to change it.
+        if (!isWrite && IsInteractive())
+        {
+            Report(outcome, kind, mode);
+
+            if (!await PromptForTargetAsync(kind, outcome, settings, env, cancellationToken))
+                return (int)ExitCode.Success;
+
+            outcome = await RunWithSpinnerAsync(
+                service, inventory, kind, outcome.Component.Name, settings, mode, isWrite: true,
+                cancellationToken);
+            isWrite = true;
+        }
 
         Report(outcome, kind, mode);
 
@@ -128,41 +177,56 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     }
 
     /// <summary>
-    /// What to do when no component name was given (R9).
+    /// Answers a no-name unattended run with the inventory it was asking about (R9).
     /// </summary>
     /// <remarks>
-    /// The non-interactive half lives here. An unattended caller gets the names it could have passed and a
-    /// typed failure naming the argument — never a prompt it cannot answer, which would hang the run.
+    /// Sorted case-insensitively so a caller copying a name out of a long list can find it, and written
+    /// as plain text rather than markup — a component name is whatever someone typed in the maker portal,
+    /// and square brackets are ordinary in one.
+    ///
+    /// A value kind lists names alone. Showing every environment variable value would turn one read's
+    /// accepted exposure into a whole solution's worth, in the runs most likely to be piped or logged.
+    /// The value is still there for the asking, one named read at a time.
     /// </remarks>
-    protected virtual async Task<string> ResolveMissingNameAsync(
+    protected void ListCandidates(ConfigurableComponentKind kind, IReadOnlyList<InventoryComponent> candidates)
+    {
+        foreach (var candidate in Ordered(candidates))
+            Console.WriteLine(SettingsComponentOutcomes.Describe(candidate, kind));
+    }
+
+    /// <summary>Asks which component to address, when the run is at a terminal (R9).</summary>
+    /// <remarks>
+    /// Single-select with search rather than a multi-select: exactly one component changes per invocation,
+    /// and typing part of a name is what makes a long solution navigable. The inventory spinner has already
+    /// closed by the time this runs — Spectre forbids a prompt inside a status display (KTD10).
+    /// </remarks>
+    protected virtual async Task<string> PickAsync(
         ConfigurableComponentKind kind, IReadOnlyList<InventoryComponent> candidates, CancellationToken ct)
     {
-        var ordered = candidates.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToArray();
-
-        // The capability check comes before the prompt is built, not around showing it — the order every
-        // other prompt in this codebase uses. An unattended caller must never reach a prompt it cannot
-        // answer, because that hangs the run rather than failing it.
-        if (!IsInteractive())
-        {
-            foreach (var candidate in ordered)
-                Console.WriteLine(candidate.Name);
-
-            throw new FlowlineException(ExitCode.ValidationFailed,
-                $"Name which {SettingsComponentNames.Singular(kind)} to address — the ones in this solution are listed above.");
-        }
-
-        // Single-select with search rather than a multi-select: exactly one component changes per
-        // invocation, and typing part of a name is what makes a long solution navigable. The inventory
-        // spinner has already closed by the time this runs — Spectre forbids a prompt inside a status
-        // display (KTD10).
         var prompt = new SelectionPrompt<InventoryComponent>()
             .Title(FlowlineConsoleExtensions.Question($"Pick a {SettingsComponentNames.Singular(kind)}:"))
             .UseConverter(c => SettingsComponentOutcomes.DescribeCandidate(c, kind))
             .EnableSearch()
-            .AddChoices(ordered);
+            .AddChoices(Ordered(candidates));
 
         return (await Console.PromptAsync(prompt, ct)).Name;
     }
+
+    static InventoryComponent[] Ordered(IReadOnlyList<InventoryComponent> candidates) =>
+        candidates.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+
+    /// <summary>
+    /// Asks what the state or value should now be, having just shown what it is (R9).
+    /// </summary>
+    /// <remarks>
+    /// Records the answer on <paramref name="settings"/> rather than returning it, so the flags stay the
+    /// one place that says what an invocation asked for. A second route into the writers would be free to
+    /// disagree with them.
+    /// </remarks>
+    /// <returns><c>true</c> when the answer asked for a write.</returns>
+    protected abstract Task<bool> PromptForTargetAsync(
+        ConfigurableComponentKind kind, SingleComponentOutcome current, TSettings settings,
+        EnvironmentInfo environment, CancellationToken ct);
 
 
     /// <summary>
@@ -186,10 +250,26 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         var location = await ResolveSettingsFileAsync(null, role, standalone: false, null, forWriting: false, ct);
         if (!location.Exists) return;
 
+        // The write has already happened by the time this runs, so a file this cannot read is a reason to
+        // say less, not to fail. Reporting the component's write as a failed run would send someone to
+        // undo a change that actually succeeded.
+        SettingsDocument document;
+        try
+        {
+            document = SettingsFileReader.Read(location.Path);
+        }
+        catch (FlowlineException ex)
+        {
+            Console.Warning(
+                $"Couldn't check {Markup.Escape(Path.GetFileName(location.Path))} — {Markup.Escape(ex.Message)} " +
+                "The change was made; whether the next 'settings push' puts it back is unknown.");
+            return;
+        }
+
         var (writtenEnabled, writtenValue) = WrittenBy(settings);
 
         if (!ConfigureApplyService.WouldOverride(
-                SettingsFileReader.Read(location.Path), kind, outcome.Component.Name, writtenEnabled, writtenValue))
+                document, kind, outcome.Component.Name, writtenEnabled, writtenValue))
             return;
 
         Console.Warning(
@@ -260,14 +340,14 @@ internal static class SettingsComponentOutcomes
     /// sync" crashed the picker with "Could not find color or style 'Account'" — square brackets are
     /// ordinary in a flow name and a style tag to the renderer.
     /// </remarks>
-    public static string DescribeCandidate(InventoryComponent component, ConfigurableComponentKind kind)
-    {
-        var name = Markup.Escape(component.Name);
+    public static string DescribeCandidate(InventoryComponent component, ConfigurableComponentKind kind) =>
+        Markup.Escape(Describe(component, kind));
 
-        return kind is ConfigurableComponentKind.EnvironmentVariable or ConfigurableComponentKind.ConnectionReference
-            ? name
-            : $"{name} — {(component.Suspended ? "suspended" : component.Enabled == true ? "on" : "off")}";
-    }
+    /// <summary>The same line unescaped, for a plain write that does not parse markup.</summary>
+    public static string Describe(InventoryComponent component, ConfigurableComponentKind kind) =>
+        kind is ConfigurableComponentKind.EnvironmentVariable or ConfigurableComponentKind.ConnectionReference
+            ? component.Name
+            : $"{component.Name} — {(component.Suspended ? "suspended" : component.Enabled == true ? "on" : "off")}";
 
     /// <summary>
     /// The typed code a single-component outcome earns.
@@ -364,6 +444,30 @@ public class SettingsStateCommand(
 
     protected override bool IsWrite(Settings settings) => settings.On || settings.Off;
 
+    const string LeaveIt = "leave it as it is";
+
+    protected override async Task<bool> PromptForTargetAsync(
+        ConfigurableComponentKind kind, SingleComponentOutcome current, Settings settings,
+        EnvironmentInfo environment, CancellationToken ct)
+    {
+        // The opposite of what it is goes first, so the common answer is one Enter away: someone who read
+        // the state and stayed for the prompt is nearly always there to flip it. Suspended counts as on —
+        // the useful next move on a flow that stopped itself is to start it, and Dataverse offers no way
+        // to ask for suspended.
+        var flip = current.PriorEnabled == true || current.WasSuspended ? "off" : "on";
+
+        var answer = await Console.PromptAsync(
+            new SelectionPrompt<string>()
+                .Title(FlowlineConsoleExtensions.Question($"Set {Markup.Escape(current.Component.Name)} to:"))
+                .AddChoices(flip, flip == "on" ? "off" : "on", LeaveIt), ct);
+
+        if (answer == LeaveIt) return false;
+
+        settings.On = answer == "on";
+        settings.Off = !settings.On;
+        return true;
+    }
+
     protected override (bool? Enabled, string? Value) WrittenBy(Settings settings) =>
         (IsWrite(settings) ? settings.On : null, null);
 
@@ -405,6 +509,131 @@ public class SettingsValueCommand(
     };
 
     protected override bool IsWrite(Settings settings) => settings.Value is not null;
+
+    protected override Task<bool> PromptForTargetAsync(
+        ConfigurableComponentKind kind, SingleComponentOutcome current, Settings settings,
+        EnvironmentInfo environment, CancellationToken ct) =>
+        kind == ConfigurableComponentKind.ConnectionReference
+            ? PromptForConnectionAsync(current, settings, environment, ct)
+            : PromptForTypedValueAsync("value", settings, ct);
+
+    /// <summary>Asks for a value outright, for the kind whose values are not enumerable.</summary>
+    /// <remarks>
+    /// Blank means leave it, not clear it. Clearing a value is not supported, and an empty answer is what
+    /// someone types to back out of a prompt they did not mean to reach.
+    /// </remarks>
+    async Task<bool> PromptForTypedValueAsync(string noun, Settings settings, CancellationToken ct)
+    {
+        var answer = await Console.PromptAsync(
+            new TextPrompt<string>(FlowlineConsoleExtensions.Question($"New {noun} (blank to leave it):"))
+                .AllowEmpty(), ct);
+
+        if (string.IsNullOrEmpty(answer)) return false;
+
+        settings.Value = answer;
+        return true;
+    }
+
+    /// <summary>
+    /// Offers the environment's connections for this reference's connector, rather than a typed id.
+    /// </summary>
+    /// <remarks>
+    /// A connection id is a generated string nobody can produce from memory, and the only place it was
+    /// previously readable was the maker portal — which is the round trip this command exists to remove.
+    ///
+    /// <b>Only the caller's own connections are listed.</b> Connections belong to the person who made
+    /// them, so a reference bound to a colleague's connection will not appear here. That is why typing an
+    /// id by hand stays on the menu rather than being replaced.
+    ///
+    /// <b>A failed listing narrows the menu, it does not end the run.</b> This runs after a read and
+    /// before a write, on a command whose whole job is to set this one value; `pac` being unreachable is a
+    /// reason to ask for the id instead of offering a list.
+    /// </remarks>
+    async Task<bool> PromptForConnectionAsync(
+        SingleComponentOutcome current, Settings settings, EnvironmentInfo environment, CancellationToken ct)
+    {
+        var connectorId = current.Component.ConnectorId;
+
+        while (true)
+        {
+            var connections = await Console.Status().FlowlineSpinner().StartAsync(
+                "Reading this environment's connections...",
+                _ => PacConnections.ListAsync(environment.EnvironmentUrl!, ct));
+
+            var matching = PacConnections.ForConnector(connections, connectorId);
+
+            if (matching.Count == 0)
+                Console.Info("No connections here match this reference's connector, or 'pac' couldn't list them.");
+
+            var choices = matching
+                .Select(c => new ConnectionChoice($"{c.Name} ({c.Status})", ConnectionChoiceKind.Bind, c.Id))
+                .Append(new ConnectionChoice("Enter a connection id by hand", ConnectionChoiceKind.Type))
+                .Append(new ConnectionChoice("Create a new connection in the maker portal", ConnectionChoiceKind.Create))
+                .Append(new ConnectionChoice("Leave it as it is", ConnectionChoiceKind.Leave))
+                .ToArray();
+
+            var answer = await Console.PromptAsync(
+                new SelectionPrompt<ConnectionChoice>()
+                    .Title(FlowlineConsoleExtensions.Question(
+                        $"Bind {Markup.Escape(current.Component.Name)} to:"))
+                    .UseConverter(c => Markup.Escape(c.Label))
+                    .AddChoices(choices), ct);
+
+            switch (answer.Kind)
+            {
+                case ConnectionChoiceKind.Leave:
+                    return false;
+
+                case ConnectionChoiceKind.Type:
+                    return await PromptForTypedValueAsync("connection id", settings, ct);
+
+                case ConnectionChoiceKind.Create:
+                    OpenMakerPortalConnections(environment.EnvironmentId);
+
+                    // Declining is the way out of the loop: someone who did not create a connection after
+                    // all would otherwise have only Ctrl+C.
+                    if (!await Console.PromptAsync(
+                            new ConfirmationPrompt("Created it? Answer yes to list the connections again"), ct))
+                        return false;
+
+                    continue;
+
+                default:
+                    settings.Value = answer.ConnectionId;
+                    return true;
+            }
+        }
+    }
+
+    /// <summary>Opens the environment's new-connection page in the default browser.</summary>
+    /// <remarks>
+    /// The portal is the only place most connections can be created: a connector that needs an interactive
+    /// consent has no headless path, and `pac connection create` makes a service principal Dataverse
+    /// connection and nothing else.
+    ///
+    /// A browser that will not open is reported rather than thrown: the URL is printed either way, and
+    /// the operator can open it themselves.
+    /// </remarks>
+    void OpenMakerPortalConnections(Guid environmentId)
+    {
+        var url = $"https://make.powerapps.com/environments/{environmentId}/connections/available";
+
+        Console.Info($"Opening {url}");
+
+        try
+        {
+            using var _ = System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Console.Warning($"Couldn't open a browser ({Markup.Escape(ex.Message)}). Open that address yourself.");
+        }
+    }
+
+    enum ConnectionChoiceKind { Bind, Type, Create, Leave }
+
+    sealed record ConnectionChoice(string Label, ConnectionChoiceKind Kind, string? ConnectionId = null);
 
     protected override (bool? Enabled, string? Value) WrittenBy(Settings settings) => (null, settings.Value);
 

@@ -49,6 +49,12 @@ public enum ConfigurableComponentKind
 /// is the only way an apply can tell a flow that stopped itself from one that was never started (KTD8).
 /// Always <c>false</c> for a plugin step, whose table has no third state.
 /// </param>
+/// <param name="ConnectorId">
+/// <c>connectionreference.connectorid</c>: which connector the reference is for, as
+/// <c>/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps</c>. Only a connection of the
+/// same connector can be bound, so this is what narrows a list of the environment's connections to the
+/// ones that would work. <c>null</c> for every other class.
+/// </param>
 public sealed record InventoryComponent(
     ConfigurableComponentKind Kind,
     string Name,
@@ -57,7 +63,8 @@ public sealed record InventoryComponent(
     string? CurrentValue = null,
     int? Type = null,
     int? SecretStore = null,
-    bool Suspended = false);
+    bool Suspended = false,
+    string? ConnectorId = null);
 
 /// <summary>Everything the target holds for one solution, in the classes a settings file can declare.</summary>
 public sealed record SolutionInventory(IReadOnlyList<InventoryComponent> Components)
@@ -348,7 +355,8 @@ public static class SolutionComponentInventory
 
         var query = new QueryExpression("connectionreference")
         {
-            ColumnSet = new ColumnSet("connectionreferenceid", "connectionreferencelogicalname", "connectionid"),
+            ColumnSet = new ColumnSet(
+                "connectionreferenceid", "connectionreferencelogicalname", "connectionid", "connectorid"),
             NoLock = true,
         };
         query.Criteria.AddCondition("connectionreferenceid", ConditionOperator.In, allComponentIds.Cast<object>().ToArray());
@@ -361,7 +369,8 @@ public static class SolutionComponentInventory
                 e.GetAttributeValue<string>("connectionreferencelogicalname") ?? string.Empty,
                 e.Id,
                 Enabled: null,
-                CurrentValue: e.GetAttributeValue<string>("connectionid")))
+                CurrentValue: e.GetAttributeValue<string>("connectionid"),
+                ConnectorId: e.GetAttributeValue<string>("connectorid")))
             .Where(c => c.Name.Length > 0)
             .ToList();
     }

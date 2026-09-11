@@ -24,8 +24,12 @@ public static class SettingsFileReader
         }
         catch (JsonException ex)
         {
+            // The position, not the parser's message: that message quotes the rest of the document back,
+            // so a file holding connection ids and variable values printed all of them to the terminal and
+            // into the run log on any syntax error.
             throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"The settings file isn't valid JSON — {ex.Message}", ex);
+                $"The settings file isn't valid JSON — line {ex.LineNumber + 1}, position {ex.BytePositionInLine + 1}. " +
+                "Fix it, or re-run 'flowline settings pull <env>' to rewrite it.", ex);
         }
 
         if (root is not JsonObject obj)

@@ -83,7 +83,8 @@ routine post-deploy step.
    To change a single component without the file, use `flowline settings flow|workflow|plugin <env> <name>
    --on|--off` or `flowline settings envvar|connref <env> <name> --value <v>`. Leave the flag off and it
    reads and prints the current state instead. Leave the name off in a non-interactive run and it lists
-   the names and exits 15. The file still wins on the next push, and the run says so when it would.
+   the names and exits 0 — for `flow`, `workflow` and `plugin` with each one's state, for `envvar` and
+   `connref` names only. The file still wins on the next push, and the run says so when it would.
 
 `flowline drift <env>` is the read-only preview of what a deploy would flag — safe against prod at any
 time. `flowline diff` is the same question on the git axis: which components changed between two points
