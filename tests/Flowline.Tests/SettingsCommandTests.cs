@@ -269,10 +269,14 @@ public class SettingsCommandTests : IDisposable
     // KTD18: the seven operations are two kinds of thing, and a flat list says so nowhere. Registration
     // order is what groups them, so the order here is the contract, not a presentation detail.
 
+    static string OperationName(string invocation) => invocation.Split(' ')[0];
+
     [Fact]
     public void Groups_ListTheWholeFileOperationsBeforeTheComponentKinds()
     {
-        var names = SettingsCommand.Groups.SelectMany(g => g.Operations.Select(o => o.Name)).ToArray();
+        var names = SettingsCommand.Groups
+            .SelectMany(g => g.Operations.Select(o => OperationName(o.Invocation)))
+            .ToArray();
 
         names.Should().Equal("push", "pull", "flow", "workflow", "plugin", "envvar", "connref");
     }
@@ -281,8 +285,23 @@ public class SettingsCommandTests : IDisposable
     public void Groups_SeparateWholeFileWorkFromSingleComponentWork()
     {
         SettingsCommand.Groups.Should().HaveCount(2);
-        SettingsCommand.Groups[0].Operations.Select(o => o.Name).Should().BeEquivalentTo("push", "pull");
+        SettingsCommand.Groups[0].Operations.Select(o => OperationName(o.Invocation))
+            .Should().BeEquivalentTo("push", "pull");
         SettingsCommand.Groups[1].Operations.Should().HaveCount(5);
+    }
+
+    // The list shows each operation's required argument and omits an optional one, which is what Spectre's
+    // own command list does — so capture appears bare while everything else carries <target>.
+    [Fact]
+    public void Groups_ShowTheRequiredArgumentTheWayTheRealHelpDoes()
+    {
+        var invocations = SettingsCommand.Groups
+            .SelectMany(g => g.Operations.Select(o => o.Invocation))
+            .ToArray();
+
+        invocations.Should().Contain("pull");
+        invocations.Where(i => OperationName(i) != "pull")
+            .Should().OnlyContain(i => i.EndsWith(" <target>"));
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Flowline.Core;
+using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Infrastructure;
@@ -43,39 +44,86 @@ public class SettingsCommand(
     protected override Task CheckSetupAsync(Settings settings, CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
-    /// <summary>The operations, in registration order, grouped as the help groups them (KTD18).</summary>
-    internal static readonly (string Heading, (string Name, string Description)[] Operations)[] Groups =
+    // The banner belongs to the root help screen, which is why `settings --help` has none. This screen is
+    // the same kind of thing, so it does not get one either.
+    protected override bool ShowWelcome => false;
+
+    /// <summary>
+    /// The operations, in registration order, grouped as the help groups them (KTD18).
+    /// </summary>
+    /// <remarks>
+    /// The invocation column carries each operation's required argument and nothing else, which is what
+    /// Spectre's own command list shows — an optional one is left off there, so capture appears bare.
+    /// </remarks>
+    internal static readonly (string Heading, (string Invocation, string Description)[] Operations)[] Groups =
     [
         ("Whole file",
         [
-            ("push", "apply a settings file to an environment"),
-            ("pull", "write a settings file from an environment"),
+            ("push <target>", "Apply a settings file to an environment"),
+            ("pull", "Write a settings file from an environment, or from every configured one"),
         ]),
         ("One component",
         [
-            ("flow", "turn a cloud flow on or off"),
-            ("workflow", "turn a classic workflow on or off"),
-            ("plugin", "turn a plugin step on or off"),
-            ("envvar", "set an environment variable value"),
-            ("connref", "bind a connection reference"),
+            ("flow <target>", "Turn a cloud flow on or off, or read its state"),
+            ("workflow <target>", "Turn a classic workflow on or off, or read its state"),
+            ("plugin <target>", "Turn a plugin step on or off, or read its state"),
+            ("envvar <target>", "Set an environment variable's value, or read it"),
+            ("connref <target>", "Bind a connection reference to a connection, or read its binding"),
         ]),
     ];
 
     protected override Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        Console.WriteLine("Settings for one environment.");
+        WriteSectionHeader("USAGE:");
+        Console.WriteLine("    flowline settings <COMMAND>");
+        Console.WriteLine();
 
-        foreach (var (heading, operations) in Groups)
-        {
-            Console.WriteLine();
-            Console.MarkupLine($"  [bold]{heading}[/]");
-            foreach (var (name, description) in operations)
-                Console.MarkupLine($"    [bold]{name,-9}[/] {Markup.Escape(description)}");
-        }
+        WriteSectionHeader("COMMANDS:");
+        Console.Write(OperationList());
+        Console.WriteLine();
 
+        Console.MarkupLine($"[dim][link={FlowlineHelpProvider.DocsUrl}]Docs: {FlowlineHelpProvider.DocsUrl}[/][/]");
         Console.WriteLine();
 
         throw new FlowlineException(ExitCode.ValidationFailed,
             "Name an operation — run 'flowline settings <operation> --help' for its arguments.");
+    }
+
+    /// <summary>A section header in the same colour and shape Spectre's own help sections use.</summary>
+    void WriteSectionHeader(string text)
+    {
+        Console.Write(new Text(text, new Style(FlowlineTheme.PrimaryColor)));
+        Console.WriteLine();
+    }
+
+    /// <summary>
+    /// The grouped operation list, laid out the way Spectre lays out a command list.
+    /// </summary>
+    /// <remarks>
+    /// A grid rather than a hand-counted format string, so the description column lands where the real
+    /// help puts it — four spaces past the longest invocation — instead of at a width that goes stale the
+    /// first time an operation is renamed.
+    ///
+    /// The group labels are what this screen has and Spectre's flat list does not (KTD18). They sit at the
+    /// same indent as the operations and are dimmed, so they read as labels without pushing the operations
+    /// into a second level of indentation and out of line with every other help screen.
+    /// </remarks>
+    static Grid OperationList()
+    {
+        var grid = new Grid();
+        grid.AddColumn(new GridColumn().PadLeft(4).PadRight(4).NoWrap());
+        grid.AddColumn(new GridColumn().PadLeft(0).PadRight(0));
+
+        for (var i = 0; i < Groups.Length; i++)
+        {
+            if (i > 0) grid.AddEmptyRow();
+
+            grid.AddRow(new Markup($"[dim]{Markup.Escape(Groups[i].Heading)}[/]"), new Text(string.Empty));
+
+            foreach (var (invocation, description) in Groups[i].Operations)
+                grid.AddRow(new Text(invocation), new Text(description));
+        }
+
+        return grid;
     }
 }
