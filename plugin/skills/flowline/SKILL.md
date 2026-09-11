@@ -77,8 +77,8 @@ routine post-deploy step.
    and touches only what that file names — `CloudFlows`, `Workflows` and `PluginSteps` are name-to-boolean
    maps, and business process flows and business rules are outside its reach entirely. Re-running it changes nothing, so it is safe on every pipeline run; `--dry-run` reports
    the change set and writes nothing. `flowline settings pull <env>` writes the file from the
-   environment instead — use it to create the first one, then commit it. Omit the environment and it
-   captures every configured one, exiting 18 if it couldn't reach one.
+   environment instead — use it to create the first one, then commit it. Name the environment: omitting it
+   exits 15 in a non-interactive run, and only at a terminal does it offer a pick of the configured ones.
 
    To change a single component without the file, use `flowline settings flow|workflow|plugin <env> <name>
    --on|--off` or `flowline settings envvar|connref <env> <name> --value <v>`. Leave the flag off and it

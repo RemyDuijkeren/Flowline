@@ -182,6 +182,82 @@ public class SettingsCommandSurfaceTests : IDisposable
         probe.Writes(settings).Should().BeFalse();
     }
 
+    // ── R16: what a pull with no environment does ────────────────────────────
+
+    sealed class PullProbe(
+        IAnsiConsole console, DataverseConnector connector, FlowlineRuntimeOptions options,
+        ProfileResolutionService profiles, SubprocessCapture capture, NuGetVersionClient nuget)
+        : SettingsPullCommand(console, connector, options, profiles, NullLoggerFactory.Instance, capture, nuget)
+    {
+        public TestConsole Out => (TestConsole)Console;
+
+        public Task<IReadOnlyList<EnvironmentRole>> ChooseAsync(params EnvironmentRole[] configured) =>
+            ChooseRolesAsync(configured, CancellationToken.None);
+    }
+
+    static PullProbe MakePullProbe(bool interactive)
+    {
+        var (console, connector, profiles) = Deps(interactive);
+        return new PullProbe(console, connector, new FlowlineRuntimeOptions(), profiles,
+            new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()));
+    }
+
+    // The bare word used to sweep every configured environment unattended. That is the widest and slowest
+    // thing this command does, so a script that meant one environment should hear about it rather than
+    // wait through four auth flows.
+    [Fact]
+    public async Task NoEnvironmentInANonInteractiveRun_FailsNamingTheArgument()
+    {
+        var probe = MakePullProbe(interactive: false);
+
+        var act = () => probe.ChooseAsync(EnvironmentRole.Dev, EnvironmentRole.Prod);
+
+        var thrown = (await act.Should().ThrowAsync<FlowlineException>()).Which;
+        thrown.ExitCode.Should().Be(ExitCode.ValidationFailed);
+        thrown.Message.Should().Contain("settings pull <target>").And.Contain("dev").And.Contain("prod");
+    }
+
+    // Everything starts selected, so one Enter still captures the lot. The change makes the sweep
+    // visible, not harder.
+    [Fact]
+    public async Task TheEnvironmentPicker_StartsWithEveryConfiguredRoleSelected()
+    {
+        var probe = MakePullProbe(interactive: true);
+        probe.Out.Input.PushKey(ConsoleKey.Enter);
+
+        var chosen = await probe.ChooseAsync(EnvironmentRole.Dev, EnvironmentRole.Uat, EnvironmentRole.Prod);
+
+        chosen.Should().BeEquivalentTo([EnvironmentRole.Dev, EnvironmentRole.Uat, EnvironmentRole.Prod]);
+    }
+
+    // Deselecting has to actually narrow the run, or the picker is decoration. Which role the toggle
+    // lands on is Spectre's business — the cursor starts on the last pre-selected item — so what is
+    // pinned here is that one keystroke drops one environment from the capture.
+    [Fact]
+    public async Task DeselectingARole_LeavesItOutOfTheCapture()
+    {
+        var probe = MakePullProbe(interactive: true);
+        var input = probe.Out.Input;
+        input.PushKey(ConsoleKey.Spacebar);
+        input.PushKey(ConsoleKey.Enter);
+
+        var chosen = await probe.ChooseAsync(EnvironmentRole.Dev, EnvironmentRole.Prod);
+
+        chosen.Should().ContainSingle().Which.Should().BeOneOf(EnvironmentRole.Dev, EnvironmentRole.Prod);
+    }
+
+    // Picking nothing is an answer. Without it the only way out of the list is Ctrl+C.
+    [Fact]
+    public async Task DeselectingEverything_CapturesNothing()
+    {
+        var probe = MakePullProbe(interactive: true);
+        var input = probe.Out.Input;
+        input.PushKey(ConsoleKey.Spacebar);
+        input.PushKey(ConsoleKey.Enter);
+
+        (await probe.ChooseAsync(EnvironmentRole.Dev)).Should().BeEmpty();
+    }
+
     // ── The standalone predicate the component operations use ────────────────
 
     // The bug this pins: keying stand-alone on --solution-name made the error naming that flag

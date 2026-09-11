@@ -31,7 +31,7 @@ public class SettingsPullCommand(
         // Optional, unlike every other operation's target (R16). With none, the run captures every role the
         // project configures.
         [CommandArgument(0, "[target]")]
-        [Description("Environment to capture: prod, uat, test, dev, or a URL. Omit to capture every configured environment")]
+        [Description("Environment to capture: prod, uat, test, dev, or a URL. Omit to pick from the configured ones")]
         public string? Target { get; set; }
 
         [CommandOption("--from <zip-or-folder>")]
@@ -58,12 +58,13 @@ public class SettingsPullCommand(
     }
 
     /// <summary>
-    /// Captures every role the project configures, reporting each on its own line (R16, KTD13).
+    /// Captures the roles chosen from the ones the project configures, reporting each on its own line
+    /// (R16, KTD13, KTD21).
     /// </summary>
     /// <remarks>
-    /// No role is exempt. The apply side already accepts DEV as a target, and a DEV branched from production
-    /// carries connection references bound to connections that do not exist there, so a DEV file has a real
-    /// consumer.
+    /// No role is exempt from being offered. The apply side already accepts DEV as a target, and a DEV
+    /// branched from production carries connection references bound to connections that do not exist
+    /// there, so a DEV file has a real consumer.
     ///
     /// Each environment is captured on its own so one bad environment does not lose the captures that
     /// succeeded, and an environment that cannot be reached is a failure rather than a skip: a configured
@@ -80,14 +81,24 @@ public class SettingsPullCommand(
         if (!string.IsNullOrWhiteSpace(settings.SettingsFile))
             throw new FlowlineException(ExitCode.ValidationFailed, SettingsSupport.BuildSweepDestinationError());
 
-        var roles = EnvironmentRoles.All
+        var configured = EnvironmentRoles.All
             .Where(role => !string.IsNullOrWhiteSpace(Config?.GetUrl(role)))
             .ToArray();
 
-        if (roles.Length == 0)
+        if (configured.Length == 0)
             throw new FlowlineException(ExitCode.ConfigInvalid,
                 "No environments are configured in .flowline, so there's nothing to capture. " +
                 "Run 'flowline provision' or name an environment.");
+
+        var roles = await ChooseRolesAsync(configured, ct);
+
+        // Choosing none is an answer, not a failure. Someone who opened the list and changed their mind
+        // has a way out that is not Ctrl+C.
+        if (roles.Count == 0)
+        {
+            Console.Info("Nothing picked, so nothing was captured.");
+            return (int)ExitCode.Success;
+        }
 
         var failed = await CaptureEachAsync(
             roles,
@@ -104,13 +115,62 @@ public class SettingsPullCommand(
 
         if (failed.Count == 0)
         {
-            Console.Done($"Captured {roles.Length} environment{(roles.Length == 1 ? "" : "s")}.");
+            Console.Done($"Captured {roles.Count} environment{(roles.Count == 1 ? "" : "s")}.");
             return (int)ExitCode.Success;
         }
 
         Console.Warning($"Couldn't reach {string.Join(", ", failed.Select(r => r.UpperLabel()))} — " +
                         "the rest were captured. Fix those and re-run.");
         return (int)ExitCode.PartialSuccess;
+    }
+
+    /// <summary>
+    /// Decides which of the configured roles to capture when the invocation named no environment
+    /// (R16, KTD21).
+    /// </summary>
+    /// <remarks>
+    /// An unattended run fails naming the argument, the same as <c>settings push</c>, because the bare
+    /// word is the widest and slowest thing this command does: capturing every configured environment
+    /// means an auth flow and a Dataverse connection per role. A CLI's no-argument form should not be its
+    /// broadest, and a script that meant one environment should hear about it before waiting for four.
+    ///
+    /// At a terminal it is a multi-select with everything pre-selected, so one Enter still sweeps the lot.
+    /// The point is not to make the sweep harder, only to make it visible and narrowable.
+    /// </remarks>
+    protected virtual async Task<IReadOnlyList<EnvironmentRole>> ChooseRolesAsync(
+        IReadOnlyList<EnvironmentRole> configured, CancellationToken ct)
+    {
+        // The capability check comes before the prompt is built, not around showing it: an unattended
+        // caller must never reach a prompt it cannot answer, which hangs the run rather than failing it.
+        if (!IsInteractive())
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                "No environment named. Pass one: 'flowline settings pull <target>'. " +
+                $"This project configures {string.Join(", ", configured.Select(r => r.Keyword()))}.");
+
+        var prompt = new MultiSelectionPrompt<EnvironmentRole>()
+            .Title(FlowlineConsoleExtensions.Question("Capture which environments?"))
+            .InstructionsText("[grey](space toggles, enter confirms)[/]")
+            // Picking nothing has to be possible, or the only way out of the list is Ctrl+C.
+            .NotRequired()
+            .UseConverter(DescribeRole);
+
+        foreach (var role in configured)
+            prompt.AddChoice(role).Select();
+
+        return await Console.PromptAsync(prompt, ct);
+    }
+
+    /// <summary>How a role reads in the list: its keyword, then the environment it resolves to.</summary>
+    /// <remarks>
+    /// The URL is what tells two similarly named environments apart, and it is the thing worth checking
+    /// before writing four files. Escaped because a selection prompt parses its converter output as markup.
+    /// </remarks>
+    string DescribeRole(EnvironmentRole role)
+    {
+        var url = Config?.GetUrl(role);
+
+        return Markup.Escape(
+            string.IsNullOrWhiteSpace(url) ? role.UpperLabel() : $"{role.UpperLabel()} — {url}");
     }
 
     /// <summary>
