@@ -254,11 +254,20 @@ internal static class SettingsComponentOutcomes
     /// all, and a connection reference's is a connection id nobody recognizes — and filling the label with
     /// values would print a Dataverse-stored secret into the picker, which is the exposure the read path
     /// already accepts and this one has no reason to add to.
+    ///
+    /// The name is escaped because Spectre parses a selection prompt's converter output as markup, and a
+    /// component name is whatever someone typed in the maker portal. A flow called "[Account] nightly
+    /// sync" crashed the picker with "Could not find color or style 'Account'" — square brackets are
+    /// ordinary in a flow name and a style tag to the renderer.
     /// </remarks>
-    public static string DescribeCandidate(InventoryComponent component, ConfigurableComponentKind kind) =>
-        kind is ConfigurableComponentKind.EnvironmentVariable or ConfigurableComponentKind.ConnectionReference
-            ? component.Name
-            : $"{component.Name} — {(component.Suspended ? "suspended" : component.Enabled == true ? "on" : "off")}";
+    public static string DescribeCandidate(InventoryComponent component, ConfigurableComponentKind kind)
+    {
+        var name = Markup.Escape(component.Name);
+
+        return kind is ConfigurableComponentKind.EnvironmentVariable or ConfigurableComponentKind.ConnectionReference
+            ? name
+            : $"{name} — {(component.Suspended ? "suspended" : component.Enabled == true ? "on" : "off")}";
+    }
 
     /// <summary>
     /// The typed code a single-component outcome earns.

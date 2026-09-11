@@ -2,6 +2,8 @@ using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Configure;
+using Spectre.Console;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -186,5 +188,35 @@ public class SettingsComponentCommandTests
 
         label.Should().Be("contoso_Mailbox");
         label.Should().NotContain("super-secret-id");
+    }
+
+    // A component name is whatever someone typed in the maker portal, and Spectre parses a selection
+    // prompt's converter output as markup. A flow called "[Account] nightly sync" crashed the picker with
+    // "Could not find color or style 'Account'" — square brackets are ordinary in a flow name and a style
+    // tag to the renderer.
+    [Fact]
+    public void APickerLabel_SurvivesAComponentNameThatLooksLikeMarkup()
+    {
+        var label = SettingsComponentOutcomes.DescribeCandidate(
+            Component(ConfigurableComponentKind.CloudFlow, "[Account] nightly sync", enabled: true),
+            ConfigurableComponentKind.CloudFlow);
+
+        // The property that matters is that the renderer accepts it, not how it is spelled.
+        var act = () => new Markup(label);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void APickerLabel_RendersTheBracketsBackAsTyped()
+    {
+        var label = SettingsComponentOutcomes.DescribeCandidate(
+            Component(ConfigurableComponentKind.EnvironmentVariable, "[Account] url"),
+            ConfigurableComponentKind.EnvironmentVariable);
+
+        var console = new TestConsole();
+        console.Write(new Markup(label));
+
+        console.Output.Should().Contain("[Account] url");
     }
 }
