@@ -60,15 +60,8 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// <summary>Whether this invocation writes, as opposed to reading the current state or value.</summary>
     protected abstract bool IsWrite(TSettings settings);
 
-    // Outside a project this operation is stand-alone whether or not --solution-name was given, unlike
-    // push and capture where the flag is what distinguishes the two modes.
-    //
-    // Keying it on the flag made the error naming that flag unreachable: without the flag the run was
-    // judged project mode, and the base class's project gate threw "No Flowline project found — run
-    // flowline clone" first. Someone outside a project was told to clone a project rather than to pass
-    // the one flag that would have worked.
     protected override bool IsStandalone(TSettings settings) =>
-        FindFlowlineProjectRoot(Directory.GetCurrentDirectory()) is null;
+        SettingsSupport.ResolveComponentStandalone(Directory.GetCurrentDirectory());
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {

@@ -47,6 +47,22 @@ public static class SettingsSupport
         (!string.IsNullOrWhiteSpace(solutionName) || !string.IsNullOrWhiteSpace(artifactPath))
         && FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(startDir) is null;
 
+    /// <summary>
+    /// Stand-alone for a component operation is simply the absence of a project (R15).
+    /// </summary>
+    /// <remarks>
+    /// Unlike push and capture, no flag distinguishes the two modes here: without a project the run is
+    /// stand-alone whether or not <c>--solution-name</c> was given, and the missing flag is then reported
+    /// by name.
+    ///
+    /// Keying it on the flag instead made that report unreachable. Without the flag the run was judged
+    /// project mode, and the base class's project gate said "No Flowline project found — run flowline
+    /// clone" first, telling someone outside a project to create one rather than to pass the one flag
+    /// that would have worked. Pure so the rule is testable without a checkout.
+    /// </remarks>
+    public static bool ResolveComponentStandalone(string startDir) =>
+        FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(startDir) is null;
+
     /// <summary>Rejects the one flag pair that cannot mean anything, naming both flags.</summary>
     /// <remarks>
     /// The <c>--pull</c> with <c>--settings-file</c> check the old single leaf carried is gone: the grammar
