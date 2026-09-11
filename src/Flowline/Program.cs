@@ -153,7 +153,11 @@ app.Configure(config =>
             // treatment as a FlowlineException rather than a raw internal stack trace.
             case CommandRuntimeException cre:
                 serilogLogger?.Error(ex, "Command failed");
-                AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(cre.Message)}");
+                // "Unknown command 'dev'" is true and teaches nothing when the token is a perfectly good
+                // environment in the wrong position. Only this one shape is recognised, and it cannot
+                // match an invocation the parser would have accepted.
+                AnsiConsole.MarkupLine(
+                    $"[red]Error:[/] {Markup.Escape(SettingsSupport.BuildArgumentOrderHint(args) ?? cre.Message)}");
                 WriteExceptionContext(cre, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
                 return (int)ExitCode.ValidationFailed;

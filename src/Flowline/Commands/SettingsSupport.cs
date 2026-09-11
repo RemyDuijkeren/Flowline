@@ -78,6 +78,79 @@ public static class SettingsSupport
     }
 
     /// <summary>The message a role keyword earns when there is no project to resolve it from.</summary>
+    /// <summary>
+    /// Every operation registered under the <c>settings</c> branch, in registration order (KTD23).
+    /// </summary>
+    /// <remarks>
+    /// A second copy of what <c>Program.cs</c> registers, and deliberately so: the hint below runs from
+    /// the exception handler, which is outside the command app and cannot ask it what it knows. An
+    /// operation added there and forgotten here only means the hint stays quiet for that one, which is
+    /// the failure direction that costs nothing.
+    /// </remarks>
+    static readonly string[] s_operations = ["push", "pull", "flow", "workflow", "plugin", "envvar", "connref"];
+
+    /// <summary>
+    /// Explains a <c>settings</c> invocation that named the environment where the operation belongs
+    /// (KTD23).
+    /// </summary>
+    /// <remarks>
+    /// "In dev, do flow" is how the task is described out loud, so <c>settings dev flow</c> is what
+    /// fingers reach for. Spectre answers that with "Unknown command 'dev'", which is true and teaches
+    /// nothing: it names the token it could not route without saying that the token is fine and only in
+    /// the wrong place.
+    ///
+    /// A message rather than accepting both orders. The operation is the command and the environment is
+    /// its argument, the same shape <c>deploy</c> and <c>drift</c> use; making the parser lenient would
+    /// buy one command's convenience with a grammar nothing else in the CLI shares.
+    /// </remarks>
+    /// <returns>The better message, or <c>null</c> when this is not that mistake.</returns>
+    public static string? BuildArgumentOrderHint(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2 || !string.Equals(args[0], "settings", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var first = args[1];
+
+        // A recognised operation in the right place is not this mistake, whatever else went wrong.
+        if (IsOperation(first)) return null;
+
+        // 'settings dev flow': the operation is present, just second. Rebuild the whole line so the
+        // suggestion is something to run rather than a shape to apply by hand.
+        if (args.Count > 2 && IsOperation(args[2]))
+        {
+            var rest = new[] { args[2], first }.Concat(args.Skip(3)).Select(Quote);
+
+            return $"'{args[2]}' is the operation and it comes first, before the environment. " +
+                   $"Try: flowline settings {string.Join(' ', rest)}";
+        }
+
+        // 'settings dev': an environment where an operation belongs, with no operation anywhere.
+        if (LooksLikeTarget(first))
+            return $"'{first}' is an environment, not an operation. The operation comes first: " +
+                   $"flowline settings <operation> {Quote(first)}. " +
+                   $"Operations are {string.Join(", ", s_operations)}.";
+
+        return null;
+    }
+
+    static bool IsOperation(string token) =>
+        s_operations.Contains(token, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Whether a token is the kind of thing a <c>&lt;target&gt;</c> accepts.</summary>
+    /// <remarks>
+    /// Deliberately narrow. A token that is neither a role nor a URL is more likely a mistyped operation
+    /// than a transposed environment, and Spectre's own "unknown command" serves that better than a
+    /// confident guess would.
+    /// </remarks>
+    static bool LooksLikeTarget(string token) =>
+        EnvironmentRoles.TryParse(token) is not null
+        || token.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        || token.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+    // A component name routinely has spaces in it, so a suggestion that can be pasted has to keep them
+    // together.
+    static string Quote(string token) => token.Contains(' ') ? $"\"{token}\"" : token;
+
     public static string BuildStandaloneRoleError(string target) =>
         $"'{target}' is a role name, and roles resolve from .flowline — there's no Flowline project here. " +
         "Pass the environment URL instead.";

@@ -397,4 +397,98 @@ public class SettingsCommandTests : IDisposable
     public void BuildUpdatedLine_EscapesAComponentNameThatLooksLikeMarkup() =>
         SettingsSupport.BuildUpdatedLine("Flow [red]x[/]", wasSuspended: false)
             .Should().Contain("[[red]]");
+
+    // ── KTD23: the transposed invocation ─────────────────────────────────────
+
+    // "In dev, do flow" is how the task is described out loud, so this is what fingers reach for.
+    // Spectre answers "Unknown command 'dev'", which names the token it could not route without saying
+    // the token is fine and only in the wrong place.
+    [Fact]
+    public void AnEnvironmentBeforeTheOperation_IsAnsweredWithTheLineToRun()
+    {
+        var hint = SettingsSupport.BuildArgumentOrderHint(["settings", "dev", "flow"]);
+
+        hint.Should().Contain("flowline settings flow dev");
+    }
+
+    // The suggestion has to be runnable, so the rest of the invocation comes with it and a component
+    // name keeps its quotes.
+    [Fact]
+    public void TheSuggestion_CarriesTheRestOfTheInvocation()
+    {
+        var hint = SettingsSupport.BuildArgumentOrderHint(
+            ["settings", "prod", "flow", "Nightly reconciliation", "--off"]);
+
+        hint.Should().Contain("flowline settings flow prod \"Nightly reconciliation\" --off");
+    }
+
+    // A URL is as valid a target as a role keyword, and is the case a role-only check would miss.
+    [Fact]
+    public void AUrlBeforeTheOperation_IsRecognisedToo()
+    {
+        SettingsSupport.BuildArgumentOrderHint(["settings", "https://contoso.crm4.dynamics.com", "envvar"])
+            .Should().Contain("flowline settings envvar https://contoso.crm4.dynamics.com");
+    }
+
+    // No operation anywhere: say where it belongs and what the operations are.
+    [Fact]
+    public void AnEnvironmentWithNoOperation_NamesTheOperations()
+    {
+        var hint = SettingsSupport.BuildArgumentOrderHint(["settings", "dev"]);
+
+        hint.Should().Contain("is an environment, not an operation");
+        hint.Should().Contain("push").And.Contain("connref");
+    }
+
+    // A mistyped operation is not this mistake. Spectre's own "unknown command" serves that better than
+    // a confident guess about what was meant.
+    [Theory]
+    [InlineData("flwo")]
+    [InlineData("something-else")]
+    public void AMistypedOperation_IsLeftToTheParser(string token)
+    {
+        SettingsSupport.BuildArgumentOrderHint(["settings", token]).Should().BeNull();
+    }
+
+    // A well-formed invocation must never be second-guessed, whatever else the parser objected to.
+    [Fact]
+    public void AnOperationInTheRightPlace_GetsNoHint()
+    {
+        SettingsSupport.BuildArgumentOrderHint(["settings", "flow", "dev"]).Should().BeNull();
+        SettingsSupport.BuildArgumentOrderHint(["settings", "push", "prod"]).Should().BeNull();
+    }
+
+    [Fact]
+    public void AnotherCommandEntirely_GetsNoHint()
+    {
+        SettingsSupport.BuildArgumentOrderHint(["deploy", "prod"]).Should().BeNull();
+        SettingsSupport.BuildArgumentOrderHint([]).Should().BeNull();
+    }
+
+    // The five component operations are spelled the same here as the commands that route them, so the
+    // hint cannot suggest a name the parser would reject.
+    [Theory]
+    [InlineData("flow")]
+    [InlineData("workflow")]
+    [InlineData("plugin")]
+    public void EveryStateOperationTheHintKnows_IsOneTheParserRoutes(string operation)
+    {
+        SettingsSupport.BuildArgumentOrderHint(["settings", "dev", operation])
+            .Should().Contain($"flowline settings {operation} dev");
+
+        var routes = () => SettingsStateCommand.KindFor(operation);
+        routes.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("envvar")]
+    [InlineData("connref")]
+    public void EveryValueOperationTheHintKnows_IsOneTheParserRoutes(string operation)
+    {
+        SettingsSupport.BuildArgumentOrderHint(["settings", "dev", operation])
+            .Should().Contain($"flowline settings {operation} dev");
+
+        var routes = () => SettingsValueCommand.KindFor(operation);
+        routes.Should().NotThrow();
+    }
 }
