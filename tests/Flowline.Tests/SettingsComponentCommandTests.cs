@@ -149,20 +149,21 @@ public class SettingsComponentCommandTests
 
     // ── Picker labels ────────────────────────────────────────────────────────
 
-    // R9: the picker exists so nobody has to know the exact name, so the label leads with the name the
-    // search filters on and that the caller would otherwise have typed.
+    // R9, R9c: the picker exists so nobody has to know the exact name, so the label carries the name the
+    // search filters on and that the caller would otherwise have typed. The state leads it, because a
+    // plugin step's name runs past a hundred characters and a trailing state wrapped out of sight.
 
     static InventoryComponent Component(ConfigurableComponentKind kind, string name, bool? enabled = null,
         bool suspended = false, string? value = null) =>
         new(kind, name, Guid.NewGuid(), enabled, value, Suspended: suspended);
 
     [Fact]
-    public void APickerLabel_LeadsWithTheAddressableName()
+    public void APickerLabel_EndsWithTheAddressableName()
     {
         SettingsComponentOutcomes
             .DescribeCandidate(Component(ConfigurableComponentKind.CloudFlow, "ApprovalFlow", enabled: true),
                 ConfigurableComponentKind.CloudFlow)
-            .Should().StartWith("ApprovalFlow");
+            .Should().EndWith("ApprovalFlow");
     }
 
     [Theory]
@@ -174,7 +175,22 @@ public class SettingsComponentCommandTests
         SettingsComponentOutcomes
             .DescribeCandidate(Component(ConfigurableComponentKind.Workflow, "contoso_AutoNumber", enabled, suspended),
                 ConfigurableComponentKind.Workflow)
-            .Should().EndWith(expected);
+            .Should().Contain(expected);
+    }
+
+    // A shape as well as a word: the glyph is the column the eye runs down, the word is what the
+    // picker's search matches. Suspended gets a half-filled circle rather than a second hollow one,
+    // because an operator who reads a stopped-itself flow as off turns it on and it stops again.
+    [Theory]
+    [InlineData(true, false, "\u25cf")]
+    [InlineData(false, false, "\u25cb")]
+    [InlineData(false, true, "\u25d0")]
+    public void AStateKindLabel_LeadsWithItsOwnShape(bool enabled, bool suspended, string glyph)
+    {
+        SettingsComponentOutcomes
+            .Describe(Component(ConfigurableComponentKind.Workflow, "contoso_AutoNumber", enabled, suspended),
+                ConfigurableComponentKind.Workflow)
+            .Should().StartWith(glyph);
     }
 
     // A value kind shows its name alone. Putting the value in the label would print a Dataverse-stored

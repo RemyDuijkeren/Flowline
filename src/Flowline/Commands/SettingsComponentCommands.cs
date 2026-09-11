@@ -190,7 +190,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// </remarks>
     protected void ListCandidates(ConfigurableComponentKind kind, IReadOnlyList<InventoryComponent> candidates)
     {
-        foreach (var candidate in Ordered(candidates))
+        foreach (var candidate in SettingsComponentOutcomes.Ordered(candidates, kind))
             Console.WriteLine(SettingsComponentOutcomes.Describe(candidate, kind));
     }
 
@@ -207,13 +207,10 @@ public abstract class SettingsComponentCommandBase<TSettings>(
             .Title(FlowlineConsoleExtensions.Question($"Pick a {SettingsComponentNames.Singular(kind)}:"))
             .UseConverter(c => SettingsComponentOutcomes.DescribeCandidate(c, kind))
             .EnableSearch()
-            .AddChoices(Ordered(candidates));
+            .AddChoices(SettingsComponentOutcomes.Ordered(candidates, kind));
 
         return (await Console.PromptAsync(prompt, ct)).Name;
     }
-
-    static InventoryComponent[] Ordered(IReadOnlyList<InventoryComponent> candidates) =>
-        candidates.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToArray();
 
     /// <summary>
     /// Asks what the state or value should now be, having just shown what it is (R9).
@@ -325,29 +322,95 @@ internal static class SettingsComponentOutcomes
             ? outcome.PriorValue is { Length: > 0 } value ? value : "unset"
             : outcome.WasSuspended ? "suspended" : outcome.PriorEnabled == true ? "on" : "off";
 
-    /// <summary>How a component reads in the picker: its addressable name, then what it currently is.</summary>
+    /// <summary>
+    /// The order a list of candidates is offered in: the ones worth acting on first (R9c).
+    /// </summary>
     /// <remarks>
-    /// The name comes first because it is what the caller would otherwise have typed, and what the search
-    /// filters on.
+    /// Suspended, then off, then on. A component that stopped itself is the one nobody meant, a component
+    /// that is off is usually why someone opened the list, and the ones already on are the ones they
+    /// scroll past. Name order within each group, so a long solution stays navigable.
+    ///
+    /// Value kinds have no state, so they keep plain name order.
+    /// </remarks>
+    public static InventoryComponent[] Ordered(
+        IReadOnlyList<InventoryComponent> candidates, ConfigurableComponentKind kind) =>
+        IsValueKind(kind)
+            ? candidates.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToArray()
+            : candidates
+                .OrderBy(c => c.Suspended ? 0 : c.Enabled == true ? 2 : 1)
+                .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+    /// <summary>How a component reads in a list: what it is, then its addressable name.</summary>
+    /// <remarks>
+    /// <b>State first, because it is the only position a terminal cannot take away.</b> A plugin step is
+    /// named for its class and message and runs past a hundred characters, so a trailing state wrapped
+    /// onto its own line and stopped lining up. At column zero it is read before the wrap happens.
+    ///
+    /// <b>A shape and a word, not one or the other.</b> The glyph is what the eye scans down; the word is
+    /// what the picker's search matches, so typing "off" narrows a long list to the ones that are. A
+    /// symbol alone would lose the filter and a word alone would lose the column.
+    ///
+    /// <b>Suspended gets its own shape.</b> Dataverse flattens it to not-enabled, and an operator who
+    /// reads a stopped-itself flow as off turns it on and is surprised when it stops again. A half-filled
+    /// circle says that better than a second hollow one.
+    ///
+    /// <b>On and off are padded to each other; suspended is not.</b> Padding every row out to the width
+    /// of "suspended" would cost twelve columns on rows that already overflow, to align a state that is
+    /// rare. A ragged suspended row is the cheaper trade.
     ///
     /// A value kind shows its name alone. An environment variable's value is not on the inventory row at
-    /// all, and a connection reference's is a connection id nobody recognizes — and filling the label with
-    /// values would print a Dataverse-stored secret into the picker, which is the exposure the read path
-    /// already accepts and this one has no reason to add to.
+    /// all, a connection reference's is an id nobody recognises, and filling the label with values would
+    /// print a Dataverse-stored secret into the list.
+    /// </remarks>
+    public static string Describe(InventoryComponent component, ConfigurableComponentKind kind)
+    {
+        if (IsValueKind(kind)) return component.Name;
+
+        var (glyph, word, _) = StateOf(component);
+
+        return $"{glyph} {word}  {component.Name}";
+    }
+
+    /// <summary>
+    /// The same line for the picker, coloured and safe to render as markup.
+    /// </summary>
+    /// <remarks>
+    /// Colour reinforces the shape rather than carrying it, so the state still reads for anyone who does
+    /// not separate red from green. Observed against a real terminal: the selection highlight recolours
+    /// the name but leaves the state's colour alone, so the highlighted row keeps its signal.
     ///
     /// The name is escaped because Spectre parses a selection prompt's converter output as markup, and a
     /// component name is whatever someone typed in the maker portal. A flow called "[Account] nightly
-    /// sync" crashed the picker with "Could not find color or style 'Account'" — square brackets are
+    /// sync" crashed the picker with "Could not find color or style 'Account'": square brackets are
     /// ordinary in a flow name and a style tag to the renderer.
     /// </remarks>
-    public static string DescribeCandidate(InventoryComponent component, ConfigurableComponentKind kind) =>
-        Markup.Escape(Describe(component, kind));
+    public static string DescribeCandidate(InventoryComponent component, ConfigurableComponentKind kind)
+    {
+        var name = Markup.Escape(component.Name);
 
-    /// <summary>The same line unescaped, for a plain write that does not parse markup.</summary>
-    public static string Describe(InventoryComponent component, ConfigurableComponentKind kind) =>
-        kind is ConfigurableComponentKind.EnvironmentVariable or ConfigurableComponentKind.ConnectionReference
-            ? component.Name
-            : $"{component.Name} — {(component.Suspended ? "suspended" : component.Enabled == true ? "on" : "off")}";
+        if (IsValueKind(kind)) return name;
+
+        var (glyph, word, colour) = StateOf(component);
+
+        return $"[{colour}]{glyph} {word}[/]  {name}";
+    }
+
+    /// <summary>The glyph, word and colour one component's state reads as.</summary>
+    static (string Glyph, string Word, string Colour) StateOf(InventoryComponent component) =>
+        component.Suspended ? (SuspendedGlyph, "suspended", "yellow")
+        : component.Enabled == true ? (OnGlyph, Pad("on"), "green")
+        : (OffGlyph, Pad("off"), "red");
+
+    // Wide enough for "off", which pads "on" to match it and leaves "suspended" alone.
+    static string Pad(string word) => word.PadRight(3);
+
+    const string OnGlyph = "\u25cf";        // ● filled: running
+    const string SuspendedGlyph = "\u25d0"; // ◐ half: it stopped itself
+    const string OffGlyph = "\u25cb";       // ○ hollow: not running
+
+    static bool IsValueKind(ConfigurableComponentKind kind) =>
+        kind is ConfigurableComponentKind.EnvironmentVariable or ConfigurableComponentKind.ConnectionReference;
 
     /// <summary>
     /// The typed code a single-component outcome earns.

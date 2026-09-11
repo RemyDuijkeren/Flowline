@@ -70,6 +70,10 @@ public class SettingsCommandSurfaceTests : IDisposable
     static InventoryComponent Flow(string name, bool enabled = true) =>
         new(ConfigurableComponentKind.CloudFlow, name, Guid.NewGuid(), enabled);
 
+    // Suspended reads as not-enabled, which is exactly why it needs its own flag to stay visible.
+    static InventoryComponent Suspended(string name) =>
+        new(ConfigurableComponentKind.CloudFlow, name, Guid.NewGuid(), Enabled: false, Suspended: true);
+
     // An unattended caller asking "what is in here" gets the answer, not a failure. This used to print
     // the names and then throw ValidationFailed, which made a legitimate inventory question look like a
     // malformed invocation.
@@ -105,7 +109,83 @@ public class SettingsCommandSurfaceTests : IDisposable
 
         probe.List(ConfigurableComponentKind.CloudFlow, [Flow("Runs", enabled: true), Flow("Stopped", enabled: false)]);
 
-        probe.Out.Output.Should().Contain("Runs \u2014 on").And.Contain("Stopped \u2014 off");
+        probe.Out.Output.Should().Contain("\u25cf on   Runs").And.Contain("\u25cb off  Stopped");
+    }
+
+    // State first because it is the only column a terminal cannot push off the line. A plugin step is
+    // named for its class and message, runs past a hundred characters, and used to wrap its trailing
+    // state onto a line of its own.
+    [Fact]
+    public void AStateKindList_PutsTheStateBeforeTheName()
+    {
+        var probe = MakeStateProbe(interactive: false);
+
+        probe.List(ConfigurableComponentKind.CloudFlow, [Flow("Nightly reconciliation")]);
+
+        probe.Out.Lines.Should().Contain(l => l.StartsWith("\u25cf on", StringComparison.Ordinal));
+    }
+
+    // On and off pad to each other so their names line up. Suspended is left long on purpose: padding
+    // every row to its width costs twelve columns on rows that already overflow.
+    [Fact]
+    public void OnAndOff_AlignTheirNames_AndSuspendedDoesNot()
+    {
+        var probe = MakeStateProbe(interactive: false);
+
+        probe.List(ConfigurableComponentKind.CloudFlow,
+            [Flow("Aaa", enabled: true), Flow("Bbb", enabled: false), Suspended("Ccc")]);
+
+        var output = probe.Out.Output;
+        output.Should().Contain("\u25cf on   Aaa").And.Contain("\u25cb off  Bbb");
+        output.Should().Contain("\u25d0 suspended  Ccc");
+    }
+
+    // Suspended is not a second kind of off. Dataverse flattens it to not-enabled, and someone who reads
+    // a stopped-itself flow as off turns it on and is surprised when it stops again.
+    [Fact]
+    public void ASuspendedComponent_ReadsAsSuspendedNotOff()
+    {
+        var probe = MakeStateProbe(interactive: false);
+
+        probe.List(ConfigurableComponentKind.CloudFlow, [Suspended("Stopped itself")]);
+
+        probe.Out.Output.Should().Contain("suspended").And.NotContain("off");
+    }
+
+    // The interesting ones first: a component that stopped itself is the one nobody meant, an off one is
+    // usually why the list was opened, and the rest are scrolled past.
+    [Fact]
+    public void TheCandidateList_PutsSuspendedThenOffThenOn()
+    {
+        var probe = MakeStateProbe(interactive: false);
+
+        var ordered = SettingsComponentOutcomes.Ordered(
+            [Flow("on one", enabled: true), Flow("off one", enabled: false), Suspended("suspended one")],
+            ConfigurableComponentKind.CloudFlow);
+
+        ordered.Select(c => c.Name).Should().Equal("suspended one", "off one", "on one");
+    }
+
+    [Fact]
+    public void WithinAState_TheListStaysInNameOrder()
+    {
+        var ordered = SettingsComponentOutcomes.Ordered(
+            [Flow("zeta", enabled: false), Flow("Alpha", enabled: false)],
+            ConfigurableComponentKind.CloudFlow);
+
+        ordered.Select(c => c.Name).Should().Equal("Alpha", "zeta");
+    }
+
+    // Colour reinforces the shape rather than carrying it, so the state still reads when the selection
+    // highlight repaints the row.
+    [Fact]
+    public void ThePickerLabel_ColoursTheStateAndEscapesTheName()
+    {
+        var label = SettingsComponentOutcomes.DescribeCandidate(
+            Flow("[Account] OnCreate", enabled: false), ConfigurableComponentKind.CloudFlow);
+
+        label.Should().StartWith("[red]\u25cb off[/]");
+        label.Should().Contain("[[Account]] OnCreate");
     }
 
     // The exposure line: one named read may print a secret, a whole-solution listing may not.
