@@ -362,14 +362,15 @@ namespace Flowline
             //
             // Registration order is the grouping (KTD18). Spectre renders commands in the order they are
             // added, not alphabetically, so the two whole-file operations come before the five component
-            // kinds and the help reads as two groups with no mechanism. Leaf descriptions are one line each,
-            // against the paragraph style the top-level commands carry: a leaf inside a branch is scanned,
-            // not discovered.
+            // kinds and the help reads as two groups with no mechanism.
+            //
+            // No default command, so a bare `flowline settings` gets Spectre's own help exactly as a bare
+            // `flowline sln` does. A hand-written screen was tried and removed: it printed less than the
+            // real help — no description, no examples, no options — and carried a second copy of every
+            // operation name and description, free to drift from the registrations below.
             config.AddBranch("settings", settings =>
             {
                 settings.SetDescription("Read or change one environment's configuration: environment variable values, connection references, and flow, workflow and plugin step state.");
-
-                settings.SetDefaultCommand<SettingsCommand>();
 
                 settings.AddCommand<SettingsPushCommand>("push")
                         .WithDescription("Apply a settings file to an environment. Only components the file names are touched, and re-running the same file changes nothing.")

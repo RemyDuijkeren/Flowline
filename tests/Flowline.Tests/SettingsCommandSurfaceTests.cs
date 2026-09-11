@@ -7,7 +7,6 @@ using Flowline.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console;
-using Spectre.Console.Cli;
 using Spectre.Console.Testing;
 
 namespace Flowline.Commands;
@@ -30,14 +29,6 @@ public class SettingsCommandSurfaceTests : IDisposable
     {
         if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
     }
-
-    sealed class NoRemainingArguments : IRemainingArguments
-    {
-        public ILookup<string, string?> Parsed { get; } = Array.Empty<string>().ToLookup(x => x, x => (string?)x);
-        public IReadOnlyList<string> Raw { get; } = [];
-    }
-
-    static CommandContext Context(string name) => new([], new NoRemainingArguments(), name, null);
 
     static (TestConsole Console, DataverseConnector Connector, ProfileResolutionService Profiles) Deps(bool interactive)
     {
@@ -150,56 +141,5 @@ public class SettingsCommandSurfaceTests : IDisposable
     {
         SettingsSupport.ResolveComponentStandalone(_dir).Should().BeTrue();
         SettingsSupport.ResolveStandalone(null, null, _dir).Should().BeFalse();
-    }
-
-    // ── AE9: the bare branch form ────────────────────────────────────────────
-
-    sealed class BranchProbe(
-        IAnsiConsole console, FlowlineRuntimeOptions options, ProfileResolutionService profiles,
-        SubprocessCapture capture, NuGetVersionClient nuget)
-        : SettingsCommand(console, options, profiles, NullLoggerFactory.Instance, capture, nuget)
-    {
-        public TestConsole Out => (TestConsole)Console;
-
-        public Task<int> RunAsync() =>
-            ExecuteFlowlineAsync(Context("settings"), new Settings(), CancellationToken.None);
-    }
-
-    static BranchProbe MakeBranchProbe()
-    {
-        var (console, _, profiles) = Deps(interactive: false);
-        return new BranchProbe(console, new FlowlineRuntimeOptions(), profiles,
-            new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()));
-    }
-
-    [Fact]
-    public async Task TheBareBranchForm_FailsWithTheTypedCodeRatherThanSpectresGeneralError()
-    {
-        var probe = MakeBranchProbe();
-
-        var act = () => probe.RunAsync();
-
-        var thrown = (await act.Should().ThrowAsync<FlowlineException>()).Which;
-        thrown.ExitCode.Should().Be(ExitCode.ValidationFailed);
-        thrown.ExitCode.Should().NotBe(ExitCode.GeneralError);
-    }
-
-    [Fact]
-    public async Task TheBareBranchForm_PrintsEveryOperationUnderItsGroup()
-    {
-        var probe = MakeBranchProbe();
-        var console = probe.Out;
-
-        try { await probe.RunAsync(); } catch (FlowlineException) { }
-
-        var output = console.Output;
-        output.Should().Contain("Whole file").And.Contain("One component");
-
-        foreach (var operation in new[] { "push", "pull", "flow", "workflow", "plugin", "envvar", "connref" })
-            output.Should().Contain(operation);
-
-        // The grouping is the point: the two whole-file operations come before the five component kinds.
-        output.IndexOf("Whole file", StringComparison.Ordinal)
-            .Should().BeLessThan(output.IndexOf("One component", StringComparison.Ordinal));
     }
 }
