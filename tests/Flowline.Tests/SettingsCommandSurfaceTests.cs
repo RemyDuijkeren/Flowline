@@ -1,6 +1,7 @@
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Configure;
+using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
@@ -52,6 +53,8 @@ public class SettingsCommandSurfaceTests : IDisposable
 
         public void List(ConfigurableComponentKind kind, IReadOnlyList<InventoryComponent> candidates) =>
             ListCandidates([kind], candidates);
+
+        public static string HeaderLabel(string label) => PickRow.Header(label).Label;
 
         public Task<InventoryComponent> PickAny(IReadOnlyList<InventoryComponent> candidates) =>
             PickAsync(ConfigurableComponentKinds.WithState, candidates, CancellationToken.None);
@@ -114,7 +117,7 @@ public class SettingsCommandSurfaceTests : IDisposable
 
         probe.List(ConfigurableComponentKind.CloudFlow, [Flow("Runs", enabled: true), Flow("Stopped", enabled: false)]);
 
-        probe.Out.Output.Should().Contain("\u25cf on   flow  Runs").And.Contain("\u25cb off  flow  Stopped");
+        probe.Out.Output.Should().Contain("\u25cf on   Runs").And.Contain("\u25cb off  Stopped");
     }
 
     // State first because it is the only column a terminal cannot push off the line. A plugin step is
@@ -127,7 +130,7 @@ public class SettingsCommandSurfaceTests : IDisposable
 
         probe.List(ConfigurableComponentKind.CloudFlow, [Flow("Nightly reconciliation")]);
 
-        probe.Out.Lines.Should().Contain(l => l.StartsWith("\u25cf on   flow", StringComparison.Ordinal));
+        probe.Out.Lines.Should().Contain(l => l.StartsWith("\u25cf on   Nightly", StringComparison.Ordinal));
     }
 
     // On and off pad to each other so their names line up. Suspended is left long on purpose: padding
@@ -141,8 +144,8 @@ public class SettingsCommandSurfaceTests : IDisposable
             [Flow("Aaa", enabled: true), Flow("Bbb", enabled: false), Suspended("Ccc")]);
 
         var output = probe.Out.Output;
-        output.Should().Contain("\u25cf on   flow  Aaa").And.Contain("\u25cb off  flow  Bbb");
-        output.Should().Contain("\u25d0 suspended  flow  Ccc");
+        output.Should().Contain("\u25cf on   Aaa").And.Contain("\u25cb off  Bbb");
+        output.Should().Contain("\u25d0 suspended  Ccc");
     }
 
     // Suspended is not a second kind of off. Dataverse flattens it to not-enabled, and someone who reads
@@ -238,6 +241,140 @@ public class SettingsCommandSurfaceTests : IDisposable
         picked.Id.Should().Be(rule.Id);
     }
 
+    // ── R9d: grouping by shared leading text ─────────────────────────────────
+
+    static InventoryComponent Step(string name, bool on = true) =>
+        new(ConfigurableComponentKind.PluginStep, name, Guid.NewGuid(), on);
+
+    const string Sync = "DWE_Base.Plugins.SyncOrderLines.";
+    const string Calc = "DWE_Base.Plugins.CalculateTax.";
+
+    // The point of grouping: the text every sibling repeats moves onto a header, so the rows underneath
+    // carry only what differs and the line breaks where it means something.
+    [Fact]
+    public void ComponentsSharingALeadingPart_AreGroupedUnderIt()
+    {
+        var blocks = SettingsComponentOutcomes.Grouped([
+            Step(Sync + "OrderLineDeleteGuard: Delete of salesorderdetail"),
+            Step(Sync + "OrderLineFromWorkOrderProduct: Create of msdyn_workorderproduct"),
+            Step(Sync + "OrderLinesFromWorkOrder: Update of msdyn_workorder"),
+            Step(Calc + "CalculateSalesTax: Create of salesorderdetail"),
+            Step(Calc + "CalculateInvoiceTax: Create of invoicedetail"),
+            Step(Calc + "StampSalesTaxCode: Update of salesorderdetail"),
+        ]);
+
+        blocks.Select(b => b.Label).Should().BeEquivalentTo([Calc, Sync]);
+        blocks.Should().OnlyContain(b => b.Members.Count == 3);
+    }
+
+    // A heading costs a line and saves its own length per member, so a group has to pay for the row it
+    // spends. Two flows sharing "[SalesOrderDetail] " save nineteen characters twice on rows that were
+    // never going to wrap; that is not worth a heading.
+    [Fact]
+    public void AGroupThatWouldSaveLessThanItCosts_IsNotAGroup()
+    {
+        var blocks = SettingsComponentOutcomes.Grouped([
+            Flow("[SalesOrderDetail] OnCreate | Create WorkOrder"),
+            Flow("[SalesOrderDetail] OnDelete | Remove WorkOrder"),
+        ]);
+
+        blocks.Should().HaveCount(2).And.OnlyContain(b => b.Label == null);
+    }
+
+    // The same two components pay once the shared text is long enough to be worth removing twice.
+    [Fact]
+    public void TwoComponents_DoGroup_WhenTheSharedTextIsLongEnough()
+    {
+        const string longPrefix = "Contoso.Integration.Plugins.SalesOrderProcessing.Handlers.";
+
+        var blocks = SettingsComponentOutcomes.Grouped([
+            Step(longPrefix + "AlphaPlugin: Create of a"),
+            Step(longPrefix + "BetaPlugin: Create of b"),
+        ]);
+
+        blocks.Should().ContainSingle().Which.Label.Should().Be(longPrefix);
+    }
+
+    // Cut only at a delimiter, so a heading is never half a word.
+    [Fact]
+    public void AGroupLabel_EndsAtADelimiter()
+    {
+        var blocks = SettingsComponentOutcomes.Grouped([
+            Step("Contoso.Integration.Plugins.OrderLineAlpha: Create of a"),
+            Step("Contoso.Integration.Plugins.OrderLineBeta: Create of b"),
+            Step("Contoso.Integration.Plugins.OrderLineGamma: Create of c"),
+        ]);
+
+        blocks.Should().ContainSingle().Which.Label.Should().Be("Contoso.Integration.Plugins.");
+    }
+
+    // A solution whose names share nothing gets no headers, and the list is exactly as it was.
+    [Fact]
+    public void ComponentsSharingNothing_AreNotGrouped()
+    {
+        var blocks = SettingsComponentOutcomes.Grouped([Flow("Nightly"), Step("Contoso: Create of a")]);
+
+        blocks.Should().HaveCount(2).And.OnlyContain(b => b.Label == null && b.Members.Count == 1);
+    }
+
+    // A group is one contiguous block, so its rows cannot be split across the state tiers. Ranking whole
+    // blocks by their best member keeps the promise the ordering was for, and an ungrouped component wins
+    // a tie: suspended, then a group holding a suspended one, then off, then a group holding an off one.
+    [Fact]
+    public void Blocks_AreOrderedByTheirMostInterestingMember_UngroupedFirstOnATie()
+    {
+        var blocks = SettingsComponentOutcomes.Grouped([
+            Step(Calc + "AllOnAlpha: Create of a"),
+            Step(Calc + "AllOnBeta: Create of b"),
+            Step(Calc + "AllOnGamma: Create of c"),
+            Step(Sync + "HasAnOff: Delete of d", on: false),
+            Step(Sync + "AlsoOn: Create of e"),
+            Step(Sync + "AlsoOnToo: Create of f"),
+            // Shares its leading text with nothing, so it stays a block of one.
+            Step("Zebra.OffOne: Update of g", on: false),
+        ]);
+
+        // Both the lone component and the SyncOrderLines group are off, and the lone one wins the tie.
+        // CalculateTax is entirely on, so it sinks below both.
+        blocks.Select(b => b.Label ?? b.Members[0].Name)
+            .Should().Equal("Zebra.OffOne: Update of g", Sync, Calc);
+    }
+
+    [Fact]
+    public void WithinAGroup_MembersKeepTheStateOrdering()
+    {
+        var blocks = SettingsComponentOutcomes.Grouped([
+            Step(Calc + "OnOne: Create of a"),
+            Step(Calc + "OffOne: Create of b", on: false),
+            Step(Calc + "OnTwo: Create of c"),
+        ]);
+
+        blocks.Should().ContainSingle().Which.Members
+            .Select(m => m.Name[Calc.Length..])
+            .Should().Equal("OffOne: Create of b", "OnOne: Create of a", "OnTwo: Create of c");
+    }
+
+    // A heading nobody can read is a gap, not a label. Dim renders near-invisible on a dark terminal,
+    // which cost the grouping its whole point until it became the brand's secondary colour.
+    [Fact]
+    public void AGroupHeading_IsReadableRatherThanDim()
+    {
+        var header = StateProbe.HeaderLabel("DWE_Base.Plugins.CalculateTax.");
+
+        header.Should().NotContain("[dim]");
+        header.Should().Contain(FlowlineTheme.SecondaryColor.ToMarkup());
+        header.Should().Contain("DWE_Base.Plugins.CalculateTax.");
+    }
+
+    // The header carries the shared text, so the row under it must not repeat it.
+    [Fact]
+    public void AGroupedRow_DropsTheTextTheHeaderAlreadyShows()
+    {
+        SettingsComponentOutcomes
+            .DescribeCandidate(Step(Sync + "OrderLineDeleteGuard: Delete of salesorderdetail"), null, Sync)
+            .Should().Be("[green]● on [/]  OrderLineDeleteGuard: Delete of salesorderdetail");
+    }
+
     // ── Esc backs out of the run ─────────────────────────────────────────────
 
     // Ctrl+C was the only way out of a picker. Esc is what people reach for, and it has to stop the run
@@ -318,10 +455,25 @@ public class SettingsCommandSurfaceTests : IDisposable
     [Fact]
     public void TheTypeColumn_IsMeasuredFromTheClassesInPlay()
     {
-        SettingsComponentNames.TypeColumnWidth([ConfigurableComponentKind.CloudFlow]).Should().Be(4);
-
         SettingsComponentNames.TypeColumnWidth(ConfigurableComponentKinds.WithState)
             .Should().Be("workflow".Length);
+
+        SettingsComponentNames.TypeColumnWidth(ConfigurableComponentKinds.WithValue)
+            .Should().Be("connref".Length);
+    }
+
+    // Narrowed all the way to one class the column says the same word on every row, so it goes. That is
+    // ten characters back on --type plugin, which is the run whose names are longest.
+    [Fact]
+    public void OneClassInPlay_HasNoTypeColumnAtAll()
+    {
+        SettingsComponentNames.TypeColumnWidth([ConfigurableComponentKind.PluginStep]).Should().BeNull();
+
+        SettingsComponentOutcomes.Describe(Flow("Nightly", enabled: false), typeWidth: null)
+            .Should().Be("○ off  Nightly");
+
+        SettingsComponentOutcomes.DescribeCandidate(Flow("Nightly", enabled: false), typeWidth: null)
+            .Should().Be("[red]○ off[/]  Nightly");
     }
 
     // State first, then type, then the name. The order matters: the name is the part that wraps.

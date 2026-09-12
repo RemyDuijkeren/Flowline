@@ -235,6 +235,9 @@ public static class SingleComponentService
     {
         ConfigurableComponentKind.EnvironmentVariable => "the schema name",
         ConfigurableComponentKind.ConnectionReference => "the logical name",
+        // Dataverse generates a business process flow's unique name from its backing entity, so it is
+        // unreadable and untypeable; that class is addressed by display name instead.
+        ConfigurableComponentKind.BusinessProcessFlow => "the display name",
         _ => "the unique name",
     };
 

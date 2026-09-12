@@ -313,14 +313,35 @@ public static class SolutionComponentInventory
                 e.GetAttributeValue<OptionSetValue>("category")?.Value ?? -1))
             .Select(e => new InventoryComponent(
                 KindOf(e),
-                // uniquename is stable across renames and is what a settings file keys on; name is the
-                // renameable display label and is only a fallback for a row that has no unique name.
-                e.GetAttributeValue<string>("uniquename") ?? e.GetAttributeValue<string>("name") ?? string.Empty,
+                AddressableName(e),
                 e.Id,
                 IsWorkflowActive(e),
                 Suspended: IsWorkflowSuspended(e)))
             .Where(c => c.Name.Length > 0)
             .ToList();
+    }
+
+    /// <summary>The name a Process row is addressed by.</summary>
+    /// <remarks>
+    /// <c>uniquename</c> normally, because it is stable across renames and is what a settings file keys
+    /// on; <c>name</c> is the renameable display label and is otherwise only a fallback for a row that
+    /// has no unique name.
+    ///
+    /// A business process flow is the exception. Dataverse generates its unique name from the backing
+    /// entity it creates, so it arrives as <c>msdyn_bpf_d3d97bac8c294105840e99e37a9d1c39</c>: unreadable
+    /// in a list and untypeable at a prompt. Nothing is lost by preferring the display name there,
+    /// because no settings file has a section for this class (KTD25a), so its unique name is a contract
+    /// with nobody. Two flows sharing a display name resolve the way any other ambiguous name does.
+    /// </remarks>
+    static string AddressableName(Entity workflow)
+    {
+        var unique = workflow.GetAttributeValue<string>("uniquename");
+        var display = workflow.GetAttributeValue<string>("name");
+
+        if (KindOf(workflow) == ConfigurableComponentKind.BusinessProcessFlow)
+            return display ?? unique ?? string.Empty;
+
+        return unique ?? display ?? string.Empty;
     }
 
     /// <summary>Which class a Process row belongs to, by its category.</summary>

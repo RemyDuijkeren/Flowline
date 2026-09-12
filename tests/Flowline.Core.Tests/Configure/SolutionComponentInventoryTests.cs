@@ -251,7 +251,38 @@ public class SolutionComponentInventoryTests
         ConfigurableComponentKinds.IsFileManaged(expected).Should().BeTrue();
     }
 
-    static async Task<SolutionInventory> ReadOneWorkflowAsync(int category)
+    // Dataverse generates a business process flow's unique name from the backing entity it creates, so
+    // it arrives as msdyn_bpf_<guid>: unreadable in a list and untypeable at a prompt. No settings file
+    // has a section for this class, so its unique name is a contract with nobody.
+    [Fact]
+    public async Task ReadAsync_ABusinessProcessFlow_IsAddressedByItsDisplayName()
+    {
+        var inventory = await ReadOneWorkflowAsync(
+            WorkflowCategoryBusinessProcessFlow, "msdyn_bpf_d3d97bac8c294105840e99e37a9d1c39", "Rijopdracht intake");
+
+        inventory.Components.Should().ContainSingle().Which.Name.Should().Be("Rijopdracht intake");
+    }
+
+    // Every other class keeps the unique name, which is stable across renames and is what a settings file
+    // keys on.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public async Task ReadAsync_EveryOtherProcessClass_KeepsItsUniqueName(int category)
+    {
+        var inventory = await ReadOneWorkflowAsync(category, "contoso_Unique", "Some Display Name");
+
+        inventory.Components.Should().ContainSingle().Which.Name.Should().Be("contoso_Unique");
+    }
+
+    const int WorkflowCategoryBusinessProcessFlow = 4;
+
+    static Task<SolutionInventory> ReadOneWorkflowAsync(int category) =>
+        ReadOneWorkflowAsync(category, "contoso_Thing", null);
+
+    static async Task<SolutionInventory> ReadOneWorkflowAsync(int category, string uniqueName, string? displayName)
     {
         var id = Guid.NewGuid();
         var service = Substitute.For<IOrganizationServiceAsync2>();
@@ -262,7 +293,11 @@ public class SolutionComponentInventoryTests
                 if (query.EntityName == "solutioncomponent")
                     return Task.FromResult(new EntityCollection([SolutionComponent(id)]));
                 if (query.EntityName == "workflow")
-                    return Task.FromResult(new EntityCollection([WorkflowRow(id, "contoso_Thing", category)]));
+                {
+                    var row = WorkflowRow(id, uniqueName, category);
+                    if (displayName is not null) row["name"] = displayName;
+                    return Task.FromResult(new EntityCollection([row]));
+                }
                 return Task.FromResult(new EntityCollection([]));
             });
 

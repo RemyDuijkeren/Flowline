@@ -224,13 +224,48 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     {
         var width = SettingsComponentNames.TypeColumnWidth(kinds);
 
-        var prompt = new SelectionPrompt<InventoryComponent>()
+        var prompt = new SelectionPrompt<PickRow>()
             .Title(FlowlineConsoleExtensions.Question($"Pick a {SettingsComponentNames.Singular(kinds)}:"))
-            .UseConverter(c => SettingsComponentOutcomes.DescribeCandidate(c, width))
-            .EnableSearch()
-            .AddChoices(SettingsComponentOutcomes.Ordered(candidates));
+            .UseConverter(row => row.Label)
+            .EnableSearch();
 
-        return await CancellablePrompt.AskAsync(Console, prompt, ct);
+        foreach (var block in SettingsComponentOutcomes.Grouped(candidates))
+        {
+            var rows = block.Members
+                .Select(m => new PickRow(SettingsComponentOutcomes.DescribeCandidate(m, width, block.Label), m))
+                .ToArray();
+
+            if (block.Label is null)
+                prompt.AddChoices(rows);
+            else
+                // A header is not a component, so it cannot be picked. Spectre's default selection mode
+                // is leaves-only, which skips it for both the cursor and the answer.
+                prompt.AddChoiceGroup(PickRow.Header(block.Label), rows);
+        }
+
+        var answer = await CancellablePrompt.AskAsync(Console, prompt, ct);
+
+        // Unreachable while the prompt stays in leaf mode, and cheap insurance if it ever does not: a
+        // header carries no component, and returning one would address nothing.
+        return answer.Component
+               ?? throw new FlowlineException(ExitCode.GeneralError, "A group heading isn't a component.");
+    }
+
+    /// <summary>
+    /// One line of the picker: either a component, or the heading of a group of them.
+    /// </summary>
+    /// <remarks>
+    /// A row type rather than a synthetic component standing in for a heading. The prompt has to hold
+    /// both, and a fake component would be one leaf-mode change away from being returned as a real answer.
+    /// </remarks>
+    protected sealed record PickRow(string Label, InventoryComponent? Component)
+    {
+        /// <remarks>
+        /// The brand's secondary colour, not <c>dim</c>. Dim renders near-invisible on a dark terminal,
+        /// which turned the heading into a gap rather than a label and cost the grouping its whole point.
+        /// </remarks>
+        public static PickRow Header(string label) =>
+            new($"[{FlowlineTheme.SecondaryColor.ToMarkup()}]{Markup.Escape(label)}[/]", null);
     }
 
     /// <summary>
@@ -360,9 +395,106 @@ internal static class SettingsComponentOutcomes
         candidates
             // A value kind has no state, so every one of them ranks the same and the sort falls through
             // to the name. That is what a list of environment variables and connection references wants.
-            .OrderBy(c => IsValueKind(c.Kind) ? 0 : c.Suspended ? 0 : c.Enabled == true ? 2 : 1)
+            .OrderBy(StateRank)
             .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+    /// <summary>One block of a grouped list: a header and its members, or a single ungrouped member.</summary>
+    /// <param name="Label">The shared leading text, or <c>null</c> when this block is one ungrouped component.</param>
+    /// <param name="Members">The components in the block, already ordered.</param>
+    public sealed record ComponentBlock(string? Label, IReadOnlyList<InventoryComponent> Members);
+
+    /// <summary>
+    /// Groups components by the leading text they share, and orders the result (R9d).
+    /// </summary>
+    /// <remarks>
+    /// <b>Why group at all.</b> A plugin step is named for its class and its message, runs past a hundred
+    /// characters, and wraps at an arbitrary column. Grouping moves the part every sibling repeats onto a
+    /// header, so the rows underneath carry only what differs and the line breaks where it means something.
+    ///
+    /// <b>The key is found, not configured.</b> Each name is cut at its delimiters, and a component joins
+    /// the longest resulting prefix that at least one other component also has. A solution whose names
+    /// share nothing produces no groups and the list is exactly as it was. Nothing has to know that a
+    /// plugin step is dotted and a cloud flow is bracketed.
+    ///
+    /// <b>Blocks are ordered by their best member, not by name.</b> A group is one contiguous block, so a
+    /// group's rows cannot be split across the suspended-then-off-then-on tiers. Ranking whole blocks by
+    /// the most interesting thing inside them keeps the promise the ordering was for: whatever needs
+    /// attention is at the top, whether it is on its own or inside a group. An ungrouped component wins a
+    /// tie, so a lone suspended flow still sits above a group that merely contains one.
+    /// </remarks>
+    public static IReadOnlyList<ComponentBlock> Grouped(IReadOnlyList<InventoryComponent> candidates)
+    {
+        var keys = candidates.ToDictionary(c => c, c => LongestSharedPrefix(c.Name, candidates));
+
+        var blocks = candidates
+            .GroupBy(c => keys[c])
+            // A prefix two components share can still leave one of them alone here, when the other found
+            // a longer one it prefers. A block of one is not a group.
+            .SelectMany(g => g.Key is null || !EarnsAHeading(g.Key, g.Count())
+                ? g.Select(c => new ComponentBlock(null, [c]))
+                : [new ComponentBlock(g.Key, Ordered(g.ToArray()))])
+            .ToArray();
+
+        return blocks
+            .OrderBy(b => b.Members.Min(StateRank))
+            .ThenBy(b => b.Label is null ? 0 : 1)
+            .ThenBy(b => b.Label ?? b.Members[0].Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Whether a group is worth the row its heading spends.
+    /// </summary>
+    /// <remarks>
+    /// A heading costs one line and saves its own length on every member, so the value scales with
+    /// membership. Two flows sharing "[SalesOrderDetail] " save nineteen characters twice on rows that
+    /// were never going to wrap, and spend a line to do it; nine plugin steps sharing a namespace save
+    /// nearly three hundred. Asking whether the group pays rather than which kind it holds is what lets
+    /// this stay ignorant of kinds — a solution with eight flows on one entity gets the grouping it
+    /// deserves, and one with two plugin steps does not get a heading it has no use for.
+    ///
+    /// The bar is one conventional line. A fixed number rather than the real terminal width, because a
+    /// narrow terminal needs grouping more, not less, and scaling the bar with the width would give it
+    /// less.
+    /// </remarks>
+    static bool EarnsAHeading(string label, int members) => members >= 2 && members * label.Length > LineWorth;
+
+    const int LineWorth = 80;
+
+    /// <summary>
+    /// The longest delimiter-terminated prefix of this name that another component also starts with.
+    /// </summary>
+    /// <remarks>
+    /// Cut only at a delimiter, so a group never splits a word: "OrderLineFrom" is not a heading anyone
+    /// would recognise, but "DWE_Base.Plugins.SyncOrderLines." is.
+    /// </remarks>
+    static string? LongestSharedPrefix(string name, IReadOnlyList<InventoryComponent> all)
+    {
+        string? best = null;
+
+        for (var i = 0; i < name.Length - 1; i++)
+        {
+            if (!s_groupDelimiters.Contains(name[i])) continue;
+
+            var prefix = name[..(i + 1)];
+            if (name.Length > i + 1 && name[i + 1] == ' ') prefix = name[..(i + 2)];
+
+            if (all.Any(c => c.Name.Length > prefix.Length
+                             && c.Name != name
+                             && c.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                best = prefix;
+        }
+
+        return best;
+    }
+
+    // A plugin step is dotted, a cloud flow is bracketed and pipe-separated, a classic workflow is often
+    // dash-separated. Cutting at all of them costs nothing and means no kind needs its own rule.
+    static readonly char[] s_groupDelimiters = ['.', ']', '|', ':'];
+
+    static int StateRank(InventoryComponent c) =>
+        IsValueKind(c.Kind) ? 0 : c.Suspended ? 0 : c.Enabled == true ? 2 : 1;
 
     /// <summary>How a component reads in a list: what it is, then its addressable name.</summary>
     /// <remarks>
@@ -386,15 +518,15 @@ internal static class SettingsComponentOutcomes
     /// all, a connection reference's is an id nobody recognises, and filling the label with values would
     /// print a Dataverse-stored secret into the list.
     /// </remarks>
-    public static string Describe(InventoryComponent component, int typeWidth)
+    public static string Describe(InventoryComponent component, int? typeWidth)
     {
-        var type = SettingsComponentNames.TypeToken(component.Kind).PadRight(typeWidth);
+        var type = TypeColumn(component.Kind, typeWidth);
 
-        if (IsValueKind(component.Kind)) return $"{type}  {component.Name}";
+        if (IsValueKind(component.Kind)) return $"{type}{component.Name}";
 
         var (glyph, word, _) = StateOf(component);
 
-        return $"{glyph} {word}  {type}  {component.Name}";
+        return $"{glyph} {word}  {type}{component.Name}";
     }
 
     /// <summary>
@@ -410,17 +542,25 @@ internal static class SettingsComponentOutcomes
     /// sync" crashed the picker with "Could not find color or style 'Account'": square brackets are
     /// ordinary in a flow name and a style tag to the renderer.
     /// </remarks>
-    public static string DescribeCandidate(InventoryComponent component, int typeWidth)
+    public static string DescribeCandidate(InventoryComponent component, int? typeWidth, string? dropPrefix = null)
     {
-        var name = Markup.Escape(component.Name);
-        var type = SettingsComponentNames.TypeToken(component.Kind).PadRight(typeWidth);
+        var shortened = dropPrefix is not null && component.Name.StartsWith(dropPrefix, StringComparison.OrdinalIgnoreCase)
+            ? component.Name[dropPrefix.Length..]
+            : component.Name;
 
-        if (IsValueKind(component.Kind)) return $"{type}  {name}";
+        var name = Markup.Escape(shortened);
+        var type = TypeColumn(component.Kind, typeWidth);
+
+        if (IsValueKind(component.Kind)) return $"{type}{name}";
 
         var (glyph, word, colour) = StateOf(component);
 
-        return $"[{colour}]{glyph} {word}[/]  {type}  {name}";
+        return $"[{colour}]{glyph} {word}[/]  {type}{name}";
     }
+
+    /// <summary>The type column and its trailing gap, or nothing when the list has no column.</summary>
+    static string TypeColumn(ConfigurableComponentKind kind, int? width) =>
+        width is { } w ? SettingsComponentNames.TypeToken(kind).PadRight(w) + "  " : string.Empty;
 
     /// <summary>
     /// One state as the picker renders it, for a prompt that offers states rather than components.
@@ -495,13 +635,19 @@ internal static class SettingsComponentNames
         _ => "component",
     };
 
-    /// <summary>How wide the type column has to be for the classes this command can show.</summary>
+    /// <summary>
+    /// How wide the type column has to be, or <c>null</c> when there should not be one.
+    /// </summary>
     /// <remarks>
     /// Measured from the kinds in play rather than from every kind there is, so narrowing with
     /// <c>--type</c> tightens the column instead of leaving a gap the size of the widest word.
+    ///
+    /// Narrowed all the way to one class, the column says the same word on every row and distinguishes
+    /// nothing, so it goes. That matters most where it costs most: <c>--type plugin</c> is the run whose
+    /// names are longest, and the column it does not need is ten characters of the line it has least of.
     /// </remarks>
-    public static int TypeColumnWidth(IReadOnlyCollection<ConfigurableComponentKind> kinds) =>
-        kinds.Max(k => TypeToken(k).Length);
+    public static int? TypeColumnWidth(IReadOnlyCollection<ConfigurableComponentKind> kinds) =>
+        kinds.Count == 1 ? null : kinds.Max(k => TypeToken(k).Length);
 
     public static string Singular(ConfigurableComponentKind kind) => kind switch
     {
