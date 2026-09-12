@@ -238,6 +238,65 @@ public class SettingsCommandSurfaceTests : IDisposable
         picked.Id.Should().Be(rule.Id);
     }
 
+    // ── Esc backs out of the run ─────────────────────────────────────────────
+
+    // Ctrl+C was the only way out of a picker. Esc is what people reach for, and it has to stop the run
+    // rather than resolve to a choice.
+    [Fact]
+    public async Task EscapeAtThePicker_CancelsTheRun()
+    {
+        var probe = MakeStateProbe(interactive: true);
+        probe.Out.Input.PushKey(ConsoleKey.Escape);
+
+        var act = () => probe.PickAny([Flow("Nightly reconciliation")]);
+
+        await act.Should().ThrowAsync<PromptCancelledException>();
+    }
+
+    [Fact]
+    public async Task EscapeAtTheStatePrompt_CancelsTheRun()
+    {
+        var probe = MakeStateProbe(interactive: true);
+        probe.Out.Input.PushKey(ConsoleKey.Escape);
+
+        var act = () => probe.AskAsync(Reading(enabled: true), new SettingsStateCommand.Settings());
+
+        await act.Should().ThrowAsync<PromptCancelledException>();
+    }
+
+    [Fact]
+    public async Task EscapeAtTheEnvironmentPicker_CancelsTheRun()
+    {
+        var probe = MakePullProbe(interactive: true);
+        probe.Out.Input.PushKey(ConsoleKey.Escape);
+
+        var act = () => probe.ChooseAsync(EnvironmentRole.Dev, EnvironmentRole.Prod);
+
+        await act.Should().ThrowAsync<PromptCancelledException>();
+    }
+
+    // It derives from OperationCanceledException so the capture sweep stops rather than treating Esc as
+    // one environment failing and moving on to the next. It also has to keep its own identity, because
+    // the timeout matcher reads a plain OperationCanceledException raised without the Ctrl+C token as a
+    // timed-out Dataverse request.
+    [Fact]
+    public void APromptCancellation_IsACancellationAndKeepsItsOwnType()
+    {
+        var cancelled = new PromptCancelledException();
+
+        cancelled.Should().BeAssignableTo<OperationCanceledException>();
+        DataverseTimeout.Matches(cancelled, userCancelled: false).Should().BeTrue(
+            "the matcher cannot tell them apart, which is why the handler arm sits above it");
+    }
+
+    // The answer to "set it to" is the same fact the row above just showed, so it looks the same.
+    [Fact]
+    public void TheStatePromptChoices_CarryTheSameShapeAndColourAsTheList()
+    {
+        SettingsComponentOutcomes.DescribeState(on: true).Should().Be("[green]● on[/]");
+        SettingsComponentOutcomes.DescribeState(on: false).Should().Be("[red]○ off[/]");
+    }
+
     // ── KTD25: the type column ───────────────────────────────────────────────
 
     static InventoryComponent Rule(string name, bool enabled = true) =>

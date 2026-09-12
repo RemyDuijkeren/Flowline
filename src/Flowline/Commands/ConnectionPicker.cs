@@ -49,7 +49,8 @@ internal static class ConnectionPicker
                 .Append(new Choice("Leave it as it is", ChoiceKind.Leave))
                 .ToArray();
 
-            var answer = await console.PromptAsync(
+            var answer = await CancellablePrompt.AskAsync(
+                console,
                 new SelectionPrompt<Choice>()
                     .Title(FlowlineConsoleExtensions.Question(title))
                     .UseConverter(c => Markup.Escape(c.Label))

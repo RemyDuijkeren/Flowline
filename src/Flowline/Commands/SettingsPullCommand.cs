@@ -157,7 +157,7 @@ public class SettingsPullCommand(
         foreach (var role in configured)
             prompt.AddChoice(role).Select();
 
-        return await Console.PromptAsync(prompt, ct);
+        return await CancellablePrompt.AskAsync(Console, prompt, ct);
     }
 
     /// <summary>How a role reads in the list: its keyword, then the environment it resolves to.</summary>

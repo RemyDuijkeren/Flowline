@@ -133,6 +133,13 @@ app.Configure(config =>
                 WriteExceptionContext(fe, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
                 return (int)fe.ExitCode;
+            // Above the timeout arm on purpose: this derives from OperationCanceledException, and
+            // DataverseTimeout.Matches reads one of those raised without the Ctrl+C token as a timed-out
+            // request. Esc would otherwise be reported as an unreachable environment.
+            case PromptCancelledException:
+                serilogLogger?.Information("Cancelled at a prompt");
+                AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
+                return (int)ExitCode.Cancelled;
             // A Dataverse request timeout is an environment condition, not a Flowline bug, so it
             // gets the same clean treatment as a FlowlineException. It has to sit above the
             // OperationCanceledException arm: the HttpClient path throws TaskCanceledException,

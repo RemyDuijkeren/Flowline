@@ -230,7 +230,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
             .EnableSearch()
             .AddChoices(SettingsComponentOutcomes.Ordered(candidates));
 
-        return await Console.PromptAsync(prompt, ct);
+        return await CancellablePrompt.AskAsync(Console, prompt, ct);
     }
 
     /// <summary>
@@ -421,6 +421,16 @@ internal static class SettingsComponentOutcomes
 
         return $"[{colour}]{glyph} {word}[/]  {type}  {name}";
     }
+
+    /// <summary>
+    /// One state as the picker renders it, for a prompt that offers states rather than components.
+    /// </summary>
+    /// <remarks>
+    /// Shared with the list so the two cannot drift: the answer to "set it to" is the same fact the row
+    /// above it just showed, and it should look the same.
+    /// </remarks>
+    public static string DescribeState(bool on) =>
+        on ? $"[green]{OnGlyph} on[/]" : $"[red]{OffGlyph} off[/]";
 
     /// <summary>The glyph, word and colour one component's state reads as.</summary>
     static (string Glyph, string Word, string Colour) StateOf(InventoryComponent component) =>
@@ -615,10 +625,19 @@ public class SettingsStateCommand(
         // to ask for suspended.
         var flip = current.PriorEnabled == true || current.WasSuspended ? "off" : "on";
 
-        var answer = await Console.PromptAsync(
-            new SelectionPrompt<string>()
-                .Title(FlowlineConsoleExtensions.Question($"Set {Markup.Escape(current.Component.Name)} to:"))
-                .AddChoices(flip, flip == "on" ? "off" : "on", LeaveIt), ct);
+        // The same shape and colour the list two lines above used. Reading "on" and "off" as words after
+        // scanning a column of glyphs is a gear change for no reason, and the answer is the same fact.
+        //
+        // The name is quoted because it is a name, not a word in the sentence: a business rule called
+        // "Set reisduur" produced "Set Set reisduur to:".
+        var prompt = new SelectionPrompt<string>()
+            .Title(FlowlineConsoleExtensions.Question($"Set '{Markup.Escape(current.Component.Name)}' to:"))
+            .UseConverter(choice => choice == LeaveIt
+                ? LeaveIt
+                : SettingsComponentOutcomes.DescribeState(choice == "on"))
+            .AddChoices(flip, flip == "on" ? "off" : "on", LeaveIt);
+
+        var answer = await CancellablePrompt.AskAsync(Console, prompt, ct);
 
         if (answer == LeaveIt) return false;
 
