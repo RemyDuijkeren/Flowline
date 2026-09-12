@@ -70,6 +70,7 @@ public class SettingsTemplateLocationTests
     }
 }
 
+[Collection(PacResolutionCollection.Name)]
 public class RefreshSharedTemplateAsyncTests : IDisposable
 {
     readonly string _root = Path.Combine(Path.GetTempPath(), "flowline-template-refresh-" + Guid.NewGuid().ToString("N"));

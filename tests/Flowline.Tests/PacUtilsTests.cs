@@ -5,6 +5,7 @@ using FluentAssertions;
 
 namespace Flowline.Tests;
 
+[Collection(PacResolutionCollection.Name)]
 public class PacUtilsTests : IDisposable
 {
     public PacUtilsTests()
