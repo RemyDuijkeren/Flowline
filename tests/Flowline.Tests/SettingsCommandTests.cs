@@ -51,26 +51,21 @@ public class SettingsCommandTests : IDisposable
 
     // pac is given the resolved path, so a relative argument has to survive the temp-directory switch a pull
     // runs inside — resolving it late would look for the artifact in the wrong place.
+    //
+    // The base directory is passed rather than moved to. This test used to set the process working
+    // directory and put it back, which is global state every other test in the assembly shares: xUnit runs
+    // classes in parallel, and the ten or so classes here that start a subprocess inherit the working
+    // directory at the moment they launch. That made an unrelated test fail roughly one run in ten.
     [Fact]
     public void ResolveSolutionInput_RelativePath_IsMadeAbsolute()
     {
         var folder = Path.Combine(_dir, "Solution");
         Directory.CreateDirectory(folder);
-        var previous = Directory.GetCurrentDirectory();
 
-        try
-        {
-            Directory.SetCurrentDirectory(_dir);
+        var (path, _) = SettingsSupport.ResolveSolutionInput("Solution", _dir);
 
-            var (path, _) = SettingsSupport.ResolveSolutionInput("Solution");
-
-            Path.IsPathRooted(path).Should().BeTrue();
-            path.Should().Be(Path.GetFullPath(folder));
-        }
-        finally
-        {
-            Directory.SetCurrentDirectory(previous);
-        }
+        Path.IsPathRooted(path).Should().BeTrue();
+        path.Should().Be(Path.GetFullPath(folder));
     }
 
     [Fact]

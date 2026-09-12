@@ -322,9 +322,15 @@ public static class SettingsSupport
         "Name an environment, or drop --settings-file.";
 
     /// <summary>Decides whether a capture's artifact argument names a packed zip or an unpacked folder.</summary>
-    public static (string Path, bool IsZip) ResolveSolutionInput(string path)
+    /// <param name="baseDirectory">
+    /// What a relative path is relative to. Defaults to the working directory, which is what a path typed
+    /// into a shell means. A caller passes one only to avoid the alternative, which is moving the whole
+    /// process to a directory so that a relative path resolves — global state that other work running at
+    /// the same time inherits.
+    /// </param>
+    public static (string Path, bool IsZip) ResolveSolutionInput(string path, string? baseDirectory = null)
     {
-        var full = Path.GetFullPath(path);
+        var full = Path.GetFullPath(path, baseDirectory ?? Directory.GetCurrentDirectory());
 
         if (Directory.Exists(full)) return (full, false);
         if (File.Exists(full)) return (full, true);
