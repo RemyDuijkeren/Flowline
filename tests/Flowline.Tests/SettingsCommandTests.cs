@@ -505,4 +505,39 @@ public class SettingsCommandTests : IDisposable
         var routes = () => SettingsValueCommand.KindFor(type);
         routes.Should().NotThrow();
     }
+
+    // ── An unknown --type ────────────────────────────────────────────────────
+
+    // The parser answers with "Failed to convert 'bogus' to Nullable`1", which leaks a CLR type name and
+    // capitalises values the user types in lower case.
+    [Theory]
+    [InlineData("state", "flow, workflow, rule, bpf, action, plugin")]
+    [InlineData("value", "envvar, connref")]
+    public void AnUnknownType_IsAnsweredWithTheValidOnes(string operation, string expected)
+    {
+        var hint = SettingsSupport.BuildTypeValueHint(["settings", operation, "dev", "--type", "bogus"]);
+
+        hint.Should().Contain($"'bogus' isn't a type for 'settings {operation}'");
+        hint.Should().Contain(expected);
+    }
+
+    [Fact]
+    public void AnUnknownType_IsRecognisedInTheEqualsSpellingToo()
+    {
+        SettingsSupport.BuildTypeValueHint(["settings", "state", "dev", "--type=bogus"])
+            .Should().Contain("bogus");
+    }
+
+    // A type the parser does accept is not this mistake, whatever else went wrong, and neither is an
+    // operation that has no --type at all.
+    [Theory]
+    [InlineData("settings|state|dev|--type|flow")]
+    [InlineData("settings|state|dev|--type|PLUGIN")]
+    [InlineData("settings|value|dev|--type|connref")]
+    [InlineData("settings|pull|dev|--type|flow")]
+    [InlineData("settings|state|dev")]
+    public void AValidOrIrrelevantType_GetsNoHint(string invocation)
+    {
+        SettingsSupport.BuildTypeValueHint(invocation.Split('|')).Should().BeNull();
+    }
 }

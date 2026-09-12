@@ -164,7 +164,10 @@ app.Configure(config =>
                 // environment in the wrong position. Only this one shape is recognised, and it cannot
                 // match an invocation the parser would have accepted.
                 AnsiConsole.MarkupLine(
-                    $"[red]Error:[/] {Markup.Escape(SettingsSupport.BuildArgumentOrderHint(args) ?? cre.Message)}");
+                    "[red]Error:[/] " + Markup.Escape(
+                        SettingsSupport.BuildArgumentOrderHint(args)
+                        ?? SettingsSupport.BuildTypeValueHint(args)
+                        ?? cre.Message));
                 WriteExceptionContext(cre, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
                 return (int)ExitCode.ValidationFailed;

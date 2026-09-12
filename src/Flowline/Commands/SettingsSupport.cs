@@ -171,6 +171,56 @@ public static class SettingsSupport
         return null;
     }
 
+    /// <summary>
+    /// Explains an unknown <c>--type</c> value, which the parser reports in its own words (KTD25).
+    /// </summary>
+    /// <remarks>
+    /// Spectre answers with "Failed to convert 'bogus' to Nullable`1. Valid values are '', 'Flow', ...",
+    /// which leaks a CLR type name, capitalises values the user types in lower case, and offers the empty
+    /// string as though it were one. The valid values are right, so this keeps them and says the rest
+    /// properly.
+    ///
+    /// Read from the invocation rather than from the parser's message: the message names no flag, so it
+    /// cannot say which one was wrong, and matching on its wording would break the moment Spectre
+    /// rephrases it. Reading argv means a rewording leaves this quiet rather than wrong.
+    /// </remarks>
+    public static string? BuildTypeValueHint(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2 || !string.Equals(args[0], "settings", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var valid = args[1].ToLowerInvariant() switch
+        {
+            "state" => Enum.GetNames<SettingsStateCommand.StateType>(),
+            "value" => Enum.GetNames<SettingsValueCommand.ValueType>(),
+            _ => null,
+        };
+
+        if (valid is null) return null;
+
+        var given = TypeArgument(args);
+        if (given is null || valid.Any(v => string.Equals(v, given, StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        return $"'{given}' isn't a type for 'settings {args[1].ToLowerInvariant()}'. " +
+               $"Valid types are {string.Join(", ", valid.Select(v => v.ToLowerInvariant()))}.";
+    }
+
+    /// <summary>The value given to <c>--type</c>, in either spelling the parser accepts.</summary>
+    static string? TypeArgument(IReadOnlyList<string> args)
+    {
+        for (var i = 0; i < args.Count; i++)
+        {
+            if (args[i].StartsWith("--type=", StringComparison.OrdinalIgnoreCase))
+                return args[i]["--type=".Length..];
+
+            if (string.Equals(args[i], "--type", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Count)
+                return args[i + 1];
+        }
+
+        return null;
+    }
+
     static bool IsOperation(string token) =>
         s_operations.Contains(token, StringComparer.OrdinalIgnoreCase);
 

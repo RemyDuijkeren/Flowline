@@ -80,8 +80,23 @@ public static class SingleComponentService
         RunMode mode,
         CancellationToken ct)
     {
-        var component = Resolve(inventory, kinds, name);
+        return await ReadOrWriteStateAsync(service, Resolve(inventory, kinds, name), desiredEnabled, mode, ct)
+            .ConfigureAwait(false);
+    }
 
+    /// <summary>Reads or writes the state of a component that is already resolved.</summary>
+    /// <remarks>
+    /// The overload for a caller that did not start from a name. Picking one from a list resolves it by
+    /// definition, and re-resolving it by name afterwards can fail as ambiguous — telling someone who had
+    /// just pointed at one row to go and rename something in Dataverse.
+    /// </remarks>
+    public static async Task<SingleComponentOutcome> ReadOrWriteStateAsync(
+        IOrganizationServiceAsync2 service,
+        InventoryComponent component,
+        bool? desiredEnabled,
+        RunMode mode,
+        CancellationToken ct)
+    {
         if (desiredEnabled is null)
             return new SingleComponentOutcome(component, SingleComponentActionKind.Read,
                 PriorEnabled: component.Enabled, WasSuspended: component.Suspended);
@@ -115,8 +130,18 @@ public static class SingleComponentService
         RunMode mode,
         CancellationToken ct)
     {
-        var component = Resolve(inventory, kinds, name);
+        return await ReadOrWriteValueAsync(service, Resolve(inventory, kinds, name), desiredValue, mode, ct)
+            .ConfigureAwait(false);
+    }
 
+    /// <inheritdoc cref="ReadOrWriteStateAsync(IOrganizationServiceAsync2, InventoryComponent, bool?, RunMode, CancellationToken)"/>
+    public static async Task<SingleComponentOutcome> ReadOrWriteValueAsync(
+        IOrganizationServiceAsync2 service,
+        InventoryComponent component,
+        string? desiredValue,
+        RunMode mode,
+        CancellationToken ct)
+    {
         // Read only on the path that reports it. An environment variable's value costs a Dataverse query,
         // and only a read prints it — a write reports what it did, not what was there, and the writer runs
         // its own comparison query anyway. Fetching it up front billed every write for two round trips
@@ -160,7 +185,7 @@ public static class SingleComponentService
     /// nothing would have looked at the two together. So an ambiguous match names each candidate's class,
     /// and the remedy offered is the type filter rather than renaming something in Dataverse.
     /// </remarks>
-    static InventoryComponent Resolve(
+    public static InventoryComponent Resolve(
         SolutionInventory inventory, IReadOnlyCollection<ConfigurableComponentKind> kinds, string name)
     {
         var match = inventory.Match(kinds, name);

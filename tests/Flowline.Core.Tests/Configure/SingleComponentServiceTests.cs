@@ -340,4 +340,28 @@ public class SingleComponentServiceTests
         // The two value classes address on different columns, so a caller that did not narrow gets both.
         thrown.Message.Should().Contain("schema name").And.Contain("logical name");
     }
+
+    // Two components of one class can share a name too, not just two classes. Addressing by name has to
+    // stop; addressing a component someone already picked must not, because the pick resolved it.
+    [Fact]
+    public async Task AResolvedComponent_IsNeverReResolvedAndSoIsNeverAmbiguous()
+    {
+        var chosen = new InventoryComponent(
+            ConfigurableComponentKind.CloudFlow, "Reconcile", Guid.NewGuid(), false);
+        var twin = new InventoryComponent(
+            ConfigurableComponentKind.CloudFlow, "Reconcile", Guid.NewGuid(), false);
+        var inventory = new SolutionInventory([chosen, twin]);
+
+        var byName = async () => await SingleComponentService.ReadOrWriteStateAsync(
+            Service(), inventory, [ConfigurableComponentKind.CloudFlow], "Reconcile",
+            desiredEnabled: null, RunMode.Normal, CancellationToken.None);
+
+        (await byName.Should().ThrowAsync<FlowlineException>()).Which.ExitCode
+            .Should().Be(ExitCode.ValidationFailed);
+
+        var outcome = await SingleComponentService.ReadOrWriteStateAsync(
+            Service(), chosen, desiredEnabled: null, RunMode.Normal, CancellationToken.None);
+
+        outcome.Component.Id.Should().Be(chosen.Id);
+    }
 }

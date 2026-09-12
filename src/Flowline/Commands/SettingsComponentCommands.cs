@@ -60,11 +60,10 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// <summary>Rejects a flag pair that cannot mean anything, before anything is read or written.</summary>
     protected virtual string? ValidateOperationFlags(TSettings settings) => null;
 
-    /// <summary>Reads or writes the resolved component.</summary>
+    /// <summary>Reads or writes the component the caller already resolved.</summary>
     protected abstract Task<SingleComponentOutcome> RunAsync(
-        IOrganizationServiceAsync2 service, SolutionInventory inventory,
-        IReadOnlyCollection<ConfigurableComponentKind> kinds,
-        string name, TSettings settings, RunMode mode, CancellationToken ct);
+        IOrganizationServiceAsync2 service, InventoryComponent component, TSettings settings, RunMode mode,
+        CancellationToken ct);
 
     /// <summary>Whether this invocation writes, as opposed to reading the current state or value.</summary>
     protected abstract bool IsWrite(TSettings settings);
@@ -81,16 +80,15 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// the spinner opens after an answer and closes before the next question.
     /// </remarks>
     Task<SingleComponentOutcome> RunWithSpinnerAsync(
-        IOrganizationServiceAsync2 service, SolutionInventory inventory,
-        IReadOnlyCollection<ConfigurableComponentKind> kinds,
-        string name, TSettings settings, RunMode mode, bool isWrite, CancellationToken ct)
+        IOrganizationServiceAsync2 service, InventoryComponent component, TSettings settings, RunMode mode,
+        bool isWrite, CancellationToken ct)
     {
         // A dry run is checking, not updating: it runs the same comparison and stops before the write.
         var verb = !isWrite || mode.IsReportOnly() ? "Reading" : "Updating";
 
         return Console.Status().FlowlineSpinner().StartAsync(
-            $"{verb} [bold]{Markup.Escape(name)}[/]...",
-            _ => RunAsync(service, inventory, kinds, name, settings, mode, ct));
+            $"{verb} [bold]{Markup.Escape(component.Name)}[/]...",
+            _ => RunAsync(service, component, settings, mode, ct));
     }
 
     protected override bool IsStandalone(TSettings settings) =>
@@ -123,6 +121,8 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         var inventory = await ReadInventoryAsync(service, solutionName, cancellationToken);
 
         var name = settings.Name;
+        InventoryComponent? resolved = null;
+
         if (string.IsNullOrWhiteSpace(name))
         {
             // R14: nothing of this kind in the target is a statement, not a failure. There is no name the
@@ -142,19 +142,23 @@ public abstract class SettingsComponentCommandBase<TSettings>(
                 return (int)ExitCode.Success;
             }
 
-            // Narrowed to what was picked, not just its name. Resolution searches by name, and a name
-            // can exist in two classes — a business rule and a classic workflow called "Account - set
-            // name" is a real case — so carrying only the name forward threw the pick away and failed
-            // as ambiguous, telling someone who had pointed at one row to go and rename something.
+            // The picked component itself, not just its name. Picking resolves it by definition, and
+            // resolving it again by name can fail as ambiguous — two components sharing a name is
+            // reachable both across classes ("Account - set name" is a business rule and a classic
+            // workflow in a real solution) and within one, and either way it told someone who had just
+            // pointed at one row to go and rename something in Dataverse.
             var picked = await PickAsync(kinds, candidates, cancellationToken);
             name = picked.Name;
-            kinds = [picked.Kind];
+            resolved = picked;
         }
 
         var isWrite = IsWrite(settings);
 
-        var outcome = await RunWithSpinnerAsync(
-            service, inventory, kinds, name, settings, mode, isWrite, cancellationToken);
+        // Resolved once, here, rather than inside each read or write. Nothing below this line addresses
+        // a component by name again.
+        var component = resolved ?? SingleComponentService.Resolve(inventory, kinds, name!);
+
+        var outcome = await RunWithSpinnerAsync(service, component, settings, mode, isWrite, cancellationToken);
 
         // A read at a terminal is someone deciding, not someone reporting. Show what is there, then ask
         // what it should be — the picker otherwise ends by printing a state the operator just looked at
@@ -166,9 +170,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
             if (!await PromptForTargetAsync(outcome, settings, env, cancellationToken))
                 return (int)ExitCode.Success;
 
-            outcome = await RunWithSpinnerAsync(
-                service, inventory, [outcome.Component.Kind], outcome.Component.Name, settings, mode,
-                isWrite: true, cancellationToken);
+            outcome = await RunWithSpinnerAsync(service, component, settings, mode, isWrite: true, cancellationToken);
             isWrite = true;
         }
 
@@ -798,11 +800,10 @@ public class SettingsStateCommand(
         (IsWrite(settings) ? settings.On : null, null);
 
     protected override Task<SingleComponentOutcome> RunAsync(
-        IOrganizationServiceAsync2 service, SolutionInventory inventory,
-        IReadOnlyCollection<ConfigurableComponentKind> kinds,
-        string name, Settings settings, RunMode mode, CancellationToken ct) =>
+        IOrganizationServiceAsync2 service, InventoryComponent component, Settings settings, RunMode mode,
+        CancellationToken ct) =>
         SingleComponentService.ReadOrWriteStateAsync(
-            service, inventory, kinds, name,
+            service, component,
             desiredEnabled: IsWrite(settings) ? settings.On : null,
             mode, ct);
 }
@@ -907,8 +908,7 @@ public class SettingsValueCommand(
     protected override (bool? Enabled, string? Value) WrittenBy(Settings settings) => (null, settings.Value);
 
     protected override Task<SingleComponentOutcome> RunAsync(
-        IOrganizationServiceAsync2 service, SolutionInventory inventory,
-        IReadOnlyCollection<ConfigurableComponentKind> kinds,
-        string name, Settings settings, RunMode mode, CancellationToken ct) =>
-        SingleComponentService.ReadOrWriteValueAsync(service, inventory, kinds, name, settings.Value, mode, ct);
+        IOrganizationServiceAsync2 service, InventoryComponent component, Settings settings, RunMode mode,
+        CancellationToken ct) =>
+        SingleComponentService.ReadOrWriteValueAsync(service, component, settings.Value, mode, ct);
 }

@@ -353,6 +353,11 @@ public class SettingsPullCommand(
 
             var display = ConsolePath.FormatRelativePath(location.Path, RootFolder);
 
+            // The same path without markup, for the sinks that escape what they are given. The formatter
+            // emits [bold] tags of its own, and escaping those printed them as literal text — which its
+            // own documentation warns about and which two messages here were doing.
+            var plainDisplay = ConsolePath.FormatRelativePath(location.Path, RootFolder, markup: false);
+
             foreach (var added in result.Added)
                 Console.Info($"New: {Markup.Escape(added)}");
 
@@ -365,7 +370,7 @@ public class SettingsPullCommand(
 
             if (mode.IsReportOnly())
             {
-                Console.Done(SettingsSupport.BuildPullDryRunMessage(display));
+                Console.Done(SettingsSupport.BuildPullDryRunMessage(plainDisplay));
                 return (int)ExitCode.Success;
             }
 
@@ -373,7 +378,7 @@ public class SettingsPullCommand(
 
             // Saved before the fill, not after: the capture is the part that cannot be retyped, and a
             // session abandoned halfway through the questions must not cost it. The fill saves again.
-            await FillTheBlanksAsync(result.Document, environment, location.Path, display, ct);
+            await FillTheBlanksAsync(result.Document, environment, location.Path, plainDisplay, ct);
 
             // A sweep prints its own finish line over the whole run, so each environment reports as a step
             // rather than signing off as if the run were done.
