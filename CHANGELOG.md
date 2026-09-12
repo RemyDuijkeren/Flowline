@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `settings state <target> [name]` — turn one component on or off, or read its state.
   - `settings value <target> [name]` — set one environment variable value or connection reference binding, or read either.
 
-  Narrow the component operations with `--type`, or omit the name for a searchable picker. Secrets are never read on capture. See the [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#settings).
+  Narrow the component operations with `--type`, or omit the name for a searchable picker. After a change, an interactive run offers to record it in the settings file so it survives the next push. Secrets are never read on capture. See the [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#settings).
 
 - **`flowline diff` reports what changed between two points in git history**, naming solution components rather than XML files, with no connection, authentication or network. Compare with `diff A B`, `diff A..B` or `diff A...B`; `--write` produces a `CHANGES.md`, and `--exit-code` returns `22` when there was anything to report. It is the git-history counterpart to `drift`.
 - **`clone` and `pull` keep the shared `deploymentSettings.json` in step with the solution.** A new environment variable or connection reference gains a key with an empty value, values already filled in survive, and a key whose component left the solution is reported rather than deleted.

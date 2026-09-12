@@ -78,6 +78,9 @@ public static class ConfigurableComponentKinds
         ConfigurableComponentKind.ConnectionReference,
         ConfigurableComponentKind.CloudFlow,
         ConfigurableComponentKind.Workflow,
+        ConfigurableComponentKind.BusinessRule,
+        ConfigurableComponentKind.BusinessProcessFlow,
+        ConfigurableComponentKind.Action,
         ConfigurableComponentKind.PluginStep,
     ];
 

@@ -183,7 +183,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         // next push moves it, and skipping the warning there hid the case most worth warning about — the
         // operator sees "already matches" and concludes there is nothing to reconcile.
         if (isWrite && outcome.Action is SingleComponentActionKind.Applied or SingleComponentActionKind.Unchanged)
-            await WarnIfTheFileWouldOverrideAsync(outcome, settings, role, standalone, cancellationToken);
+            await ReconcileWithTheFileAsync(outcome, settings, role, standalone, mode, cancellationToken);
 
         if (isWrite)
             Console.Done(mode.IsReportOnly()
@@ -297,9 +297,9 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// project layout, which stand-alone mode does not have, so silence there would otherwise read as
     /// "no file names it" — which is a different, and unearned, claim.
     /// </remarks>
-    async Task WarnIfTheFileWouldOverrideAsync(
+    async Task ReconcileWithTheFileAsync(
         SingleComponentOutcome outcome, TSettings settings,
-        EnvironmentRole? role, bool standalone, CancellationToken ct)
+        EnvironmentRole? role, bool standalone, RunMode mode, CancellationToken ct)
     {
         if (standalone) return;
 
@@ -327,14 +327,98 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         }
 
         var (writtenEnabled, writtenValue) = WrittenBy(settings);
+        var kind = outcome.Component.Kind;
+        var name = outcome.Component.Name;
+        var file = Markup.Escape(Path.GetFileName(location.Path));
 
-        if (!ConfigureApplyService.WouldOverride(
-                document, outcome.Component.Kind, outcome.Component.Name, writtenEnabled, writtenValue))
+        var declares = writtenValue is not null
+            ? SettingsFileDeclaration.DeclaredValue(document, kind, name) is { Length: > 0 }
+            : SettingsFileDeclaration.DeclaredState(document, kind, name) is not null;
+
+        if (!ConfigureApplyService.WouldOverride(document, kind, name, writtenEnabled, writtenValue))
+        {
+            // Already agrees, or declares nothing a push would act on. Either way the file is not about to
+            // undo this, and there is nothing worth interrupting for.
+            if (declares) return;
+
+            // Silent on this component. Nothing will put the change back, but nothing records it either,
+            // and a declared value is what makes it survive the next deploy.
+            if (!CanOffer(mode)) return;
+
+            await OfferAsync(document, location.Path, kind, name, writtenEnabled, writtenValue, file,
+                $"{file} doesn't mention {Markup.Escape(name)}. Add it?", allowRemove: false, ct);
             return;
+        }
 
-        Console.Warning(
-            $"{Markup.Escape(Path.GetFileName(location.Path))} declares {Markup.Escape(outcome.Component.Name)} " +
-            "differently — the next 'settings push' will put it back. Change the file too to make this stick.");
+        if (!CanOffer(mode))
+        {
+            Console.Warning(
+                $"{file} declares {Markup.Escape(name)} differently — the next 'settings push' will put it " +
+                "back. Change the file too to make this stick.");
+            return;
+        }
+
+        await OfferAsync(document, location.Path, kind, name, writtenEnabled, writtenValue, file,
+            $"{file} declares {Markup.Escape(name)} differently, so the next 'settings push' will put it " +
+            "back. Change the file?", allowRemove: true, ct);
+    }
+
+    /// <summary>
+    /// Whether this run can ask about the file rather than only report on it (R21).
+    /// </summary>
+    /// <remarks>
+    /// A dry run has written nothing to the environment, so offering to record it in the file would be
+    /// recording something that did not happen. An unattended run cannot answer, and writing to a file the
+    /// team commits is not something to decide on a caller's behalf.
+    /// </remarks>
+    bool CanOffer(RunMode mode) => IsInteractive() && !mode.IsReportOnly();
+
+    /// <summary>
+    /// Offers to bring the settings file into line with what was just written (R21, KTD27).
+    /// </summary>
+    /// <remarks>
+    /// Three answers where the file disagrees, because declaring the opposite and declaring nothing are
+    /// different things. Setting it makes every future push assert this state, which is what someone wants
+    /// when an import keeps turning a flow off. Removing it hands the component back to the environment.
+    /// Leaving the file alone keeps the drift and the warning that goes with it.
+    ///
+    /// The file is committed, so the run names what it wrote and never writes without being told to.
+    /// </remarks>
+    async Task OfferAsync(
+        SettingsDocument document, string path, ConfigurableComponentKind kind, string name,
+        bool? writtenEnabled, string? writtenValue, string file, string question, bool allowRemove,
+        CancellationToken ct)
+    {
+        var declare = writtenValue is not null
+            ? $"Set it to what's now in the environment"
+            : $"Declare it {(writtenEnabled == true ? "on" : "off")}";
+
+        const string Remove = "Stop declaring it at all";
+        const string Leave = "Leave the file alone";
+
+        var choices = allowRemove ? new[] { declare, Remove, Leave } : [declare, Leave];
+
+        var answer = await CancellablePrompt.AskAsync(Console,
+            new SelectionPrompt<string>()
+                .Title(FlowlineConsoleExtensions.Question(question))
+                .AddChoices(choices), ct);
+
+        if (answer == Leave) return;
+
+        var changed = answer == Remove
+            ? SettingsFileDeclaration.RemoveState(document, kind, name)
+            : writtenValue is not null
+                ? SettingsFileDeclaration.DeclareValue(document, kind, name, writtenValue)
+                : SettingsFileDeclaration.DeclareState(document, kind, name, writtenEnabled == true);
+
+        if (!changed)
+        {
+            Console.Warning($"Couldn't change {file} — it was left as it was.");
+            return;
+        }
+
+        SettingsFileReader.Save(document, path);
+        Console.Ok($"Updated {file}");
     }
 
     /// <summary>What this invocation asked to write, for the override comparison.</summary>

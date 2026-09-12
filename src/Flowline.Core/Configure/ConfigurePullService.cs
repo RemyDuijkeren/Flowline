@@ -199,6 +199,12 @@ public sealed class ConfigurePullService
             ConfigurableComponentKind.CloudFlow, added, vanished);
         AppendState(document.Workflows, existing?.Workflows, inventory,
             ConfigurableComponentKind.Workflow, added, vanished);
+        AppendState(document.BusinessRules, existing?.BusinessRules, inventory,
+            ConfigurableComponentKind.BusinessRule, added, vanished);
+        AppendState(document.BusinessProcessFlows, existing?.BusinessProcessFlows, inventory,
+            ConfigurableComponentKind.BusinessProcessFlow, added, vanished);
+        AppendState(document.Actions, existing?.Actions, inventory,
+            ConfigurableComponentKind.Action, added, vanished);
         AppendState(document.PluginSteps, existing?.PluginSteps, inventory,
             ConfigurableComponentKind.PluginStep, added, vanished);
     }

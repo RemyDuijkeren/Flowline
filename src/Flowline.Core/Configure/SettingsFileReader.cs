@@ -58,6 +58,15 @@ public static class SettingsFileReader
                 case SettingsDocument.WorkflowsProperty:
                     ReadStateEntries(value, property.Key, document.Workflows);
                     break;
+                case SettingsDocument.BusinessRulesProperty:
+                    ReadStateEntries(value, property.Key, document.BusinessRules);
+                    break;
+                case SettingsDocument.BusinessProcessFlowsProperty:
+                    ReadStateEntries(value, property.Key, document.BusinessProcessFlows);
+                    break;
+                case SettingsDocument.ActionsProperty:
+                    ReadStateEntries(value, property.Key, document.Actions);
+                    break;
                 case SettingsDocument.PluginStepsProperty:
                     ReadStateEntries(value, property.Key, document.PluginSteps);
                     break;
@@ -93,6 +102,15 @@ public static class SettingsFileReader
 
         if (document.Workflows.Count > 0)
             obj[SettingsDocument.WorkflowsProperty] = WriteStateEntries(document.Workflows);
+
+        if (document.BusinessRules.Count > 0)
+            obj[SettingsDocument.BusinessRulesProperty] = WriteStateEntries(document.BusinessRules);
+
+        if (document.BusinessProcessFlows.Count > 0)
+            obj[SettingsDocument.BusinessProcessFlowsProperty] = WriteStateEntries(document.BusinessProcessFlows);
+
+        if (document.Actions.Count > 0)
+            obj[SettingsDocument.ActionsProperty] = WriteStateEntries(document.Actions);
 
         if (document.PluginSteps.Count > 0)
             obj[SettingsDocument.PluginStepsProperty] = WriteStateEntries(document.PluginSteps);

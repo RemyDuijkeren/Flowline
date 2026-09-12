@@ -230,25 +230,32 @@ public class SolutionComponentInventoryTests
     [InlineData(2, ConfigurableComponentKind.BusinessRule)]
     [InlineData(3, ConfigurableComponentKind.Action)]
     [InlineData(4, ConfigurableComponentKind.BusinessProcessFlow)]
-    public async Task ReadAsync_ProcessCategory_ArrivesAsItsOwnKindAndIsNotFileManaged(
+    public async Task ReadAsync_ProcessCategory_ArrivesAsItsOwnKind(
         int category, ConfigurableComponentKind expected)
     {
         var inventory = await ReadOneWorkflowAsync(category);
 
         inventory.Components.Should().ContainSingle().Which.Kind.Should().Be(expected);
-        ConfigurableComponentKinds.IsFileManaged(expected).Should().BeFalse();
     }
+
+    // Every class the inventory reads is one a settings file has a section for. That was not true when
+    // the process read first widened — business rules, business process flows and actions were readable
+    // and switchable but never captured — and the set is kept as the one place that says so, because the
+    // next class to arrive may well not have a section.
+    [Fact]
+    public void EveryKindTheInventoryReads_CanBeDeclaredInAFile() =>
+        Enum.GetValues<ConfigurableComponentKind>()
+            .Should().OnlyContain(k => ConfigurableComponentKinds.IsFileManaged(k));
 
     [Theory]
     [InlineData(0, ConfigurableComponentKind.Workflow)]
     [InlineData(5, ConfigurableComponentKind.CloudFlow)]
-    public async Task ReadAsync_TheTwoFileManagedCategories_StillMapAsBefore(
+    public async Task ReadAsync_TheOriginalTwoCategories_StillMapAsBefore(
         int category, ConfigurableComponentKind expected)
     {
         var inventory = await ReadOneWorkflowAsync(category);
 
         inventory.Components.Should().ContainSingle().Which.Kind.Should().Be(expected);
-        ConfigurableComponentKinds.IsFileManaged(expected).Should().BeTrue();
     }
 
     // Dataverse generates a business process flow's unique name from the backing entity it creates, so

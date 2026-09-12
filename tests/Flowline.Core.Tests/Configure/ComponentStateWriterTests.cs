@@ -178,4 +178,33 @@ public class ComponentStateWriterTests
 
         ComponentStateWriter.DescribeFault(Flow(false), fault).Should().NotContain("hunter2");
     }
+
+    // Every process class is a workflow row with the same statecode, and leaving one out of the writer did
+    // not fail loudly: the default arm returns null, which the caller reports as a refusal, so switching a
+    // business rule said it had declined rather than that it could not.
+    [Theory]
+    [InlineData(ConfigurableComponentKind.CloudFlow)]
+    [InlineData(ConfigurableComponentKind.Workflow)]
+    [InlineData(ConfigurableComponentKind.BusinessRule)]
+    [InlineData(ConfigurableComponentKind.BusinessProcessFlow)]
+    [InlineData(ConfigurableComponentKind.Action)]
+    public void BuildStateUpdate_EveryProcessClass_WritesTheWorkflowRow(ConfigurableComponentKind kind)
+    {
+        var component = new InventoryComponent(kind, "contoso_Thing", Guid.NewGuid(), false);
+
+        var update = ComponentStateWriter.BuildStateUpdate(component, enabled: true);
+
+        update.Should().NotBeNull();
+        update!.LogicalName.Should().Be("workflow");
+        update.GetAttributeValue<OptionSetValue>("statecode").Value.Should().Be(1);
+    }
+
+    // A value class has no state to write, which is what the null arm is actually for.
+    [Theory]
+    [InlineData(ConfigurableComponentKind.EnvironmentVariable)]
+    [InlineData(ConfigurableComponentKind.ConnectionReference)]
+    public void BuildStateUpdate_AValueClass_HasNoStateUpdate(ConfigurableComponentKind kind) =>
+        ComponentStateWriter.BuildStateUpdate(
+            new InventoryComponent(kind, "contoso_Thing", Guid.NewGuid(), null), enabled: true)
+            .Should().BeNull();
 }

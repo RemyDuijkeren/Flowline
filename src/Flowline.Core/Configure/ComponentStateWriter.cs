@@ -109,9 +109,19 @@ public static class ComponentStateWriter
     /// <summary>Builds the state update for a component, or <c>null</c> for a class with no state.</summary>
     internal static Entity? BuildStateUpdate(InventoryComponent component, bool enabled) => component.Kind switch
     {
-        // Both sections write the same table: a classic workflow and a cloud flow are both `workflow` rows,
-        // separated only by category, which the inventory has already read.
-        ConfigurableComponentKind.CloudFlow or ConfigurableComponentKind.Workflow => new Entity("workflow", component.Id)
+        // Every process class writes the same table. A cloud flow, a classic workflow, a business rule, a
+        // business process flow and an action are all `workflow` rows separated only by category, which the
+        // inventory has already read, and they share one statecode: 0 Draft, 1 Activated, 2 Suspended.
+        //
+        // The three added last are the reason this is a list rather than a pair. Leaving them out of it did
+        // not fail loudly: the default arm returns null, which the caller reports as skipped, so
+        // `settings state --type rule <name> --off` said it had refused the write rather than that it could
+        // not make one.
+        ConfigurableComponentKind.CloudFlow
+            or ConfigurableComponentKind.Workflow
+            or ConfigurableComponentKind.BusinessRule
+            or ConfigurableComponentKind.BusinessProcessFlow
+            or ConfigurableComponentKind.Action => new Entity("workflow", component.Id)
         {
             ["statecode"] = new OptionSetValue(enabled ? WorkflowStateActivated : WorkflowStateDraft),
             ["statuscode"] = new OptionSetValue(enabled ? WorkflowStatusActivated : WorkflowStatusDraft),

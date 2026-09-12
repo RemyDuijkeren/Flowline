@@ -91,33 +91,35 @@ public sealed class ConfigureApplyService
                 .ConfigureAwait(false));
         }
 
-        // Tier 2 — cloud flow and classic workflow state.
-        foreach (var (kind, entries) in new[]
-                 {
-                     (ConfigurableComponentKind.CloudFlow, document.CloudFlows),
-                     (ConfigurableComponentKind.Workflow, document.Workflows),
-                 })
-        {
-            foreach (var entry in entries)
+        // Tier 2 — every class whose state the file declares.
+        //
+        // Activations before deactivations, across the whole tier rather than per section (R20). Some
+        // components cannot be switched off while they are the last one of their kind still on, so a
+        // release that swaps one for another has to raise the new one before lowering the old. Ordering it
+        // here makes that swap declarable: the file says true for the new and false for the old, and one
+        // push does them in an order that works. It costs nothing when no such constraint exists.
+        var stateTier = new[]
             {
-                declaredNames.Add((kind, entry.Name));
-                outcomes.Add(await ApplyOneAsync(inventory, kind, entry.Name,
-                    // Suspended is neither on nor off, so the writer needs to be told: a suspended flow the
-                    // file declares off is not already off, and has to reach Draft (KTD8).
-                    component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct,
-                        currentlySuspended: component.Suspended))
-                    .ConfigureAwait(false));
+                (Kind: ConfigurableComponentKind.CloudFlow, Entries: document.CloudFlows),
+                (Kind: ConfigurableComponentKind.Workflow, Entries: document.Workflows),
+                (Kind: ConfigurableComponentKind.BusinessRule, Entries: document.BusinessRules),
+                (Kind: ConfigurableComponentKind.BusinessProcessFlow, Entries: document.BusinessProcessFlows),
+                (Kind: ConfigurableComponentKind.Action, Entries: document.Actions),
+                (Kind: ConfigurableComponentKind.PluginStep, Entries: document.PluginSteps),
             }
-        }
+            .SelectMany(section => section.Entries.Select(entry => (section.Kind, Entry: entry)))
+            .OrderByDescending(x => x.Entry.Enabled)
+            .ToArray();
 
-        // Tier 3 — plugin step state.
-        foreach (var entry in document.PluginSteps)
+        foreach (var (kind, entry) in stateTier)
         {
-            declaredNames.Add((ConfigurableComponentKind.PluginStep, entry.Name));
-            outcomes.Add(await ApplyOneAsync(inventory, ConfigurableComponentKind.PluginStep, entry.Name,
-                // A plugin step has no third state, so its caller always passes false (KTD7).
+            declaredNames.Add((kind, entry.Name));
+            outcomes.Add(await ApplyOneAsync(inventory, kind, entry.Name,
+                // Suspended is neither on nor off, so the writer needs to be told: a suspended flow the
+                // file declares off is not already off, and has to reach Draft (KTD8). A plugin step has no
+                // third state, and its component reports Suspended as false (KTD7), so one call serves both.
                 component => ComponentStateWriter.ApplyAsync(service, component, entry.Enabled, mode, ct,
-                    currentlySuspended: false))
+                    currentlySuspended: component.Suspended))
                 .ConfigureAwait(false));
         }
     }

@@ -177,32 +177,72 @@ public class ConfigureApplyServiceTests
         await service.DidNotReceive().CreateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
     }
 
-    // KTD25a: the inventory carries business rules, business process flows and actions so the inline
-    // surface can switch them, and a settings file has no section for any of them. Reporting one as
-    // undeclared would tell an operator to add a section that does not exist, and would bury the entries
-    // that really are missing. This is the regression widening the process read most risks, and it is not
-    // caught by testing the predicate: it has to be tested through an apply.
+    // R20: business rules, business process flows and actions are declarable, so a file that names one
+    // governs it exactly as it governs a flow.
     [Theory]
-    [InlineData(ConfigurableComponentKind.BusinessRule, "contoso_ShowHideRit")]
-    [InlineData(ConfigurableComponentKind.BusinessProcessFlow, "msdyn_bpf_d3d97bac")]
-    [InlineData(ConfigurableComponentKind.Action, "contoso_RecalculateTotals")]
-    public async Task Apply_AClassTheFileCannotDeclare_IsNeverReportedAsUndeclared(
-        ConfigurableComponentKind kind, string name)
+    [InlineData("BusinessRules", ConfigurableComponentKind.BusinessRule, "contoso_ShowHideRit")]
+    [InlineData("BusinessProcessFlows", ConfigurableComponentKind.BusinessProcessFlow, "Rijopdracht intake")]
+    [InlineData("Actions", ConfigurableComponentKind.Action, "contoso_RecalculateTotals")]
+    public async Task Apply_ADeclaredProcessClass_IsSwitchedLikeAnyOther(
+        string section, ConfigurableComponentKind kind, string name)
+    {
+        var service = Service();
+        var document = DocumentWith($$"""{ "{{section}}": { "{{name}}": false } }""");
+        var inventory = new SolutionInventory([new InventoryComponent(kind, name, Guid.NewGuid(), true)]);
+
+        var outcome = await new ConfigureApplyService()
+            .ApplyAsync(service, document, inventory, RunMode.Normal, CancellationToken.None);
+
+        outcome.Applied.Should().Be(1);
+        await service.Received(1).UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    // One of them left out of the file is undeclared, same as any other class. It used to be filtered out
+    // of that report because no section could hold it.
+    [Fact]
+    public async Task Apply_AnUndeclaredProcessClass_IsReportedLikeAnyOther()
     {
         var service = Service();
         var document = DocumentWith("""{ "CloudFlows": { "declared_flow": true } }""");
-        // Already in the declared state, so the only write this run could make would be to the class the
-        // file cannot declare.
         var inventory = new SolutionInventory([
             Flow("declared_flow", true),
-            new InventoryComponent(kind, name, Guid.NewGuid(), true),
+            new InventoryComponent(ConfigurableComponentKind.BusinessRule, "contoso_ShowHideRit", Guid.NewGuid(), true),
         ]);
 
         var outcome = await new ConfigureApplyService()
             .ApplyAsync(service, document, inventory, RunMode.Normal, CancellationToken.None);
 
-        outcome.Undeclared.Should().BeEmpty();
-        await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+        outcome.Undeclared.Should().ContainSingle().Which.Should().Contain("contoso_ShowHideRit");
+    }
+
+    // R20: a swap has to raise the new one before lowering the old, because some components cannot be
+    // switched off while they are the last of their kind still on. Ordering it here is what makes the
+    // swap declarable in one file.
+    [Fact]
+    public async Task Apply_RunsEveryActivationBeforeAnyDeactivation()
+    {
+        var service = Service();
+        var order = new List<bool>();
+        service.UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var e = call.Arg<Entity>();
+                order.Add(e.GetAttributeValue<OptionSetValue>("statecode")?.Value == 1);
+                return Task.CompletedTask;
+            });
+
+        var document = DocumentWith("""
+            { "CloudFlows": { "turn_off": false }, "Workflows": { "turn_on": true } }
+            """);
+        var inventory = new SolutionInventory([
+            Flow("turn_off", true),
+            new InventoryComponent(ConfigurableComponentKind.Workflow, "turn_on", Guid.NewGuid(), false),
+        ]);
+
+        await new ConfigureApplyService().ApplyAsync(service, document, inventory, RunMode.Normal, CancellationToken.None);
+
+        // The activation is in the Workflows section, which is listed after CloudFlows; it still goes first.
+        order.Should().Equal(true, false);
     }
 
     // AE2/R9: a component the file does not name is left alone and reported, never touched.

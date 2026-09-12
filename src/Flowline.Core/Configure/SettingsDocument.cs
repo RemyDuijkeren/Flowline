@@ -37,11 +37,38 @@ public sealed class SettingsDocument
     /// <summary>Top-level property name holding declared plugin step state.</summary>
     public const string PluginStepsProperty = "PluginSteps";
 
+    /// <summary>Top-level property name holding declared business rule state.</summary>
+    public const string BusinessRulesProperty = "BusinessRules";
+
+    /// <summary>Top-level property name holding declared business process flow state.</summary>
+    public const string BusinessProcessFlowsProperty = "BusinessProcessFlows";
+
+    /// <summary>Top-level property name holding declared custom process action state.</summary>
+    public const string ActionsProperty = "Actions";
+
     /// <summary>Every top-level property Flowline does not own, in the order the source file carried them.</summary>
     public IDictionary<string, JsonNode?> PassThrough { get; init; } = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
 
     /// <summary>Declared state for Power Automate cloud flows, keyed by <c>workflow.uniquename</c> (KTD9).</summary>
     public IList<ComponentStateEntry> CloudFlows { get; init; } = [];
+
+    /// <summary>Declared state for business rules, keyed by <c>workflow.uniquename</c>.</summary>
+    public IList<ComponentStateEntry> BusinessRules { get; init; } = [];
+
+    /// <summary>
+    /// Declared state for business process flows, keyed by <b>display name</b>.
+    /// </summary>
+    /// <remarks>
+    /// The one section not keyed on a name that survives a rename. Dataverse generates a business process
+    /// flow's unique name from the backing entity it creates, so it reads as
+    /// <c>msdyn_bpf_d3d97bac8c294105840e99e37a9d1c39</c>: unusable in a file people edit by hand, and
+    /// unusable at a prompt. Renaming one in the maker portal orphans its entry here, which the capture
+    /// reports as vanished rather than dropping.
+    /// </remarks>
+    public IList<ComponentStateEntry> BusinessProcessFlows { get; init; } = [];
+
+    /// <summary>Declared state for custom process actions, keyed by <c>workflow.uniquename</c>.</summary>
+    public IList<ComponentStateEntry> Actions { get; init; } = [];
 
     /// <summary>Declared state for classic Dataverse workflows, keyed by <c>workflow.uniquename</c> (KTD9).</summary>
     /// <remarks>
