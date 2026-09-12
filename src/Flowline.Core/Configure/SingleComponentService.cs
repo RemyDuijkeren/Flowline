@@ -65,21 +65,22 @@ public sealed record SingleComponentOutcome(
 public static class SingleComponentService
 {
     /// <summary>Reads or writes a cloud flow's, classic workflow's, or plugin step's state.</summary>
+    /// <param name="kinds">The classes to search. More than one when the caller did not narrow by type.</param>
     /// <param name="desiredEnabled">The target state, or <c>null</c> to read the current one instead of writing.</param>
     /// <exception cref="FlowlineException">
-    /// <see cref="ExitCode.NotFound"/> when no component of this kind matches <paramref name="name"/>;
+    /// <see cref="ExitCode.NotFound"/> when nothing in these classes matches <paramref name="name"/>;
     /// <see cref="ExitCode.ValidationFailed"/> when more than one does (R6, AE3).
     /// </exception>
     public static async Task<SingleComponentOutcome> ReadOrWriteStateAsync(
         IOrganizationServiceAsync2 service,
         SolutionInventory inventory,
-        ConfigurableComponentKind kind,
+        IReadOnlyCollection<ConfigurableComponentKind> kinds,
         string name,
         bool? desiredEnabled,
         RunMode mode,
         CancellationToken ct)
     {
-        var component = Resolve(inventory, kind, name);
+        var component = Resolve(inventory, kinds, name);
 
         if (desiredEnabled is null)
             return new SingleComponentOutcome(component, SingleComponentActionKind.Read,
@@ -93,6 +94,7 @@ public static class SingleComponentService
     }
 
     /// <summary>Reads or writes an environment variable's or a connection reference's value.</summary>
+    /// <param name="kinds">The classes to search. More than one when the caller did not narrow by type.</param>
     /// <param name="desiredValue">The target value, or <c>null</c> to read the current one instead of writing.</param>
     /// <remarks>
     /// An environment variable's value lives in its own row rather than on the inventory component, which
@@ -101,19 +103,19 @@ public static class SingleComponentService
     /// row, so reading one costs nothing.
     /// </remarks>
     /// <exception cref="FlowlineException">
-    /// <see cref="ExitCode.NotFound"/> when no component of this kind matches <paramref name="name"/>;
+    /// <see cref="ExitCode.NotFound"/> when nothing in these classes matches <paramref name="name"/>;
     /// <see cref="ExitCode.ValidationFailed"/> when more than one does (R6, AE3).
     /// </exception>
     public static async Task<SingleComponentOutcome> ReadOrWriteValueAsync(
         IOrganizationServiceAsync2 service,
         SolutionInventory inventory,
-        ConfigurableComponentKind kind,
+        IReadOnlyCollection<ConfigurableComponentKind> kinds,
         string name,
         string? desiredValue,
         RunMode mode,
         CancellationToken ct)
     {
-        var component = Resolve(inventory, kind, name);
+        var component = Resolve(inventory, kinds, name);
 
         // Read only on the path that reports it. An environment variable's value costs a Dataverse query,
         // and only a read prints it — a write reports what it did, not what was there, and the writer runs
@@ -152,22 +154,60 @@ public static class SingleComponentService
     /// <summary>
     /// Resolves the one component a name addresses, or fails naming what was searched (R6, R11, KTD9).
     /// </summary>
-    static InventoryComponent Resolve(SolutionInventory inventory, ConfigurableComponentKind kind, string name)
+    /// <remarks>
+    /// Searching several classes at once makes a collision reachable that could not happen before: a
+    /// cloud flow and a classic workflow can share a unique name, and until one command spanned both,
+    /// nothing would have looked at the two together. So an ambiguous match names each candidate's class,
+    /// and the remedy offered is the type filter rather than renaming something in Dataverse.
+    /// </remarks>
+    static InventoryComponent Resolve(
+        SolutionInventory inventory, IReadOnlyCollection<ConfigurableComponentKind> kinds, string name)
     {
-        var match = inventory.Match(kind, name);
+        var match = inventory.Match(kinds, name);
 
         if (match.Ambiguous.Count > 0)
+        {
+            var acrossClasses = match.Ambiguous.Select(c => c.Kind).Distinct().Count() > 1;
+
             throw new FlowlineException(ExitCode.ValidationFailed,
                 $"'{name}' matches {match.Ambiguous.Count} components in this solution: " +
-                string.Join(", ", match.Ambiguous.Select(c => $"'{c.Name}'")) +
-                ". Rename one in Dataverse, then re-run.");
+                string.Join(", ", match.Ambiguous.Select(c => $"'{c.Name}' ({Label(c.Kind)})")) +
+                (acrossClasses
+                    ? ". Narrow it with --type, or rename one in Dataverse."
+                    : ". Rename one in Dataverse, then re-run."));
+        }
 
         if (match.NotFound)
             throw new FlowlineException(ExitCode.NotFound,
-                $"No {Label(kind)} named '{name}' in this environment's copy of the solution. " +
-                $"Names are matched on {AddressingKey(kind)}, not the display name.");
+                $"No {Labels(kinds)} named '{name}' in this environment's copy of the solution. " +
+                $"Names are matched on {AddressingKeys(kinds)}, not the display name.");
 
         return match.Component!;
+    }
+
+    /// <summary>The classes searched, as a list a sentence can carry.</summary>
+    static string Labels(IReadOnlyCollection<ConfigurableComponentKind> kinds)
+    {
+        var labels = kinds.Select(Label).ToArray();
+
+        return labels.Length == 1
+            ? labels[0]
+            : string.Join(", ", labels[..^1]) + " or " + labels[^1];
+    }
+
+    /// <summary>
+    /// Which columns a name is matched against across the classes searched.
+    /// </summary>
+    /// <remarks>
+    /// The three state classes all address on the unique name, so that sentence stays short. The two
+    /// value classes disagree with each other, and a caller that did not narrow by type has to be told
+    /// both rather than a half-truth about whichever came first.
+    /// </remarks>
+    static string AddressingKeys(IReadOnlyCollection<ConfigurableComponentKind> kinds)
+    {
+        var keys = kinds.Select(AddressingKey).Distinct().ToArray();
+
+        return keys.Length == 1 ? keys[0] : string.Join(" or ", keys);
     }
 
     /// <summary>What a kind is called in a sentence, rather than in the enum.</summary>
@@ -175,6 +215,9 @@ public static class SingleComponentService
     {
         ConfigurableComponentKind.CloudFlow => "cloud flow",
         ConfigurableComponentKind.Workflow => "classic workflow",
+        ConfigurableComponentKind.BusinessRule => "business rule",
+        ConfigurableComponentKind.Action => "action",
+        ConfigurableComponentKind.BusinessProcessFlow => "business process flow",
         ConfigurableComponentKind.PluginStep => "plugin step",
         ConfigurableComponentKind.EnvironmentVariable => "environment variable",
         ConfigurableComponentKind.ConnectionReference => "connection reference",

@@ -177,6 +177,34 @@ public class ConfigureApplyServiceTests
         await service.DidNotReceive().CreateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
     }
 
+    // KTD25a: the inventory carries business rules, business process flows and actions so the inline
+    // surface can switch them, and a settings file has no section for any of them. Reporting one as
+    // undeclared would tell an operator to add a section that does not exist, and would bury the entries
+    // that really are missing. This is the regression widening the process read most risks, and it is not
+    // caught by testing the predicate: it has to be tested through an apply.
+    [Theory]
+    [InlineData(ConfigurableComponentKind.BusinessRule, "contoso_ShowHideRit")]
+    [InlineData(ConfigurableComponentKind.BusinessProcessFlow, "msdyn_bpf_d3d97bac")]
+    [InlineData(ConfigurableComponentKind.Action, "contoso_RecalculateTotals")]
+    public async Task Apply_AClassTheFileCannotDeclare_IsNeverReportedAsUndeclared(
+        ConfigurableComponentKind kind, string name)
+    {
+        var service = Service();
+        var document = DocumentWith("""{ "CloudFlows": { "declared_flow": true } }""");
+        // Already in the declared state, so the only write this run could make would be to the class the
+        // file cannot declare.
+        var inventory = new SolutionInventory([
+            Flow("declared_flow", true),
+            new InventoryComponent(kind, name, Guid.NewGuid(), true),
+        ]);
+
+        var outcome = await new ConfigureApplyService()
+            .ApplyAsync(service, document, inventory, RunMode.Normal, CancellationToken.None);
+
+        outcome.Undeclared.Should().BeEmpty();
+        await service.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
     // AE2/R9: a component the file does not name is left alone and reported, never touched.
     [Fact]
     public async Task Apply_UndeclaredComponent_IsReportedAndNotTouched()

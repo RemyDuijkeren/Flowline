@@ -47,15 +47,23 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     : SettingsCommandBase<TSettings>(console, dataverseConnector, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
     where TSettings : SettingsComponentSettings
 {
-    /// <summary>Which component kind the invoked operation name means.</summary>
-    protected abstract ConfigurableComponentKind KindOf(string operation);
+    /// <summary>
+    /// Which component classes this invocation addresses (KTD25).
+    /// </summary>
+    /// <remarks>
+    /// One class when <c>--type</c> narrowed it, all of the command's otherwise. The kind used to come
+    /// from the invoked command name, which is what made a leaf per class necessary; reading it from a
+    /// flag is what lets the process family grow without the command list growing with it.
+    /// </remarks>
+    protected abstract IReadOnlyCollection<ConfigurableComponentKind> KindsFor(TSettings settings);
 
     /// <summary>Rejects a flag pair that cannot mean anything, before anything is read or written.</summary>
     protected virtual string? ValidateOperationFlags(TSettings settings) => null;
 
     /// <summary>Reads or writes the resolved component.</summary>
     protected abstract Task<SingleComponentOutcome> RunAsync(
-        IOrganizationServiceAsync2 service, SolutionInventory inventory, ConfigurableComponentKind kind,
+        IOrganizationServiceAsync2 service, SolutionInventory inventory,
+        IReadOnlyCollection<ConfigurableComponentKind> kinds,
         string name, TSettings settings, RunMode mode, CancellationToken ct);
 
     /// <summary>Whether this invocation writes, as opposed to reading the current state or value.</summary>
@@ -73,7 +81,8 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// the spinner opens after an answer and closes before the next question.
     /// </remarks>
     Task<SingleComponentOutcome> RunWithSpinnerAsync(
-        IOrganizationServiceAsync2 service, SolutionInventory inventory, ConfigurableComponentKind kind,
+        IOrganizationServiceAsync2 service, SolutionInventory inventory,
+        IReadOnlyCollection<ConfigurableComponentKind> kinds,
         string name, TSettings settings, RunMode mode, bool isWrite, CancellationToken ct)
     {
         // A dry run is checking, not updating: it runs the same comparison and stops before the write.
@@ -81,7 +90,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
 
         return Console.Status().FlowlineSpinner().StartAsync(
             $"{verb} [bold]{Markup.Escape(name)}[/]...",
-            _ => RunAsync(service, inventory, kind, name, settings, mode, ct));
+            _ => RunAsync(service, inventory, kinds, name, settings, mode, ct));
     }
 
     protected override bool IsStandalone(TSettings settings) =>
@@ -89,7 +98,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
 
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
-        var kind = KindOf(context.Name);
+        var kinds = KindsFor(settings);
 
         var operationFlagError = ValidateOperationFlags(settings);
         if (operationFlagError is not null)
@@ -118,10 +127,10 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         {
             // R14: nothing of this kind in the target is a statement, not a failure. There is no name the
             // caller could have supplied instead, so there is nothing to send them back to fix.
-            var candidates = inventory.OfKind(kind).ToArray();
+            var candidates = inventory.OfKinds(kinds).ToArray();
             if (candidates.Length == 0)
             {
-                Console.Info($"No {SettingsComponentNames.Plural(kind)} in this solution.");
+                Console.Info($"No {SettingsComponentNames.Plural(kinds)} in this solution.");
                 return (int)ExitCode.Success;
             }
 
@@ -129,35 +138,41 @@ public abstract class SettingsComponentCommandBase<TSettings>(
             // answer is the list, and a run that prints what was asked for succeeded.
             if (!IsInteractive())
             {
-                ListCandidates(kind, candidates);
+                ListCandidates(kinds, candidates);
                 return (int)ExitCode.Success;
             }
 
-            name = await PickAsync(kind, candidates, cancellationToken);
+            // Narrowed to what was picked, not just its name. Resolution searches by name, and a name
+            // can exist in two classes — a business rule and a classic workflow called "Account - set
+            // name" is a real case — so carrying only the name forward threw the pick away and failed
+            // as ambiguous, telling someone who had pointed at one row to go and rename something.
+            var picked = await PickAsync(kinds, candidates, cancellationToken);
+            name = picked.Name;
+            kinds = [picked.Kind];
         }
 
         var isWrite = IsWrite(settings);
 
         var outcome = await RunWithSpinnerAsync(
-            service, inventory, kind, name, settings, mode, isWrite, cancellationToken);
+            service, inventory, kinds, name, settings, mode, isWrite, cancellationToken);
 
         // A read at a terminal is someone deciding, not someone reporting. Show what is there, then ask
         // what it should be — the picker otherwise ends by printing a state the operator just looked at
         // and offering no way to change it.
         if (!isWrite && IsInteractive())
         {
-            Report(outcome, kind, mode);
+            Report(outcome, mode);
 
-            if (!await PromptForTargetAsync(kind, outcome, settings, env, cancellationToken))
+            if (!await PromptForTargetAsync(outcome, settings, env, cancellationToken))
                 return (int)ExitCode.Success;
 
             outcome = await RunWithSpinnerAsync(
-                service, inventory, kind, outcome.Component.Name, settings, mode, isWrite: true,
-                cancellationToken);
+                service, inventory, [outcome.Component.Kind], outcome.Component.Name, settings, mode,
+                isWrite: true, cancellationToken);
             isWrite = true;
         }
 
-        Report(outcome, kind, mode);
+        Report(outcome, mode);
 
         // Before the finish line, not after it: the finish line is documented as always last, and a
         // warning printed under it reads as belonging to the next command.
@@ -166,7 +181,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         // next push moves it, and skipping the warning there hid the case most worth warning about — the
         // operator sees "already matches" and concludes there is nothing to reconcile.
         if (isWrite && outcome.Action is SingleComponentActionKind.Applied or SingleComponentActionKind.Unchanged)
-            await WarnIfTheFileWouldOverrideAsync(kind, outcome, settings, role, standalone, cancellationToken);
+            await WarnIfTheFileWouldOverrideAsync(outcome, settings, role, standalone, cancellationToken);
 
         if (isWrite)
             Console.Done(mode.IsReportOnly()
@@ -188,10 +203,13 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// accepted exposure into a whole solution's worth, in the runs most likely to be piped or logged.
     /// The value is still there for the asking, one named read at a time.
     /// </remarks>
-    protected void ListCandidates(ConfigurableComponentKind kind, IReadOnlyList<InventoryComponent> candidates)
+    protected void ListCandidates(
+        IReadOnlyCollection<ConfigurableComponentKind> kinds, IReadOnlyList<InventoryComponent> candidates)
     {
-        foreach (var candidate in SettingsComponentOutcomes.Ordered(candidates, kind))
-            Console.WriteLine(SettingsComponentOutcomes.Describe(candidate, kind));
+        var width = SettingsComponentNames.TypeColumnWidth(kinds);
+
+        foreach (var candidate in SettingsComponentOutcomes.Ordered(candidates))
+            Console.WriteLine(SettingsComponentOutcomes.Describe(candidate, width));
     }
 
     /// <summary>Asks which component to address, when the run is at a terminal (R9).</summary>
@@ -200,16 +218,19 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// and typing part of a name is what makes a long solution navigable. The inventory spinner has already
     /// closed by the time this runs — Spectre forbids a prompt inside a status display (KTD10).
     /// </remarks>
-    protected virtual async Task<string> PickAsync(
-        ConfigurableComponentKind kind, IReadOnlyList<InventoryComponent> candidates, CancellationToken ct)
+    protected virtual async Task<InventoryComponent> PickAsync(
+        IReadOnlyCollection<ConfigurableComponentKind> kinds, IReadOnlyList<InventoryComponent> candidates,
+        CancellationToken ct)
     {
-        var prompt = new SelectionPrompt<InventoryComponent>()
-            .Title(FlowlineConsoleExtensions.Question($"Pick a {SettingsComponentNames.Singular(kind)}:"))
-            .UseConverter(c => SettingsComponentOutcomes.DescribeCandidate(c, kind))
-            .EnableSearch()
-            .AddChoices(SettingsComponentOutcomes.Ordered(candidates, kind));
+        var width = SettingsComponentNames.TypeColumnWidth(kinds);
 
-        return (await Console.PromptAsync(prompt, ct)).Name;
+        var prompt = new SelectionPrompt<InventoryComponent>()
+            .Title(FlowlineConsoleExtensions.Question($"Pick a {SettingsComponentNames.Singular(kinds)}:"))
+            .UseConverter(c => SettingsComponentOutcomes.DescribeCandidate(c, width))
+            .EnableSearch()
+            .AddChoices(SettingsComponentOutcomes.Ordered(candidates));
+
+        return await Console.PromptAsync(prompt, ct);
     }
 
     /// <summary>
@@ -222,8 +243,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// </remarks>
     /// <returns><c>true</c> when the answer asked for a write.</returns>
     protected abstract Task<bool> PromptForTargetAsync(
-        ConfigurableComponentKind kind, SingleComponentOutcome current, TSettings settings,
-        EnvironmentInfo environment, CancellationToken ct);
+        SingleComponentOutcome current, TSettings settings, EnvironmentInfo environment, CancellationToken ct);
 
 
     /// <summary>
@@ -239,10 +259,14 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// "no file names it" — which is a different, and unearned, claim.
     /// </remarks>
     async Task WarnIfTheFileWouldOverrideAsync(
-        ConfigurableComponentKind kind, SingleComponentOutcome outcome, TSettings settings,
+        SingleComponentOutcome outcome, TSettings settings,
         EnvironmentRole? role, bool standalone, CancellationToken ct)
     {
         if (standalone) return;
+
+        // A class the file has no section for can never be declared, so there is nothing to warn about
+        // and nothing that will put it back (KTD25).
+        if (!ConfigurableComponentKinds.IsFileManaged(outcome.Component.Kind)) return;
 
         var location = await ResolveSettingsFileAsync(null, role, standalone: false, null, forWriting: false, ct);
         if (!location.Exists) return;
@@ -266,7 +290,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         var (writtenEnabled, writtenValue) = WrittenBy(settings);
 
         if (!ConfigureApplyService.WouldOverride(
-                document, kind, outcome.Component.Name, writtenEnabled, writtenValue))
+                document, outcome.Component.Kind, outcome.Component.Name, writtenEnabled, writtenValue))
             return;
 
         Console.Warning(
@@ -277,14 +301,14 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// <summary>What this invocation asked to write, for the override comparison.</summary>
     protected abstract (bool? Enabled, string? Value) WrittenBy(TSettings settings);
 
-    void Report(SingleComponentOutcome outcome, ConfigurableComponentKind kind, RunMode mode)
+    void Report(SingleComponentOutcome outcome, RunMode mode)
     {
         var name = Markup.Escape(outcome.Component.Name);
 
         switch (outcome.Action)
         {
             case SingleComponentActionKind.Read:
-                Console.Info($"[bold]{name}[/] is {Markup.Escape(SettingsComponentOutcomes.DescribeCurrent(outcome, kind))}");
+                Console.Info($"[bold]{name}[/] is {Markup.Escape(SettingsComponentOutcomes.DescribeCurrent(outcome))}");
                 break;
             case SingleComponentActionKind.Applied when mode.IsReportOnly():
                 Console.Info(SettingsSupport.BuildWouldChangeLine(outcome.Component.Name));
@@ -317,8 +341,8 @@ internal static class SettingsComponentOutcomes
     /// operator who reads "off" for a flow that stopped itself will turn it on and be surprised when it
     /// stops again.
     /// </remarks>
-    public static string DescribeCurrent(SingleComponentOutcome outcome, ConfigurableComponentKind kind) =>
-        kind is ConfigurableComponentKind.EnvironmentVariable or ConfigurableComponentKind.ConnectionReference
+    public static string DescribeCurrent(SingleComponentOutcome outcome) =>
+        IsValueKind(outcome.Component.Kind)
             ? outcome.PriorValue is { Length: > 0 } value ? value : "unset"
             : outcome.WasSuspended ? "suspended" : outcome.PriorEnabled == true ? "on" : "off";
 
@@ -332,14 +356,13 @@ internal static class SettingsComponentOutcomes
     ///
     /// Value kinds have no state, so they keep plain name order.
     /// </remarks>
-    public static InventoryComponent[] Ordered(
-        IReadOnlyList<InventoryComponent> candidates, ConfigurableComponentKind kind) =>
-        IsValueKind(kind)
-            ? candidates.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToArray()
-            : candidates
-                .OrderBy(c => c.Suspended ? 0 : c.Enabled == true ? 2 : 1)
-                .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+    public static InventoryComponent[] Ordered(IReadOnlyList<InventoryComponent> candidates) =>
+        candidates
+            // A value kind has no state, so every one of them ranks the same and the sort falls through
+            // to the name. That is what a list of environment variables and connection references wants.
+            .OrderBy(c => IsValueKind(c.Kind) ? 0 : c.Suspended ? 0 : c.Enabled == true ? 2 : 1)
+            .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     /// <summary>How a component reads in a list: what it is, then its addressable name.</summary>
     /// <remarks>
@@ -363,13 +386,15 @@ internal static class SettingsComponentOutcomes
     /// all, a connection reference's is an id nobody recognises, and filling the label with values would
     /// print a Dataverse-stored secret into the list.
     /// </remarks>
-    public static string Describe(InventoryComponent component, ConfigurableComponentKind kind)
+    public static string Describe(InventoryComponent component, int typeWidth)
     {
-        if (IsValueKind(kind)) return component.Name;
+        var type = SettingsComponentNames.TypeToken(component.Kind).PadRight(typeWidth);
+
+        if (IsValueKind(component.Kind)) return $"{type}  {component.Name}";
 
         var (glyph, word, _) = StateOf(component);
 
-        return $"{glyph} {word}  {component.Name}";
+        return $"{glyph} {word}  {type}  {component.Name}";
     }
 
     /// <summary>
@@ -385,15 +410,16 @@ internal static class SettingsComponentOutcomes
     /// sync" crashed the picker with "Could not find color or style 'Account'": square brackets are
     /// ordinary in a flow name and a style tag to the renderer.
     /// </remarks>
-    public static string DescribeCandidate(InventoryComponent component, ConfigurableComponentKind kind)
+    public static string DescribeCandidate(InventoryComponent component, int typeWidth)
     {
         var name = Markup.Escape(component.Name);
+        var type = SettingsComponentNames.TypeToken(component.Kind).PadRight(typeWidth);
 
-        if (IsValueKind(kind)) return name;
+        if (IsValueKind(component.Kind)) return $"{type}  {name}";
 
         var (glyph, word, colour) = StateOf(component);
 
-        return $"[{colour}]{glyph} {word}[/]  {name}";
+        return $"[{colour}]{glyph} {word}[/]  {type}  {name}";
     }
 
     /// <summary>The glyph, word and colour one component's state reads as.</summary>
@@ -435,13 +461,45 @@ internal static class SettingsComponentOutcomes
     };
 }
 
-/// <summary>What each kind is called in a sentence.</summary>
+/// <summary>What each kind is called, in a sentence and in a list column.</summary>
 internal static class SettingsComponentNames
 {
+    /// <summary>
+    /// The short token a list line carries and <c>--type</c> accepts (KTD25).
+    /// </summary>
+    /// <remarks>
+    /// One word, because it is a column on every row. It is also part of the rendered label, and the
+    /// picker's search matches the label, so typing the token filters the list with no flag and no new
+    /// mechanism.
+    /// </remarks>
+    public static string TypeToken(ConfigurableComponentKind kind) => kind switch
+    {
+        ConfigurableComponentKind.CloudFlow => "flow",
+        ConfigurableComponentKind.Workflow => "workflow",
+        ConfigurableComponentKind.BusinessRule => "rule",
+        ConfigurableComponentKind.BusinessProcessFlow => "bpf",
+        ConfigurableComponentKind.Action => "action",
+        ConfigurableComponentKind.PluginStep => "plugin",
+        ConfigurableComponentKind.EnvironmentVariable => "envvar",
+        ConfigurableComponentKind.ConnectionReference => "connref",
+        _ => "component",
+    };
+
+    /// <summary>How wide the type column has to be for the classes this command can show.</summary>
+    /// <remarks>
+    /// Measured from the kinds in play rather than from every kind there is, so narrowing with
+    /// <c>--type</c> tightens the column instead of leaving a gap the size of the widest word.
+    /// </remarks>
+    public static int TypeColumnWidth(IReadOnlyCollection<ConfigurableComponentKind> kinds) =>
+        kinds.Max(k => TypeToken(k).Length);
+
     public static string Singular(ConfigurableComponentKind kind) => kind switch
     {
         ConfigurableComponentKind.CloudFlow => "flow",
         ConfigurableComponentKind.Workflow => "workflow",
+        ConfigurableComponentKind.BusinessRule => "business rule",
+        ConfigurableComponentKind.BusinessProcessFlow => "business process flow",
+        ConfigurableComponentKind.Action => "action",
         ConfigurableComponentKind.PluginStep => "plugin step",
         ConfigurableComponentKind.EnvironmentVariable => "environment variable",
         ConfigurableComponentKind.ConnectionReference => "connection reference",
@@ -452,14 +510,35 @@ internal static class SettingsComponentNames
     {
         ConfigurableComponentKind.CloudFlow => "cloud flows",
         ConfigurableComponentKind.Workflow => "classic workflows",
+        ConfigurableComponentKind.BusinessRule => "business rules",
+        ConfigurableComponentKind.BusinessProcessFlow => "business process flows",
+        ConfigurableComponentKind.Action => "actions",
         ConfigurableComponentKind.PluginStep => "plugin steps",
         ConfigurableComponentKind.EnvironmentVariable => "environment variables",
         ConfigurableComponentKind.ConnectionReference => "connection references",
         _ => "components",
     };
+
+    /// <summary>What to call the thing being picked, when several classes are in play.</summary>
+    /// <remarks>
+    /// Naming all six in a prompt title would be longer than the prompt. Narrowed by <c>--type</c> it
+    /// says exactly what it is, and unnarrowed it says the only thing true of all of them.
+    /// </remarks>
+    public static string Singular(IReadOnlyCollection<ConfigurableComponentKind> kinds) =>
+        kinds.Count == 1 ? Singular(kinds.First()) : "component";
+
+    /// <inheritdoc cref="Singular(IReadOnlyCollection{ConfigurableComponentKind})"/>
+    public static string Plural(IReadOnlyCollection<ConfigurableComponentKind> kinds)
+    {
+        if (kinds.Count == 1) return Plural(kinds.First());
+
+        var names = kinds.Select(Plural).ToArray();
+
+        return string.Join(", ", names[..^1]) + " or " + names[^1];
+    }
 }
 
-/// <summary>Turns a cloud flow, classic workflow or plugin step on or off, or reads its state.</summary>
+/// <summary>Turns anything with an on and an off on or off, or reads its state.</summary>
 public class SettingsStateCommand(
     IAnsiConsole console,
     DataverseConnector dataverseConnector,
@@ -470,8 +549,22 @@ public class SettingsStateCommand(
     NuGetVersionClient nuGetVersionClient)
     : SettingsComponentCommandBase<SettingsStateCommand.Settings>(console, dataverseConnector, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
+    /// <summary>
+    /// The classes <c>settings state</c> can narrow to (KTD25).
+    /// </summary>
+    /// <remarks>
+    /// An enum rather than a string, so the parser rejects an unknown type and the help lists the valid
+    /// ones with no hand-written check — the same thing that already makes <c>--value</c> on a flow a
+    /// parse error. Spectre matches these case-insensitively, so the user types <c>bpf</c>.
+    /// </remarks>
+    public enum StateType { Flow, Workflow, Rule, Bpf, Action, Plugin }
+
     public sealed class Settings : SettingsComponentSettings
     {
+        [CommandOption("--type <type>")]
+        [Description("Narrow to one class: flow, workflow, rule, bpf, action, or plugin")]
+        public StateType? Type { get; set; }
+
         [CommandOption("--on")]
         [Description("Turn it on")]
         [DefaultValue(false)]
@@ -493,16 +586,20 @@ public class SettingsStateCommand(
             ? "--on and --off can't both be given: pick the state you want."
             : null;
 
-    protected override ConfigurableComponentKind KindOf(string operation) => KindFor(operation);
+    protected override IReadOnlyCollection<ConfigurableComponentKind> KindsFor(Settings settings) =>
+        settings.Type is { } type ? [KindFor(type)] : ConfigurableComponentKinds.WithState;
 
-    internal static ConfigurableComponentKind KindFor(string operation) => operation switch
+    internal static ConfigurableComponentKind KindFor(StateType type) => type switch
     {
-        "flow" => ConfigurableComponentKind.CloudFlow,
-        "workflow" => ConfigurableComponentKind.Workflow,
-        "plugin" => ConfigurableComponentKind.PluginStep,
-        // Unreachable: the parser only routes the three names registered for this class. An exception
-        // rather than a typed exit code, because reaching it would be a registration bug, not user input.
-        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, "Not a state operation."),
+        StateType.Flow => ConfigurableComponentKind.CloudFlow,
+        StateType.Workflow => ConfigurableComponentKind.Workflow,
+        StateType.Rule => ConfigurableComponentKind.BusinessRule,
+        StateType.Bpf => ConfigurableComponentKind.BusinessProcessFlow,
+        StateType.Action => ConfigurableComponentKind.Action,
+        StateType.Plugin => ConfigurableComponentKind.PluginStep,
+        // Unreachable: the parser only accepts the values above. An exception rather than a typed exit
+        // code, because reaching it would mean the enum and this map disagree, not that input was bad.
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a state type."),
     };
 
     protected override bool IsWrite(Settings settings) => settings.On || settings.Off;
@@ -510,8 +607,7 @@ public class SettingsStateCommand(
     const string LeaveIt = "leave it as it is";
 
     protected override async Task<bool> PromptForTargetAsync(
-        ConfigurableComponentKind kind, SingleComponentOutcome current, Settings settings,
-        EnvironmentInfo environment, CancellationToken ct)
+        SingleComponentOutcome current, Settings settings, EnvironmentInfo environment, CancellationToken ct)
     {
         // The opposite of what it is goes first, so the common answer is one Enter away: someone who read
         // the state and stayed for the prompt is nearly always there to flip it. Suspended counts as on —
@@ -535,10 +631,11 @@ public class SettingsStateCommand(
         (IsWrite(settings) ? settings.On : null, null);
 
     protected override Task<SingleComponentOutcome> RunAsync(
-        IOrganizationServiceAsync2 service, SolutionInventory inventory, ConfigurableComponentKind kind,
+        IOrganizationServiceAsync2 service, SolutionInventory inventory,
+        IReadOnlyCollection<ConfigurableComponentKind> kinds,
         string name, Settings settings, RunMode mode, CancellationToken ct) =>
         SingleComponentService.ReadOrWriteStateAsync(
-            service, inventory, kind, name,
+            service, inventory, kinds, name,
             desiredEnabled: IsWrite(settings) ? settings.On : null,
             mode, ct);
 }
@@ -554,29 +651,37 @@ public class SettingsValueCommand(
     NuGetVersionClient nuGetVersionClient)
     : SettingsComponentCommandBase<SettingsValueCommand.Settings>(console, dataverseConnector, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
 {
+    /// <inheritdoc cref="SettingsStateCommand.StateType"/>
+    public enum ValueType { EnvVar, ConnRef }
+
     public sealed class Settings : SettingsComponentSettings
     {
+        [CommandOption("--type <type>")]
+        [Description("Narrow to one class: envvar or connref")]
+        public ValueType? Type { get; set; }
+
         [CommandOption("--value <value>")]
         [Description("The value to set, or the connection id to bind. Omit to read the current one")]
         public string? Value { get; set; }
     }
 
-    protected override ConfigurableComponentKind KindOf(string operation) => KindFor(operation);
+    protected override IReadOnlyCollection<ConfigurableComponentKind> KindsFor(Settings settings) =>
+        settings.Type is { } type ? [KindFor(type)] : ConfigurableComponentKinds.WithValue;
 
-    internal static ConfigurableComponentKind KindFor(string operation) => operation switch
+    internal static ConfigurableComponentKind KindFor(ValueType type) => type switch
     {
-        "envvar" => ConfigurableComponentKind.EnvironmentVariable,
-        "connref" => ConfigurableComponentKind.ConnectionReference,
-        // Unreachable, for the same reason as the state operations above.
-        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, "Not a value operation."),
+        ValueType.EnvVar => ConfigurableComponentKind.EnvironmentVariable,
+        ValueType.ConnRef => ConfigurableComponentKind.ConnectionReference,
+        // Unreachable, for the same reason as the state types above.
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a value type."),
     };
 
     protected override bool IsWrite(Settings settings) => settings.Value is not null;
 
     protected override Task<bool> PromptForTargetAsync(
-        ConfigurableComponentKind kind, SingleComponentOutcome current, Settings settings,
-        EnvironmentInfo environment, CancellationToken ct) =>
-        kind == ConfigurableComponentKind.ConnectionReference
+        SingleComponentOutcome current, Settings settings, EnvironmentInfo environment,
+        CancellationToken ct) =>
+        current.Component.Kind == ConfigurableComponentKind.ConnectionReference
             ? PromptForConnectionAsync(current, settings, environment, ct)
             : PromptForTypedValueAsync("value", settings, ct);
 
@@ -612,96 +717,31 @@ public class SettingsValueCommand(
     /// before a write, on a command whose whole job is to set this one value; `pac` being unreachable is a
     /// reason to ask for the id instead of offering a list.
     /// </remarks>
+    /// <summary>
+    /// Offers the environment's connections for this reference's connector, rather than a typed id.
+    /// </summary>
+    /// <remarks>
+    /// The menu itself lives in <see cref="ConnectionPicker"/>, shared with the capture path: a settings
+    /// file's unbound references ask the same question, and two menus for one question would drift.
+    /// </remarks>
     async Task<bool> PromptForConnectionAsync(
         SingleComponentOutcome current, Settings settings, EnvironmentInfo environment, CancellationToken ct)
     {
-        var connectorId = current.Component.ConnectorId;
+        var chosen = await ConnectionPicker.PickAsync(
+            Console, environment, current.Component.ConnectorId,
+            $"Bind {Markup.Escape(current.Component.Name)} to:", ct);
 
-        while (true)
-        {
-            var connections = await Console.Status().FlowlineSpinner().StartAsync(
-                "Reading this environment's connections...",
-                _ => PacConnections.ListAsync(environment.EnvironmentUrl!, ct));
+        if (chosen is null) return false;
 
-            var matching = PacConnections.ForConnector(connections, connectorId);
-
-            if (matching.Count == 0)
-                Console.Info("No connections here match this reference's connector, or 'pac' couldn't list them.");
-
-            var choices = matching
-                .Select(c => new ConnectionChoice($"{c.Name} ({c.Status})", ConnectionChoiceKind.Bind, c.Id))
-                .Append(new ConnectionChoice("Enter a connection id by hand", ConnectionChoiceKind.Type))
-                .Append(new ConnectionChoice("Create a new connection in the maker portal", ConnectionChoiceKind.Create))
-                .Append(new ConnectionChoice("Leave it as it is", ConnectionChoiceKind.Leave))
-                .ToArray();
-
-            var answer = await Console.PromptAsync(
-                new SelectionPrompt<ConnectionChoice>()
-                    .Title(FlowlineConsoleExtensions.Question(
-                        $"Bind {Markup.Escape(current.Component.Name)} to:"))
-                    .UseConverter(c => Markup.Escape(c.Label))
-                    .AddChoices(choices), ct);
-
-            switch (answer.Kind)
-            {
-                case ConnectionChoiceKind.Leave:
-                    return false;
-
-                case ConnectionChoiceKind.Type:
-                    return await PromptForTypedValueAsync("connection id", settings, ct);
-
-                case ConnectionChoiceKind.Create:
-                    OpenMakerPortalConnections(environment.EnvironmentId);
-
-                    // Declining is the way out of the loop: someone who did not create a connection after
-                    // all would otherwise have only Ctrl+C.
-                    if (!await Console.PromptAsync(
-                            new ConfirmationPrompt("Created it? Answer yes to list the connections again"), ct))
-                        return false;
-
-                    continue;
-
-                default:
-                    settings.Value = answer.ConnectionId;
-                    return true;
-            }
-        }
+        settings.Value = chosen;
+        return true;
     }
-
-    /// <summary>Opens the environment's new-connection page in the default browser.</summary>
-    /// <remarks>
-    /// The portal is the only place most connections can be created: a connector that needs an interactive
-    /// consent has no headless path, and `pac connection create` makes a service principal Dataverse
-    /// connection and nothing else.
-    ///
-    /// A browser that will not open is reported rather than thrown: the URL is printed either way, and
-    /// the operator can open it themselves.
-    /// </remarks>
-    void OpenMakerPortalConnections(Guid environmentId)
-    {
-        var url = $"https://make.powerapps.com/environments/{environmentId}/connections/available";
-
-        Console.Info($"Opening {url}");
-
-        try
-        {
-            using var _ = System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            Console.Warning($"Couldn't open a browser ({Markup.Escape(ex.Message)}). Open that address yourself.");
-        }
-    }
-
-    enum ConnectionChoiceKind { Bind, Type, Create, Leave }
-
-    sealed record ConnectionChoice(string Label, ConnectionChoiceKind Kind, string? ConnectionId = null);
 
     protected override (bool? Enabled, string? Value) WrittenBy(Settings settings) => (null, settings.Value);
 
     protected override Task<SingleComponentOutcome> RunAsync(
-        IOrganizationServiceAsync2 service, SolutionInventory inventory, ConfigurableComponentKind kind,
+        IOrganizationServiceAsync2 service, SolutionInventory inventory,
+        IReadOnlyCollection<ConfigurableComponentKind> kinds,
         string name, Settings settings, RunMode mode, CancellationToken ct) =>
-        SingleComponentService.ReadOrWriteValueAsync(service, inventory, kind, name, settings.Value, mode, ct);
+        SingleComponentService.ReadOrWriteValueAsync(service, inventory, kinds, name, settings.Value, mode, ct);
 }

@@ -374,7 +374,20 @@ namespace Flowline
             // operation name and description, free to drift from the registrations below.
             config.AddBranch("settings", settings =>
             {
-                settings.SetDescription("Read or change one environment's configuration: environment variable values, connection references, and flow, workflow and plugin step state.");
+                // The five component operations share a shape and a set of caveats. Stated once here
+                // rather than five times below: repeating them cost about 140 words on one screen and
+                // made a list of seven read as a wall. It is also the only place the optional [name] can
+                // be documented — Spectre's command table renders required arguments and omits optional
+                // ones, and its help API exposes no parameter name to render a fuller signature with.
+                settings.SetDescription(
+                    "Read or change one environment's configuration: environment variable values, " +
+                    "connection references, and flow, workflow and plugin step state. " +
+                    "Both component operations take the environment, then optionally the component name; " +
+                    "omit the name to list or pick one, and narrow the list with --type. They run any " +
+                    "time without a deploy and the component must already be in the target. For the " +
+                    "classes a settings file declares, the file still wins on the next push; a business " +
+                    "rule, business process flow or action is not one of those, so a change to one of " +
+                    "them stays.");
 
                 settings.AddCommand<SettingsPushCommand>("push")
                         .WithDescription("Apply a settings file to an environment. Only components the file names are touched, and re-running the same file changes nothing.")
@@ -383,35 +396,29 @@ namespace Flowline
                         .WithExample("settings", "push", "test", "--settings-file", "settings.test.json");
 
                 settings.AddCommand<SettingsPullCommand>("pull")
-                        .WithDescription("Write a settings file from an environment. Omit the environment to capture every environment the project configures.")
+                        // Omitting the environment stopped meaning "sweep them all" when that form became
+                        // a prompt at a terminal and a typed failure in a script. The bare example went
+                        // with it: it read as a scriptable form and is not one.
+                        .WithDescription("Write a settings file from an environment. Omit it to pick from the ones the project configures; a script must name one.")
                         .WithExample("settings", "pull", "test")
-                        .WithExample("settings", "pull")
                         .WithExample("settings", "pull", "https://contoso-test.crm4.dynamics.com/", "--solution-name", "ContosoCustomizations");
 
-                // The five component kinds. One class per flag set, not per kind (KTD4): the parser then
-                // rejects --value on a flow and --on on a variable with no hand-written check, and the only
-                // contradiction left to check by hand is --on together with --off.
-                settings.AddCommand<SettingsStateCommand>("flow")
-                        .WithDescription("Turn a cloud flow on or off, or read its state. Run it any time without a deploy; the flow must already be in the target's copy of the solution, and the settings file still wins on the next push.")
-                        .WithExample("settings", "flow", "prod", "ApprovalFlow", "--off")
-                        .WithExample("settings", "flow", "test", "ApprovalFlow");
+                // Two component operations, named for what they do rather than for what they address
+                // (KTD25). The kind is a filter, so the process family can grow — business rules, business
+                // process flows, actions and whatever category the platform ships next — without the
+                // command list growing with it. One class per flag set, so the parser still rejects
+                // --value on a flow and --on on a variable with no hand-written check (KTD4).
+                settings.AddCommand<SettingsStateCommand>("state")
+                        .WithDescription("Turn a component on or off, or read its state. Covers cloud flows, classic workflows, business rules, business process flows, actions and plugin steps.")
+                        .WithExample("settings", "state", "prod", "ApprovalFlow", "--off")
+                        .WithExample("settings", "state", "test", "--type", "flow")
+                        .WithExample("settings", "state", "prod", "contoso_AutoNumber", "--on");
 
-                settings.AddCommand<SettingsStateCommand>("workflow")
-                        .WithDescription("Turn a classic workflow on or off, or read its state. Run it any time without a deploy; the workflow must already be in the target's copy of the solution, and the settings file still wins on the next push.")
-                        .WithExample("settings", "workflow", "prod", "contoso_AutoNumber", "--on");
-
-                settings.AddCommand<SettingsStateCommand>("plugin")
-                        .WithDescription("Turn a plugin step on or off, or read its state. Run it any time without a deploy; the step must already be registered in the target, and the settings file still wins on the next push.")
-                        .WithExample("settings", "plugin", "prod", "Contoso.Plugins.AccountPreCreate", "--off");
-
-                settings.AddCommand<SettingsValueCommand>("envvar")
-                        .WithDescription("Set an environment variable's value, or read it. Run it any time without a deploy; the variable must already be in the target's copy of the solution, and an empty value is refused.")
-                        .WithExample("settings", "envvar", "prod", "contoso_ApiUrl", "--value", "https://api.contoso.com")
-                        .WithExample("settings", "envvar", "test", "contoso_ApiUrl");
-
-                settings.AddCommand<SettingsValueCommand>("connref")
-                        .WithDescription("Bind a connection reference to a connection, or read its binding. Run it any time without a deploy; the value is a connection id that must already exist in the target, not a display name.")
-                        .WithExample("settings", "connref", "prod", "contoso_SharedMailbox", "--value", "a1b2c3d4e5f6");
+                settings.AddCommand<SettingsValueCommand>("value")
+                        .WithDescription("Set an environment variable's value or bind a connection reference, or read either. An empty value is refused.")
+                        .WithExample("settings", "value", "prod", "contoso_ApiUrl", "--value", "https://api.contoso.com")
+                        .WithExample("settings", "value", "test", "--type", "connref")
+                        .WithExample("settings", "value", "test", "contoso_ApiUrl");
             });
 
             // scaffold = write a project template locally; needs no Dataverse connection

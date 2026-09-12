@@ -79,12 +79,17 @@ routine post-deploy step.
    the change set and writes nothing. `flowline settings pull <env>` writes the file from the
    environment instead — use it to create the first one, then commit it. Name the environment: omitting it
    exits 15 in a non-interactive run, and only at a terminal does it offer a pick of the configured ones.
+   After writing, it reports how many entries still have no value; at a terminal it offers to fill those
+   in, non-interactively it only counts them.
 
-   To change a single component without the file, use `flowline settings flow|workflow|plugin <env> <name>
-   --on|--off` or `flowline settings envvar|connref <env> <name> --value <v>`. Leave the flag off and it
-   reads and prints the current state instead. Leave the name off in a non-interactive run and it lists
-   the names and exits 0 — for `flow`, `workflow` and `plugin` with each one's state, for `envvar` and
-   `connref` names only. The file still wins on the next push, and the run says so when it would.
+   To change a single component without the file, use `flowline settings state <env> <name> --on|--off`
+   or `flowline settings value <env> <name> --value <v>`. Narrow either with `--type`: on `state` that is
+   `flow`, `workflow`, `rule`, `bpf`, `action` or `plugin`; on `value`, `envvar` or `connref`. A name is
+   matched across every class the command covers, and a name matching two stops the run naming both.
+   Leave the flag off and it reads and prints the current state instead. Leave the name off in a
+   non-interactive run and it lists the components and exits 0 — `state` with each one's state and type,
+   `value` with names only. The file still wins on the next push for the classes it declares; business
+   rules, business process flows and actions are switchable but never in a file, so nothing puts them back.
 
 `flowline drift <env>` is the read-only preview of what a deploy would flag — safe against prod at any
 time. `flowline diff` is the same question on the git axis: which components changed between two points

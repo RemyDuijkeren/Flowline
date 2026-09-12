@@ -11,33 +11,47 @@ public class SettingsComponentCommandTests
 {
     // ── The kind is the operation ────────────────────────────────────────────
 
-    // KTD4: two command classes, five operation names, and the invoked name is what says which kind.
-    // Getting this mapping wrong would silently address the wrong table.
+    // KTD25: two command classes, and --type is what says which kind. Getting this mapping wrong would
+    // silently address the wrong table.
 
     [Theory]
-    [InlineData("flow", ConfigurableComponentKind.CloudFlow)]
-    [InlineData("workflow", ConfigurableComponentKind.Workflow)]
-    [InlineData("plugin", ConfigurableComponentKind.PluginStep)]
-    public void StateOperations_MapToTheirKind(string operation, ConfigurableComponentKind expected) =>
-        SettingsStateCommand.KindFor(operation).Should().Be(expected);
+    [InlineData(SettingsStateCommand.StateType.Flow, ConfigurableComponentKind.CloudFlow)]
+    [InlineData(SettingsStateCommand.StateType.Workflow, ConfigurableComponentKind.Workflow)]
+    [InlineData(SettingsStateCommand.StateType.Rule, ConfigurableComponentKind.BusinessRule)]
+    [InlineData(SettingsStateCommand.StateType.Bpf, ConfigurableComponentKind.BusinessProcessFlow)]
+    [InlineData(SettingsStateCommand.StateType.Action, ConfigurableComponentKind.Action)]
+    [InlineData(SettingsStateCommand.StateType.Plugin, ConfigurableComponentKind.PluginStep)]
+    public void StateTypes_MapToTheirKind(SettingsStateCommand.StateType type, ConfigurableComponentKind expected) =>
+        SettingsStateCommand.KindFor(type).Should().Be(expected);
 
     [Theory]
-    [InlineData("envvar", ConfigurableComponentKind.EnvironmentVariable)]
-    [InlineData("connref", ConfigurableComponentKind.ConnectionReference)]
-    public void ValueOperations_MapToTheirKind(string operation, ConfigurableComponentKind expected) =>
-        SettingsValueCommand.KindFor(operation).Should().Be(expected);
+    [InlineData(SettingsValueCommand.ValueType.EnvVar, ConfigurableComponentKind.EnvironmentVariable)]
+    [InlineData(SettingsValueCommand.ValueType.ConnRef, ConfigurableComponentKind.ConnectionReference)]
+    public void ValueTypes_MapToTheirKind(SettingsValueCommand.ValueType type, ConfigurableComponentKind expected) =>
+        SettingsValueCommand.KindFor(type).Should().Be(expected);
 
-    // The five names registered in Program.cs are the five the classes answer to. A name registered but
-    // unmapped would throw at runtime on an invocation that parsed cleanly.
+    // Every value the parser accepts maps to its own kind, and between them the two commands cover every
+    // class the inventory can hold. A type the parser accepts but the map does not would throw at runtime
+    // on an invocation that parsed cleanly.
     [Fact]
-    public void EveryRegisteredOperationName_MapsToADistinctKind()
+    public void EveryTypeTheParserAccepts_MapsToADistinctKind()
     {
-        var kinds = new[] { "flow", "workflow", "plugin" }.Select(SettingsStateCommand.KindFor)
-            .Concat(new[] { "envvar", "connref" }.Select(SettingsValueCommand.KindFor))
+        var kinds = Enum.GetValues<SettingsStateCommand.StateType>().Select(SettingsStateCommand.KindFor)
+            .Concat(Enum.GetValues<SettingsValueCommand.ValueType>().Select(SettingsValueCommand.KindFor))
             .ToArray();
 
         kinds.Should().OnlyHaveUniqueItems();
-        kinds.Should().HaveCount(5);
+        kinds.Should().BeEquivalentTo(Enum.GetValues<ConfigurableComponentKind>());
+    }
+
+    // The two commands between them address exactly what the inventory carries, with nothing in both.
+    [Fact]
+    public void TheTwoCommands_PartitionTheKinds()
+    {
+        ConfigurableComponentKinds.WithState.Should().NotIntersectWith(ConfigurableComponentKinds.WithValue);
+
+        ConfigurableComponentKinds.WithState.Concat(ConfigurableComponentKinds.WithValue)
+            .Should().BeEquivalentTo(Enum.GetValues<ConfigurableComponentKind>());
     }
 
     // ── The one contradiction left to check by hand ──────────────────────────
@@ -63,9 +77,12 @@ public class SettingsComponentCommandTests
 
     // ── Exit codes ───────────────────────────────────────────────────────────
 
+    // The kind travels on the component now, not as a separate argument, so a test about a value kind
+    // has to build a component of one.
     static SingleComponentOutcome Outcome(SingleComponentActionKind action, bool suspended = false,
-        bool? priorEnabled = null, string? priorValue = null) =>
-        new(new InventoryComponent(ConfigurableComponentKind.CloudFlow, "ApprovalFlow", Guid.NewGuid(), true),
+        bool? priorEnabled = null, string? priorValue = null,
+        ConfigurableComponentKind kind = ConfigurableComponentKind.CloudFlow) =>
+        new(new InventoryComponent(kind, "ApprovalFlow", Guid.NewGuid(), true),
             action, priorEnabled, priorValue, null, suspended);
 
     [Theory]
@@ -99,7 +116,7 @@ public class SettingsComponentCommandTests
     {
         var outcome = Outcome(SingleComponentActionKind.Read, suspended: true, priorEnabled: false);
 
-        SettingsComponentOutcomes.DescribeCurrent(outcome, ConfigurableComponentKind.CloudFlow)
+        SettingsComponentOutcomes.DescribeCurrent(outcome)
             .Should().Be("suspended");
     }
 
@@ -110,25 +127,27 @@ public class SettingsComponentCommandTests
     {
         var outcome = Outcome(SingleComponentActionKind.Read, priorEnabled: enabled);
 
-        SettingsComponentOutcomes.DescribeCurrent(outcome, ConfigurableComponentKind.CloudFlow)
+        SettingsComponentOutcomes.DescribeCurrent(outcome)
             .Should().Be(expected);
     }
 
     [Fact]
     public void AValueKindWithNoValue_ReadsAsUnset()
     {
-        var outcome = Outcome(SingleComponentActionKind.Read, priorValue: null);
+        var outcome = Outcome(SingleComponentActionKind.Read, priorValue: null,
+            kind: ConfigurableComponentKind.EnvironmentVariable);
 
-        SettingsComponentOutcomes.DescribeCurrent(outcome, ConfigurableComponentKind.EnvironmentVariable)
+        SettingsComponentOutcomes.DescribeCurrent(outcome)
             .Should().Be("unset");
     }
 
     [Fact]
     public void AValueKindWithAValue_ReadsAsThatValue()
     {
-        var outcome = Outcome(SingleComponentActionKind.Read, priorValue: "https://api.contoso.com");
+        var outcome = Outcome(SingleComponentActionKind.Read, priorValue: "https://api.contoso.com",
+            kind: ConfigurableComponentKind.ConnectionReference);
 
-        SettingsComponentOutcomes.DescribeCurrent(outcome, ConfigurableComponentKind.ConnectionReference)
+        SettingsComponentOutcomes.DescribeCurrent(outcome)
             .Should().Be("https://api.contoso.com");
     }
 
@@ -161,8 +180,7 @@ public class SettingsComponentCommandTests
     public void APickerLabel_EndsWithTheAddressableName()
     {
         SettingsComponentOutcomes
-            .DescribeCandidate(Component(ConfigurableComponentKind.CloudFlow, "ApprovalFlow", enabled: true),
-                ConfigurableComponentKind.CloudFlow)
+            .DescribeCandidate(Component(ConfigurableComponentKind.CloudFlow, "ApprovalFlow", enabled: true), typeWidth: 0)
             .Should().EndWith("ApprovalFlow");
     }
 
@@ -173,8 +191,7 @@ public class SettingsComponentCommandTests
     public void AStateKindLabel_SaysWhatItCurrentlyIs(bool enabled, bool suspended, string expected)
     {
         SettingsComponentOutcomes
-            .DescribeCandidate(Component(ConfigurableComponentKind.Workflow, "contoso_AutoNumber", enabled, suspended),
-                ConfigurableComponentKind.Workflow)
+            .DescribeCandidate(Component(ConfigurableComponentKind.Workflow, "contoso_AutoNumber", enabled, suspended), typeWidth: 0)
             .Should().Contain(expected);
     }
 
@@ -188,8 +205,7 @@ public class SettingsComponentCommandTests
     public void AStateKindLabel_LeadsWithItsOwnShape(bool enabled, bool suspended, string glyph)
     {
         SettingsComponentOutcomes
-            .Describe(Component(ConfigurableComponentKind.Workflow, "contoso_AutoNumber", enabled, suspended),
-                ConfigurableComponentKind.Workflow)
+            .Describe(Component(ConfigurableComponentKind.Workflow, "contoso_AutoNumber", enabled, suspended), typeWidth: 0)
             .Should().StartWith(glyph);
     }
 
@@ -200,9 +216,9 @@ public class SettingsComponentCommandTests
     {
         var label = SettingsComponentOutcomes.DescribeCandidate(
             Component(ConfigurableComponentKind.ConnectionReference, "contoso_Mailbox", value: "super-secret-id"),
-            ConfigurableComponentKind.ConnectionReference);
+            typeWidth: 0);
 
-        label.Should().Be("contoso_Mailbox");
+        label.Should().Be("connref  contoso_Mailbox");
         label.Should().NotContain("super-secret-id");
     }
 
@@ -215,7 +231,7 @@ public class SettingsComponentCommandTests
     {
         var label = SettingsComponentOutcomes.DescribeCandidate(
             Component(ConfigurableComponentKind.CloudFlow, "[Account] nightly sync", enabled: true),
-            ConfigurableComponentKind.CloudFlow);
+            typeWidth: 0);
 
         // The property that matters is that the renderer accepts it, not how it is spelled.
         var act = () => new Markup(label);
@@ -228,7 +244,7 @@ public class SettingsComponentCommandTests
     {
         var label = SettingsComponentOutcomes.DescribeCandidate(
             Component(ConfigurableComponentKind.EnvironmentVariable, "[Account] url"),
-            ConfigurableComponentKind.EnvironmentVariable);
+            typeWidth: 0);
 
         var console = new TestConsole();
         console.Write(new Markup(label));

@@ -51,11 +51,16 @@ public class SettingsCommandSurfaceTests : IDisposable
         public TestConsole Out => (TestConsole)Console;
 
         public void List(ConfigurableComponentKind kind, IReadOnlyList<InventoryComponent> candidates) =>
-            ListCandidates(kind, candidates);
+            ListCandidates([kind], candidates);
+
+        public Task<InventoryComponent> PickAny(IReadOnlyList<InventoryComponent> candidates) =>
+            PickAsync(ConfigurableComponentKinds.WithState, candidates, CancellationToken.None);
+
+        public void ListAll(IReadOnlyList<InventoryComponent> candidates) =>
+            ListCandidates(ConfigurableComponentKinds.WithState, candidates);
 
         public Task<bool> AskAsync(SingleComponentOutcome current, Settings settings) =>
-            PromptForTargetAsync(ConfigurableComponentKind.CloudFlow, current, settings,
-                new EnvironmentInfo(), CancellationToken.None);
+            PromptForTargetAsync(current, settings, new EnvironmentInfo(), CancellationToken.None);
 
         public bool Writes(Settings settings) => IsWrite(settings);
     }
@@ -109,7 +114,7 @@ public class SettingsCommandSurfaceTests : IDisposable
 
         probe.List(ConfigurableComponentKind.CloudFlow, [Flow("Runs", enabled: true), Flow("Stopped", enabled: false)]);
 
-        probe.Out.Output.Should().Contain("\u25cf on   Runs").And.Contain("\u25cb off  Stopped");
+        probe.Out.Output.Should().Contain("\u25cf on   flow  Runs").And.Contain("\u25cb off  flow  Stopped");
     }
 
     // State first because it is the only column a terminal cannot push off the line. A plugin step is
@@ -122,7 +127,7 @@ public class SettingsCommandSurfaceTests : IDisposable
 
         probe.List(ConfigurableComponentKind.CloudFlow, [Flow("Nightly reconciliation")]);
 
-        probe.Out.Lines.Should().Contain(l => l.StartsWith("\u25cf on", StringComparison.Ordinal));
+        probe.Out.Lines.Should().Contain(l => l.StartsWith("\u25cf on   flow", StringComparison.Ordinal));
     }
 
     // On and off pad to each other so their names line up. Suspended is left long on purpose: padding
@@ -136,8 +141,8 @@ public class SettingsCommandSurfaceTests : IDisposable
             [Flow("Aaa", enabled: true), Flow("Bbb", enabled: false), Suspended("Ccc")]);
 
         var output = probe.Out.Output;
-        output.Should().Contain("\u25cf on   Aaa").And.Contain("\u25cb off  Bbb");
-        output.Should().Contain("\u25d0 suspended  Ccc");
+        output.Should().Contain("\u25cf on   flow  Aaa").And.Contain("\u25cb off  flow  Bbb");
+        output.Should().Contain("\u25d0 suspended  flow  Ccc");
     }
 
     // Suspended is not a second kind of off. Dataverse flattens it to not-enabled, and someone who reads
@@ -160,8 +165,7 @@ public class SettingsCommandSurfaceTests : IDisposable
         var probe = MakeStateProbe(interactive: false);
 
         var ordered = SettingsComponentOutcomes.Ordered(
-            [Flow("on one", enabled: true), Flow("off one", enabled: false), Suspended("suspended one")],
-            ConfigurableComponentKind.CloudFlow);
+            [Flow("on one", enabled: true), Flow("off one", enabled: false), Suspended("suspended one")]);
 
         ordered.Select(c => c.Name).Should().Equal("suspended one", "off one", "on one");
     }
@@ -170,8 +174,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     public void WithinAState_TheListStaysInNameOrder()
     {
         var ordered = SettingsComponentOutcomes.Ordered(
-            [Flow("zeta", enabled: false), Flow("Alpha", enabled: false)],
-            ConfigurableComponentKind.CloudFlow);
+            [Flow("zeta", enabled: false), Flow("Alpha", enabled: false)]);
 
         ordered.Select(c => c.Name).Should().Equal("Alpha", "zeta");
     }
@@ -182,9 +185,9 @@ public class SettingsCommandSurfaceTests : IDisposable
     public void ThePickerLabel_ColoursTheStateAndEscapesTheName()
     {
         var label = SettingsComponentOutcomes.DescribeCandidate(
-            Flow("[Account] OnCreate", enabled: false), ConfigurableComponentKind.CloudFlow);
+            Flow("[Account] OnCreate", enabled: false), typeWidth: 4);
 
-        label.Should().StartWith("[red]\u25cb off[/]");
+        label.Should().StartWith("[red]\u25cb off[/]  flow");
         label.Should().Contain("[[Account]] OnCreate");
     }
 
@@ -211,6 +214,74 @@ public class SettingsCommandSurfaceTests : IDisposable
         probe.List(ConfigurableComponentKind.CloudFlow, [Flow("[Account] OnCreate")]);
 
         probe.Out.Output.Should().Contain("[Account] OnCreate");
+    }
+
+    // Picking a row has to carry which row it was, not just its name. A business rule and a classic
+    // workflow can share a name — "Account - set name" does in a real solution — and forwarding only the
+    // name re-resolved it across every class and failed as ambiguous, telling someone who had just
+    // pointed at one row to go and rename something in Dataverse.
+    [Fact]
+    public async Task PickingAComponent_CarriesWhichOneItWasNotJustItsName()
+    {
+        var probe = MakeStateProbe(interactive: true);
+        probe.Out.Input.PushKey(ConsoleKey.Enter);
+
+        var rule = new InventoryComponent(
+            ConfigurableComponentKind.BusinessRule, "Account - set name", Guid.NewGuid(), false);
+        var workflow = new InventoryComponent(
+            ConfigurableComponentKind.Workflow, "Account - set name", Guid.NewGuid(), true);
+
+        // Off sorts first, so Enter takes the business rule.
+        var picked = await probe.PickAny([workflow, rule]);
+
+        picked.Kind.Should().Be(ConfigurableComponentKind.BusinessRule);
+        picked.Id.Should().Be(rule.Id);
+    }
+
+    // ── KTD25: the type column ───────────────────────────────────────────────
+
+    static InventoryComponent Rule(string name, bool enabled = true) =>
+        new(ConfigurableComponentKind.BusinessRule, name, Guid.NewGuid(), enabled);
+
+    // The column is what makes one command over six classes readable, and because the picker's search
+    // matches the rendered label, it is also the filter: typing "rule" narrows the list with no flag.
+    [Fact]
+    public void AMixedList_CarriesEachComponentsType()
+    {
+        var probe = MakeStateProbe(interactive: false);
+
+        probe.ListAll([Flow("Nightly", enabled: false), Rule("contoso_ShowHide", enabled: false)]);
+
+        probe.Out.Output.Should().Contain("flow").And.Contain("rule");
+    }
+
+    // Narrowing tightens the column rather than leaving a gap the width of the longest word there is.
+    [Fact]
+    public void TheTypeColumn_IsMeasuredFromTheClassesInPlay()
+    {
+        SettingsComponentNames.TypeColumnWidth([ConfigurableComponentKind.CloudFlow]).Should().Be(4);
+
+        SettingsComponentNames.TypeColumnWidth(ConfigurableComponentKinds.WithState)
+            .Should().Be("workflow".Length);
+    }
+
+    // State first, then type, then the name. The order matters: the name is the part that wraps.
+    [Fact]
+    public void AStateLine_ReadsStateThenTypeThenName()
+    {
+        SettingsComponentOutcomes.Describe(Rule("contoso_ShowHide", enabled: false), typeWidth: 8)
+            .Should().Be("○ off  rule      contoso_ShowHide");
+    }
+
+    // Ordering is by state and then name, deliberately not grouped by type: what you came to fix
+    // belongs at the top, whatever kind of thing it is.
+    [Fact]
+    public void AMixedList_StaysOrderedByStateNotByType()
+    {
+        var ordered = SettingsComponentOutcomes.Ordered(
+            [Flow("zeta flow", enabled: true), Rule("alpha rule", enabled: false)]);
+
+        ordered.Select(c => c.Name).Should().Equal("alpha rule", "zeta flow");
     }
 
     // ── R9: the prompt that follows an interactive read ──────────────────────

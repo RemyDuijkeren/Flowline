@@ -46,7 +46,7 @@ public class SingleComponentServiceTests
         var inventory = new SolutionInventory([Flow("order_processing", enabled: true)]);
 
         var outcome = await SingleComponentService.ReadOrWriteStateAsync(
-            Service(), inventory, ConfigurableComponentKind.CloudFlow, "order_processing",
+            Service(), inventory, [ConfigurableComponentKind.CloudFlow], "order_processing",
             desiredEnabled: null, RunMode.Normal, CancellationToken.None);
 
         outcome.Action.Should().Be(SingleComponentActionKind.Read);
@@ -60,7 +60,7 @@ public class SingleComponentServiceTests
         var inventory = new SolutionInventory([]);
 
         var act = async () => await SingleComponentService.ReadOrWriteStateAsync(
-            Service(), inventory, ConfigurableComponentKind.CloudFlow, "missing_flow",
+            Service(), inventory, [ConfigurableComponentKind.CloudFlow], "missing_flow",
             desiredEnabled: null, RunMode.Normal, CancellationToken.None);
 
         var thrown = (await act.Should().ThrowAsync<FlowlineException>()).Which;
@@ -80,7 +80,7 @@ public class SingleComponentServiceTests
         var inventory = new SolutionInventory([]);
 
         var act = async () => await SingleComponentService.ReadOrWriteValueAsync(
-            Service(), inventory, ConfigurableComponentKind.EnvironmentVariable, "contoso_Missing",
+            Service(), inventory, [ConfigurableComponentKind.EnvironmentVariable], "contoso_Missing",
             desiredValue: null, RunMode.Normal, CancellationToken.None);
 
         var thrown = (await act.Should().ThrowAsync<FlowlineException>()).Which;
@@ -98,7 +98,7 @@ public class SingleComponentServiceTests
         ]);
 
         var act = async () => await SingleComponentService.ReadOrWriteStateAsync(
-            Service(), inventory, ConfigurableComponentKind.Workflow, "Escalate case",
+            Service(), inventory, [ConfigurableComponentKind.Workflow], "Escalate case",
             desiredEnabled: false, RunMode.Normal, CancellationToken.None);
 
         var thrown = (await act.Should().ThrowAsync<FlowlineException>()).Which;
@@ -113,7 +113,7 @@ public class SingleComponentServiceTests
         var inventory = new SolutionInventory([Flow("order_processing", enabled: false)]);
 
         var outcome = await SingleComponentService.ReadOrWriteStateAsync(
-            Service(), inventory, ConfigurableComponentKind.CloudFlow, "ORDER_PROCESSING",
+            Service(), inventory, [ConfigurableComponentKind.CloudFlow], "ORDER_PROCESSING",
             desiredEnabled: null, RunMode.Normal, CancellationToken.None);
 
         outcome.Action.Should().Be(SingleComponentActionKind.Read);
@@ -129,7 +129,7 @@ public class SingleComponentServiceTests
         var service = Service();
 
         var outcome = await SingleComponentService.ReadOrWriteValueAsync(
-            service, inventory, ConfigurableComponentKind.EnvironmentVariable, "cr123_ApiUrl",
+            service, inventory, [ConfigurableComponentKind.EnvironmentVariable], "cr123_ApiUrl",
             desiredValue: "https://example.invalid", RunMode.Normal, CancellationToken.None);
 
         outcome.Action.Should().Be(SingleComponentActionKind.Applied);
@@ -148,7 +148,7 @@ public class SingleComponentServiceTests
         var service = Service();
 
         var outcome = await SingleComponentService.ReadOrWriteValueAsync(
-            service, inventory, ConfigurableComponentKind.ConnectionReference, "cr123_shared_dataverse",
+            service, inventory, [ConfigurableComponentKind.ConnectionReference], "cr123_shared_dataverse",
             desiredValue: "new-connection", RunMode.Normal, CancellationToken.None);
 
         outcome.Action.Should().Be(SingleComponentActionKind.Applied);
@@ -165,7 +165,7 @@ public class SingleComponentServiceTests
         var service = Service();
 
         var outcome = await SingleComponentService.ReadOrWriteValueAsync(
-            service, inventory, ConfigurableComponentKind.EnvironmentVariable, "cr123_ApiUrl",
+            service, inventory, [ConfigurableComponentKind.EnvironmentVariable], "cr123_ApiUrl",
             desiredValue: "", RunMode.Normal, CancellationToken.None);
 
         outcome.Action.Should().Be(SingleComponentActionKind.Skipped);
@@ -181,7 +181,7 @@ public class SingleComponentServiceTests
         var service = Service();
 
         var outcome = await SingleComponentService.ReadOrWriteStateAsync(
-            service, inventory, ConfigurableComponentKind.CloudFlow, "order_processing",
+            service, inventory, [ConfigurableComponentKind.CloudFlow], "order_processing",
             desiredEnabled: true, RunMode.DryRun, CancellationToken.None);
 
         outcome.Action.Should().Be(SingleComponentActionKind.Applied);
@@ -197,7 +197,7 @@ public class SingleComponentServiceTests
         var service = Service(environmentVariableValue: "https://api.contoso.com");
 
         var outcome = await SingleComponentService.ReadOrWriteValueAsync(
-            service, inventory, ConfigurableComponentKind.EnvironmentVariable, "cr123_ApiUrl",
+            service, inventory, [ConfigurableComponentKind.EnvironmentVariable], "cr123_ApiUrl",
             desiredValue: null, RunMode.Normal, CancellationToken.None);
 
         outcome.Action.Should().Be(SingleComponentActionKind.Read);
@@ -212,7 +212,7 @@ public class SingleComponentServiceTests
         var service = Service();
 
         var outcome = await SingleComponentService.ReadOrWriteValueAsync(
-            service, inventory, ConfigurableComponentKind.ConnectionReference, "cr123_shared_dataverse",
+            service, inventory, [ConfigurableComponentKind.ConnectionReference], "cr123_shared_dataverse",
             desiredValue: null, RunMode.Normal, CancellationToken.None);
 
         outcome.Action.Should().Be(SingleComponentActionKind.Read);
@@ -228,7 +228,7 @@ public class SingleComponentServiceTests
         var service = Service();
 
         var outcome = await SingleComponentService.ReadOrWriteStateAsync(
-            service, inventory, ConfigurableComponentKind.CloudFlow, "Nightly reconciliation",
+            service, inventory, [ConfigurableComponentKind.CloudFlow], "Nightly reconciliation",
             desiredEnabled: false, RunMode.Normal, CancellationToken.None);
 
         outcome.Action.Should().Be(SingleComponentActionKind.Applied);
@@ -248,7 +248,7 @@ public class SingleComponentServiceTests
         var service = Service(environmentVariableValue: "old");
 
         await SingleComponentService.ReadOrWriteValueAsync(
-            service, inventory, ConfigurableComponentKind.EnvironmentVariable, "cr123_ApiUrl",
+            service, inventory, [ConfigurableComponentKind.EnvironmentVariable], "cr123_ApiUrl",
             desiredValue: "new", RunMode.Normal, CancellationToken.None);
 
         await service.Received(1).RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
@@ -262,10 +262,82 @@ public class SingleComponentServiceTests
         var service = Service(environmentVariableValue: "old");
 
         var outcome = await SingleComponentService.ReadOrWriteValueAsync(
-            service, inventory, ConfigurableComponentKind.EnvironmentVariable, "cr123_ApiUrl",
+            service, inventory, [ConfigurableComponentKind.EnvironmentVariable], "cr123_ApiUrl",
             desiredValue: "", RunMode.Normal, CancellationToken.None);
 
         outcome.Action.Should().Be(SingleComponentActionKind.Skipped);
         await service.DidNotReceive().RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── KTD25: one command spans several classes ─────────────────────────────
+
+    // A cloud flow and a classic workflow can share a unique name. Until one command looked at both,
+    // nothing would ever have seen the collision; now the run has to stop and say which is which.
+    [Fact]
+    public async Task AName_MatchingTwoClasses_FailsNamingBothAndTheirTypes()
+    {
+        var inventory = new SolutionInventory([
+            new InventoryComponent(ConfigurableComponentKind.CloudFlow, "Reconcile", Guid.NewGuid(), true),
+            new InventoryComponent(ConfigurableComponentKind.Workflow, "Reconcile", Guid.NewGuid(), true),
+        ]);
+
+        var act = async () => await SingleComponentService.ReadOrWriteStateAsync(
+            Service(), inventory, ConfigurableComponentKinds.WithState, "Reconcile",
+            desiredEnabled: null, RunMode.Normal, CancellationToken.None);
+
+        var thrown = (await act.Should().ThrowAsync<FlowlineException>()).Which;
+        thrown.ExitCode.Should().Be(ExitCode.ValidationFailed);
+        thrown.Message.Should().Contain("cloud flow").And.Contain("classic workflow").And.Contain("--type");
+    }
+
+    // Which is what --type is for: narrowing to one class resolves the same name cleanly.
+    [Fact]
+    public async Task TheSameName_NarrowedToOneClass_Resolves()
+    {
+        var flow = new InventoryComponent(ConfigurableComponentKind.CloudFlow, "Reconcile", Guid.NewGuid(), true);
+        var inventory = new SolutionInventory([
+            flow,
+            new InventoryComponent(ConfigurableComponentKind.Workflow, "Reconcile", Guid.NewGuid(), false),
+        ]);
+
+        var outcome = await SingleComponentService.ReadOrWriteStateAsync(
+            Service(), inventory, [ConfigurableComponentKind.CloudFlow], "Reconcile",
+            desiredEnabled: null, RunMode.Normal, CancellationToken.None);
+
+        outcome.Component.Id.Should().Be(flow.Id);
+        outcome.PriorEnabled.Should().BeTrue();
+    }
+
+    // A name unique across the classes searched needs no narrowing at all, which is the common case and
+    // the whole reason the kind stopped being a command.
+    [Fact]
+    public async Task ANameUniqueAcrossClasses_ResolvesWithoutANarrowingType()
+    {
+        var rule = new InventoryComponent(
+            ConfigurableComponentKind.BusinessRule, "contoso_ShowHideRit", Guid.NewGuid(), true);
+        var inventory = new SolutionInventory([rule, Flow("order_processing", enabled: true)]);
+
+        var outcome = await SingleComponentService.ReadOrWriteStateAsync(
+            Service(), inventory, ConfigurableComponentKinds.WithState, "contoso_ShowHideRit",
+            desiredEnabled: null, RunMode.Normal, CancellationToken.None);
+
+        outcome.Component.Kind.Should().Be(ConfigurableComponentKind.BusinessRule);
+    }
+
+    // The not-found message has to name what was actually searched, not one class of several.
+    [Fact]
+    public async Task NotFoundAcrossClasses_NamesEveryClassItLookedIn()
+    {
+        var inventory = new SolutionInventory([Flow("order_processing", enabled: true)]);
+
+        var act = async () => await SingleComponentService.ReadOrWriteValueAsync(
+            Service(), inventory, ConfigurableComponentKinds.WithValue, "contoso_Missing",
+            desiredValue: null, RunMode.Normal, CancellationToken.None);
+
+        var thrown = (await act.Should().ThrowAsync<FlowlineException>()).Which;
+        thrown.ExitCode.Should().Be(ExitCode.NotFound);
+        thrown.Message.Should().Contain("environment variable").And.Contain("connection reference");
+        // The two value classes address on different columns, so a caller that did not narrow gets both.
+        thrown.Message.Should().Contain("schema name").And.Contain("logical name");
     }
 }

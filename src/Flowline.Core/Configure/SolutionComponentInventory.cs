@@ -23,6 +23,66 @@ public enum ConfigurableComponentKind
 
     /// <summary>Plugin step, addressed by its step name.</summary>
     PluginStep,
+
+    // Appended rather than inserted: test helpers and the inventory build components positionally, and
+    // the enum's numeric values reach a settings file only through their names.
+
+    /// <summary>Business rule, addressed by <c>workflow.uniquename</c>.</summary>
+    BusinessRule,
+
+    /// <summary>Dataverse custom process action, addressed by <c>workflow.uniquename</c>.</summary>
+    Action,
+
+    /// <summary>Business process flow, addressed by <c>workflow.uniquename</c>.</summary>
+    BusinessProcessFlow,
+}
+
+/// <summary>Which component classes each half of the surface deals in (KTD25).</summary>
+/// <remarks>
+/// Two sets, because they stopped being the same one. The inline surface can read and switch anything in
+/// the process family; a settings file declares only the three classes it has sections for.
+///
+/// Keeping them apart is what makes widening the read safe. Every process category is a
+/// <c>workflow</c> row carrying a <c>statecode</c>, so an inventory the file paths trusted blindly would
+/// have a capture write business rules into the file and the next apply deactivate them.
+/// </remarks>
+public static class ConfigurableComponentKinds
+{
+    /// <summary>Classes with an on and an off, which <c>settings state</c> addresses.</summary>
+    public static readonly ConfigurableComponentKind[] WithState =
+    [
+        ConfigurableComponentKind.CloudFlow,
+        ConfigurableComponentKind.Workflow,
+        ConfigurableComponentKind.BusinessRule,
+        ConfigurableComponentKind.BusinessProcessFlow,
+        ConfigurableComponentKind.Action,
+        ConfigurableComponentKind.PluginStep,
+    ];
+
+    /// <summary>Classes with a value, which <c>settings value</c> addresses.</summary>
+    public static readonly ConfigurableComponentKind[] WithValue =
+    [
+        ConfigurableComponentKind.EnvironmentVariable,
+        ConfigurableComponentKind.ConnectionReference,
+    ];
+
+    /// <summary>Classes a settings file has a section for, and therefore can declare.</summary>
+    /// <remarks>
+    /// A class outside this set is readable and switchable one component at a time and is never written
+    /// to a file, never applied from one, and never reported as undeclared. A business rule switched off
+    /// this way stays off, because nothing declares it and no push puts it back.
+    /// </remarks>
+    public static readonly ConfigurableComponentKind[] FileManaged =
+    [
+        ConfigurableComponentKind.EnvironmentVariable,
+        ConfigurableComponentKind.ConnectionReference,
+        ConfigurableComponentKind.CloudFlow,
+        ConfigurableComponentKind.Workflow,
+        ConfigurableComponentKind.PluginStep,
+    ];
+
+    /// <summary>Whether a settings file can carry this class at all.</summary>
+    public static bool IsFileManaged(ConfigurableComponentKind kind) => FileManaged.Contains(kind);
 }
 
 /// <summary>One component found in the target, with the state the file would be reconciling against.</summary>
@@ -73,17 +133,30 @@ public sealed record SolutionInventory(IReadOnlyList<InventoryComponent> Compone
     public IEnumerable<InventoryComponent> OfKind(ConfigurableComponentKind kind) =>
         Components.Where(c => c.Kind == kind);
 
+    /// <summary>Components of any of several classes, in inventory order.</summary>
+    /// <remarks>
+    /// One command now spans several classes, so a name can resolve across them and a listing can show
+    /// them together. Order is left alone here; the caller decides how to sort what it got.
+    /// </remarks>
+    public IEnumerable<InventoryComponent> OfKinds(IReadOnlyCollection<ConfigurableComponentKind> kinds) =>
+        Components.Where(c => kinds.Contains(c.Kind));
+
+    /// <inheritdoc cref="Match(IReadOnlyCollection{ConfigurableComponentKind}, string)"/>
+    public InventoryMatch Match(ConfigurableComponentKind kind, string name) => Match([kind], name);
+
     /// <summary>
-    /// Finds the single component a declared name addresses.
+    /// Finds the single component a declared name addresses, searching the given classes.
     /// </summary>
     /// <remarks>
     /// Dataverse enforces uniqueness on none of these name columns, so two matches is reachable in normal
-    /// use. Neither an arbitrary pick nor a silent first-match is acceptable there — a wrong flow switched on
-    /// in production is worse than a run that stops and names both candidates (KTD9).
+    /// use, and searching several classes at once makes it more so — a cloud flow and a classic workflow
+    /// can share a unique name. Neither an arbitrary pick nor a silent first-match is acceptable there: a
+    /// wrong flow switched on in production is worse than a run that stops and names both candidates
+    /// (KTD9). The caller reports the candidates, which is why their classes travel with them.
     /// </remarks>
-    public InventoryMatch Match(ConfigurableComponentKind kind, string name)
+    public InventoryMatch Match(IReadOnlyCollection<ConfigurableComponentKind> kinds, string name)
     {
-        var matches = OfKind(kind)
+        var matches = OfKinds(kinds)
             .Where(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
@@ -130,22 +203,38 @@ public static class SolutionComponentInventory
     /// <summary><c>workflow.category</c> for a Power Automate cloud flow.</summary>
     public const int WorkflowCategoryModernFlow = 5;
 
-    /// <summary>The only two Process categories a settings file manages.</summary>
+    /// <summary><c>workflow.category</c> for a business rule.</summary>
+    public const int WorkflowCategoryBusinessRule = 2;
+
+    /// <summary><c>workflow.category</c> for a Dataverse custom process action.</summary>
+    public const int WorkflowCategoryAction = 3;
+
+    /// <summary><c>workflow.category</c> for a business process flow.</summary>
+    public const int WorkflowCategoryBusinessProcessFlow = 4;
+
+    /// <summary>The Process categories the inventory reads.</summary>
     /// <remarks>
     /// <c>workflow.category</c>: 0 Workflow, 1 Dialog, 2 Business Rule, 3 Action, 4 Business Process Flow,
     /// 5 Modern Flow, 6 Desktop Flow, 7 AI Flow (Dynamics 365 adds 9000, Web Client API Flow).
     /// <see href="https://learn.microsoft.com/power-apps/developer/data-platform/reference/entities/workflow"/>
     ///
-    /// All eight are <c>workflow</c> rows carrying a <c>statecode</c>, so an unfiltered read hands the state
-    /// writer a business rule or a business process flow and a pull writes it into the file as an ordinary
-    /// component. Applying that file then deactivates it. Narrowing here rather than at the writer keeps the
-    /// rows out of the inventory entirely, so <c>configure</c> can neither report nor touch them.
+    /// All of them are <c>workflow</c> rows carrying a <c>statecode</c>, which is what makes them all
+    /// switchable and what made this list dangerous to widen: a capture that wrote business rules into the
+    /// settings file would have the next apply deactivate them. The guard is no longer this filter but
+    /// <see cref="ConfigurableComponentKinds.FileManaged"/>, which is what the file paths honour (KTD25).
     ///
-    /// Business process flows are deliberately outside this set. They are legitimately per-environment
-    /// state, but they are not flows in the Power Automate sense and belong in a section of their own if
-    /// anyone asks for one.
+    /// Dialog (1) is absent because Microsoft deprecated it and its own docs say to replace it. Desktop
+    /// Flow (6) and AI Flow (7) are absent because their activation semantics are not confirmed to be the
+    /// same on and off; add them once they are, and nothing else has to change.
     /// </remarks>
-    public static readonly int[] ManagedWorkflowCategories = [WorkflowCategoryClassic, WorkflowCategoryModernFlow];
+    public static readonly int[] ReadWorkflowCategories =
+    [
+        WorkflowCategoryClassic,
+        WorkflowCategoryBusinessRule,
+        WorkflowCategoryAction,
+        WorkflowCategoryBusinessProcessFlow,
+        WorkflowCategoryModernFlow,
+    ];
 
     /// <summary><c>solutioncomponent.componenttype</c> for a plugin step.</summary>
     public const int SdkMessageProcessingStepComponentType = 92;
@@ -212,16 +301,15 @@ public static class SolutionComponentInventory
         };
         query.Criteria.AddCondition("workflowid", ConditionOperator.In, ids.Cast<object>().ToArray());
         // Filtered in the query rather than in LINQ afterwards, so the rows never come back at all.
-        query.Criteria.AddCondition("category", ConditionOperator.In, ManagedWorkflowCategories.Cast<object>().ToArray());
+        query.Criteria.AddCondition("category", ConditionOperator.In, ReadWorkflowCategories.Cast<object>().ToArray());
 
         var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
 
         return entities
-            // Checked again on the way out, not because the query is unreliable, but because KindOf has no
-            // way to reject a row: a category it does not recognise would silently become a classic
-            // workflow. Dropping an unmanaged row here is what keeps a business process flow out of the
-            // settings file if the condition above is ever loosened.
-            .Where(e => ManagedWorkflowCategories.Contains(
+            // Checked again on the way out, not because the query is unreliable, but because a category
+            // this build does not know about has no honest kind to become. Dropping it here is what keeps
+            // a future category out of the inventory until someone decides what it is.
+            .Where(e => ReadWorkflowCategories.Contains(
                 e.GetAttributeValue<OptionSetValue>("category")?.Value ?? -1))
             .Select(e => new InventoryComponent(
                 KindOf(e),
@@ -235,15 +323,24 @@ public static class SolutionComponentInventory
             .ToList();
     }
 
-    /// <summary>Which settings-file section a Process row belongs to.</summary>
+    /// <summary>Which class a Process row belongs to, by its category.</summary>
     /// <remarks>
-    /// The query already narrows to the two managed categories, so anything that is not a modern flow here
-    /// is a classic workflow.
+    /// A map rather than "anything that is not a modern flow is a classic workflow", which was only true
+    /// while the query read two categories. The default arm is unreachable, because the query and the
+    /// filter above both restrict the set, and it exists so a category added to one and not the other
+    /// fails loudly rather than arriving mislabelled as a classic workflow.
     /// </remarks>
     static ConfigurableComponentKind KindOf(Entity workflow) =>
-        workflow.GetAttributeValue<OptionSetValue>("category")?.Value == WorkflowCategoryModernFlow
-            ? ConfigurableComponentKind.CloudFlow
-            : ConfigurableComponentKind.Workflow;
+        workflow.GetAttributeValue<OptionSetValue>("category")?.Value switch
+        {
+            WorkflowCategoryModernFlow => ConfigurableComponentKind.CloudFlow,
+            WorkflowCategoryClassic => ConfigurableComponentKind.Workflow,
+            WorkflowCategoryBusinessRule => ConfigurableComponentKind.BusinessRule,
+            WorkflowCategoryAction => ConfigurableComponentKind.Action,
+            WorkflowCategoryBusinessProcessFlow => ConfigurableComponentKind.BusinessProcessFlow,
+            var category => throw new ArgumentOutOfRangeException(
+                nameof(workflow), category, "Process category is read but has no component kind."),
+        };
 
     /// <summary>
     /// <c>workflow.statecode</c>: 0 Draft, 1 Activated, 2 Suspended.

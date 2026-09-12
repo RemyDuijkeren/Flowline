@@ -87,7 +87,24 @@ public static class SettingsSupport
     /// operation added there and forgotten here only means the hint stays quiet for that one, which is
     /// the failure direction that costs nothing.
     /// </remarks>
-    static readonly string[] s_operations = ["push", "pull", "flow", "workflow", "plugin", "envvar", "connref"];
+    static readonly string[] s_operations = ["push", "pull", "state", "value"];
+
+    /// <summary>
+    /// The operation names that used to exist, and what each one is now (KTD25).
+    /// </summary>
+    /// <remarks>
+    /// The five component kinds were separate operations until they became one filter over two. Nothing
+    /// had shipped, so there are no aliases and no deprecation; what there is instead is a message that
+    /// tells anyone with the old spelling in their fingers or their scripts exactly what to type.
+    /// </remarks>
+    static readonly Dictionary<string, (string Operation, string Type)> s_retired = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["flow"] = ("state", "flow"),
+        ["workflow"] = ("state", "workflow"),
+        ["plugin"] = ("state", "plugin"),
+        ["envvar"] = ("value", "envvar"),
+        ["connref"] = ("value", "connref"),
+    };
 
     /// <summary>
     /// Explains a <c>settings</c> invocation that named the environment where the operation belongs
@@ -114,6 +131,16 @@ public static class SettingsSupport
         // A recognised operation in the right place is not this mistake, whatever else went wrong.
         if (IsOperation(first)) return null;
 
+        // A retired operation name: the invocation is the right shape, the word just moved into --type.
+        if (s_retired.TryGetValue(first, out var moved))
+        {
+            var rest = args.Skip(2).Select(Quote);
+
+            return $"'{first}' is a component type, not an operation. " +
+                   $"Try: flowline settings {moved.Operation} " +
+                   string.Join(' ', rest.Concat([$"--type {moved.Type}"]));
+        }
+
         // 'settings dev flow': the operation is present, just second. Rebuild the whole line so the
         // suggestion is something to run rather than a shape to apply by hand.
         if (args.Count > 2 && IsOperation(args[2]))
@@ -122,6 +149,17 @@ public static class SettingsSupport
 
             return $"'{args[2]}' is the operation and it comes first, before the environment. " +
                    $"Try: flowline settings {string.Join(' ', rest)}";
+        }
+
+        // Wrong twice over: the environment first and a retired name second. The retired name is the
+        // more useful thing to explain, because fixing only the order would still not run.
+        if (args.Count > 2 && s_retired.TryGetValue(args[2], out var movedSecond))
+        {
+            var rest = new[] { first }.Concat(args.Skip(3)).Select(Quote);
+
+            return $"'{args[2]}' is a component type, not an operation. " +
+                   $"Try: flowline settings {movedSecond.Operation} " +
+                   string.Join(' ', rest.Concat([$"--type {movedSecond.Type}"]));
         }
 
         // 'settings dev': an environment where an operation belongs, with no operation anywhere.

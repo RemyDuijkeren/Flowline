@@ -147,7 +147,7 @@ public class SolutionComponentInventoryTests
     // handed every one of them to the state writer, so a pull wrote them into the settings file and an apply
     // of that file deactivated them. The narrowing has to happen in the query, not after it.
     [Fact]
-    public async Task ReadAsync_AsksDataverseForOnlyTheTwoManagedCategories()
+    public async Task ReadAsync_AsksDataverseForTheProcessCategoriesItCanName()
     {
         QueryExpression? workflowQuery = null;
         var service = Substitute.For<IOrganizationServiceAsync2>();
@@ -165,8 +165,9 @@ public class SolutionComponentInventoryTests
 
         var category = workflowQuery!.Criteria.Conditions.Single(c => c.AttributeName == "category");
         category.Operator.Should().Be(ConditionOperator.In);
-        category.Values.Should().BeEquivalentTo([0, 5],
-            "0 is a classic workflow and 5 a cloud flow — 2 business rule and 4 business process flow must never come back");
+        category.Values.Should().BeEquivalentTo([0, 2, 3, 4, 5],
+            "the inline surface switches the whole process family, but a category with no kind to map to " +
+            "must not come back: 1 is the deprecated dialog, 6 and 7 have unconfirmed state semantics");
     }
 
     // Both sections write the same table, so the category is the only thing that puts a row in one section
@@ -199,11 +200,10 @@ public class SolutionComponentInventoryTests
     // cannot reach the inventory even when Dataverse hands it back, which asserting the query condition
     // alone does not.
     [Theory]
-    [InlineData(4)] // Business Process Flow
-    [InlineData(2)] // Business Rule
-    [InlineData(1)] // Dialog
-    [InlineData(6)] // Desktop Flow
-    public async Task ReadAsync_UnmanagedProcessCategory_NeverReachesTheInventory(int category)
+    [InlineData(1)] // Dialog, deprecated
+    [InlineData(6)] // Desktop Flow, state semantics unconfirmed
+    [InlineData(7)] // AI Flow, state semantics unconfirmed
+    public async Task ReadAsync_UnmappedProcessCategory_NeverReachesTheInventory(int category)
     {
         var id = Guid.NewGuid();
         var service = Substitute.For<IOrganizationServiceAsync2>();
@@ -221,6 +221,52 @@ public class SolutionComponentInventoryTests
         var inventory = await SolutionComponentInventory.ReadAsync(service, "Contoso", CancellationToken.None);
 
         inventory.Components.Should().BeEmpty();
+    }
+
+    // KTD25: the read widened and the file did not. This is the regression the widening most risks — a
+    // business rule reaching the inventory is correct, a business rule reaching a settings file is the
+    // bug the old two-category filter existed to prevent.
+    [Theory]
+    [InlineData(2, ConfigurableComponentKind.BusinessRule)]
+    [InlineData(3, ConfigurableComponentKind.Action)]
+    [InlineData(4, ConfigurableComponentKind.BusinessProcessFlow)]
+    public async Task ReadAsync_ProcessCategory_ArrivesAsItsOwnKindAndIsNotFileManaged(
+        int category, ConfigurableComponentKind expected)
+    {
+        var inventory = await ReadOneWorkflowAsync(category);
+
+        inventory.Components.Should().ContainSingle().Which.Kind.Should().Be(expected);
+        ConfigurableComponentKinds.IsFileManaged(expected).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0, ConfigurableComponentKind.Workflow)]
+    [InlineData(5, ConfigurableComponentKind.CloudFlow)]
+    public async Task ReadAsync_TheTwoFileManagedCategories_StillMapAsBefore(
+        int category, ConfigurableComponentKind expected)
+    {
+        var inventory = await ReadOneWorkflowAsync(category);
+
+        inventory.Components.Should().ContainSingle().Which.Kind.Should().Be(expected);
+        ConfigurableComponentKinds.IsFileManaged(expected).Should().BeTrue();
+    }
+
+    static async Task<SolutionInventory> ReadOneWorkflowAsync(int category)
+    {
+        var id = Guid.NewGuid();
+        var service = Substitute.For<IOrganizationServiceAsync2>();
+        service.RetrieveMultipleAsync(Arg.Any<QueryExpression>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var query = call.Arg<QueryExpression>();
+                if (query.EntityName == "solutioncomponent")
+                    return Task.FromResult(new EntityCollection([SolutionComponent(id)]));
+                if (query.EntityName == "workflow")
+                    return Task.FromResult(new EntityCollection([WorkflowRow(id, "contoso_Thing", category)]));
+                return Task.FromResult(new EntityCollection([]));
+            });
+
+        return await SolutionComponentInventory.ReadAsync(service, "Contoso", CancellationToken.None);
     }
 
     static Entity SolutionComponent(Guid objectId)

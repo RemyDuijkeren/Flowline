@@ -406,9 +406,9 @@ public class SettingsCommandTests : IDisposable
     [Fact]
     public void AnEnvironmentBeforeTheOperation_IsAnsweredWithTheLineToRun()
     {
-        var hint = SettingsSupport.BuildArgumentOrderHint(["settings", "dev", "flow"]);
+        var hint = SettingsSupport.BuildArgumentOrderHint(["settings", "dev", "state"]);
 
-        hint.Should().Contain("flowline settings flow dev");
+        hint.Should().Contain("flowline settings state dev");
     }
 
     // The suggestion has to be runnable, so the rest of the invocation comes with it and a component
@@ -417,17 +417,17 @@ public class SettingsCommandTests : IDisposable
     public void TheSuggestion_CarriesTheRestOfTheInvocation()
     {
         var hint = SettingsSupport.BuildArgumentOrderHint(
-            ["settings", "prod", "flow", "Nightly reconciliation", "--off"]);
+            ["settings", "prod", "state", "Nightly reconciliation", "--off"]);
 
-        hint.Should().Contain("flowline settings flow prod \"Nightly reconciliation\" --off");
+        hint.Should().Contain("flowline settings state prod \"Nightly reconciliation\" --off");
     }
 
     // A URL is as valid a target as a role keyword, and is the case a role-only check would miss.
     [Fact]
     public void AUrlBeforeTheOperation_IsRecognisedToo()
     {
-        SettingsSupport.BuildArgumentOrderHint(["settings", "https://contoso.crm4.dynamics.com", "envvar"])
-            .Should().Contain("flowline settings envvar https://contoso.crm4.dynamics.com");
+        SettingsSupport.BuildArgumentOrderHint(["settings", "https://contoso.crm4.dynamics.com", "value"])
+            .Should().Contain("flowline settings value https://contoso.crm4.dynamics.com");
     }
 
     // No operation anywhere: say where it belongs and what the operations are.
@@ -437,7 +437,18 @@ public class SettingsCommandTests : IDisposable
         var hint = SettingsSupport.BuildArgumentOrderHint(["settings", "dev"]);
 
         hint.Should().Contain("is an environment, not an operation");
-        hint.Should().Contain("push").And.Contain("connref");
+        hint.Should().Contain("push").And.Contain("state").And.Contain("value");
+    }
+
+    // Wrong twice over: the environment first and a retired name second. The retired name is the more
+    // useful thing to explain, because fixing only the order would still not run.
+    [Fact]
+    public void ARetiredNameAfterTheEnvironment_IsAnsweredWithBothCorrections()
+    {
+        var hint = SettingsSupport.BuildArgumentOrderHint(
+            ["settings", "prod", "flow", "Nightly reconciliation", "--off"]);
+
+        hint.Should().Contain("flowline settings state prod \"Nightly reconciliation\" --off --type flow");
     }
 
     // A mistyped operation is not this mistake. Spectre's own "unknown command" serves that better than
@@ -454,7 +465,8 @@ public class SettingsCommandTests : IDisposable
     [Fact]
     public void AnOperationInTheRightPlace_GetsNoHint()
     {
-        SettingsSupport.BuildArgumentOrderHint(["settings", "flow", "dev"]).Should().BeNull();
+        SettingsSupport.BuildArgumentOrderHint(["settings", "state", "dev"]).Should().BeNull();
+        SettingsSupport.BuildArgumentOrderHint(["settings", "value", "dev"]).Should().BeNull();
         SettingsSupport.BuildArgumentOrderHint(["settings", "push", "prod"]).Should().BeNull();
     }
 
@@ -465,30 +477,32 @@ public class SettingsCommandTests : IDisposable
         SettingsSupport.BuildArgumentOrderHint([]).Should().BeNull();
     }
 
-    // The five component operations are spelled the same here as the commands that route them, so the
-    // hint cannot suggest a name the parser would reject.
+    // Every retired name the hint knows maps to an operation and a type the parser accepts, so the line
+    // it suggests is one that runs.
     [Theory]
-    [InlineData("flow")]
-    [InlineData("workflow")]
-    [InlineData("plugin")]
-    public void EveryStateOperationTheHintKnows_IsOneTheParserRoutes(string operation)
+    [InlineData("flow", "state", SettingsStateCommand.StateType.Flow)]
+    [InlineData("workflow", "state", SettingsStateCommand.StateType.Workflow)]
+    [InlineData("plugin", "state", SettingsStateCommand.StateType.Plugin)]
+    public void EveryRetiredStateName_SuggestsATypeTheParserAccepts(
+        string retired, string operation, SettingsStateCommand.StateType type)
     {
-        SettingsSupport.BuildArgumentOrderHint(["settings", "dev", operation])
-            .Should().Contain($"flowline settings {operation} dev");
+        SettingsSupport.BuildArgumentOrderHint(["settings", retired, "dev"])
+            .Should().Contain($"flowline settings {operation} dev --type {retired}");
 
-        var routes = () => SettingsStateCommand.KindFor(operation);
+        var routes = () => SettingsStateCommand.KindFor(type);
         routes.Should().NotThrow();
     }
 
     [Theory]
-    [InlineData("envvar")]
-    [InlineData("connref")]
-    public void EveryValueOperationTheHintKnows_IsOneTheParserRoutes(string operation)
+    [InlineData("envvar", SettingsValueCommand.ValueType.EnvVar)]
+    [InlineData("connref", SettingsValueCommand.ValueType.ConnRef)]
+    public void EveryRetiredValueName_SuggestsATypeTheParserAccepts(
+        string retired, SettingsValueCommand.ValueType type)
     {
-        SettingsSupport.BuildArgumentOrderHint(["settings", "dev", operation])
-            .Should().Contain($"flowline settings {operation} dev");
+        SettingsSupport.BuildArgumentOrderHint(["settings", retired, "dev"])
+            .Should().Contain($"flowline settings value dev --type {retired}");
 
-        var routes = () => SettingsValueCommand.KindFor(operation);
+        var routes = () => SettingsValueCommand.KindFor(type);
         routes.Should().NotThrow();
     }
 }

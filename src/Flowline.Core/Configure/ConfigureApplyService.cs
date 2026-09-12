@@ -149,6 +149,12 @@ public sealed class ConfigureApplyService
     }
 
     /// <summary>Solution components in the covered classes the file does not name (R9).</summary>
+    /// <remarks>
+    /// Restricted to the classes a file can declare (KTD25). The inventory is wider than the file: it
+    /// carries business rules, actions and business process flows so the inline surface can switch them,
+    /// and reporting those as undeclared would tell an operator to add sections that do not exist and
+    /// bury the entries that really are missing.
+    /// </remarks>
     static IReadOnlyList<string> Undeclared(
         SolutionInventory inventory,
         IReadOnlyList<(ConfigurableComponentKind Kind, string Name)> declared)
@@ -158,6 +164,7 @@ public sealed class ConfigureApplyService
             .ToHashSet();
 
         return inventory.Components
+            .Where(c => ConfigurableComponentKinds.IsFileManaged(c.Kind))
             .Where(c => !declaredSet.Contains((c.Kind, c.Name.ToLowerInvariant())))
             .Select(c => $"{c.Kind}: {c.Name}")
             .ToList();
