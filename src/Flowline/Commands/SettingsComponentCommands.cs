@@ -261,11 +261,13 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     protected sealed record PickRow(string Label, InventoryComponent? Component)
     {
         /// <remarks>
-        /// The brand's secondary colour, not <c>dim</c>. Dim renders near-invisible on a dark terminal,
-        /// which turned the heading into a gap rather than a label and cost the grouping its whole point.
+        /// Bold, in the default colour. Every colour in this list already carries meaning — green and red
+        /// for state, the highlight for the cursor — so a heading in a third one competes with the row
+        /// you are pointing at and reads as something selectable. It is not: it is structure, and weight
+        /// says that without spending a colour. <c>dim</c> was tried first and renders near-invisible on
+        /// a dark terminal, which turned the heading into a gap rather than a label.
         /// </remarks>
-        public static PickRow Header(string label) =>
-            new($"[{FlowlineTheme.SecondaryColor.ToMarkup()}]{Markup.Escape(label)}[/]", null);
+        public static PickRow Header(string label) => new($"[bold]{Markup.Escape(label)}[/]", null);
     }
 
     /// <summary>

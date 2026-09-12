@@ -354,16 +354,15 @@ public class SettingsCommandSurfaceTests : IDisposable
             .Should().Equal("OffOne: Create of b", "OnOne: Create of a", "OnTwo: Create of c");
     }
 
-    // A heading nobody can read is a gap, not a label. Dim renders near-invisible on a dark terminal,
-    // which cost the grouping its whole point until it became the brand's secondary colour.
+    // A heading nobody can read is a gap, not a label, and dim renders near-invisible on a dark terminal.
+    // It spends no colour either: green and red already mean state and the highlight means the cursor, so
+    // a heading in a third colour competes with the row you are pointing at and reads as selectable.
     [Fact]
-    public void AGroupHeading_IsReadableRatherThanDim()
+    public void AGroupHeading_IsBoldAndSpendsNoColour()
     {
         var header = StateProbe.HeaderLabel("DWE_Base.Plugins.CalculateTax.");
 
-        header.Should().NotContain("[dim]");
-        header.Should().Contain(FlowlineTheme.SecondaryColor.ToMarkup());
-        header.Should().Contain("DWE_Base.Plugins.CalculateTax.");
+        header.Should().Be("[bold]DWE_Base.Plugins.CalculateTax.[/]");
     }
 
     // The header carries the shared text, so the row under it must not repeat it.
