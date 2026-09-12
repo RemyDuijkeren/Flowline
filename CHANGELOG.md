@@ -9,39 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-- **`--dev`/`--prod`/`--uat`/`--test` are replaced by a single `-e|--env <role|url>`** on `clone`, `push`, `pull`, `generate`, `init` and `provision`. Pass a role keyword (`dev`, `test`, `uat`, `prod`) that resolves from `.flowline`, or a URL. On `provision`, `--env` names the Production source it copies from and the target role stays a positional argument; its own `--prod <URL>` flag is gone. No aliases for any of the removed flags.
+- **`--dev`/`--prod`/`--uat`/`--test` are replaced by one `-e|--env <role|url>`** on `clone`, `push`, `pull`, `generate`, `init` and `provision`. Pass a role keyword (`dev`, `test`, `uat`, `prod`) or a URL. On `provision` it names the Production source to copy from, and its own `--prod <URL>` is gone. No aliases for any removed flag.
 - **`--pluginFile` is renamed `--plugin-file`** (short `-p` unchanged).
-- **`provision`'s `--allow-overwrite` is replaced by `--force overwrite`**: an existing target now asks before overwriting, and needs `--force overwrite` non-interactively. It used to proceed without asking.
-- **`diff`'s `--from`/`--to` are replaced by positional refs**: `diff A B`, `diff A..B`, `diff A...B`.
-- **`drift` no longer exits non-zero by default when it finds orphans.** It exits `0` after a completed comparison; pass `--exit-code` to get `22` when there is something to report, matching `git diff --exit-code`.
-- **`clone` fails instead of guessing when several environments are configured and `--env` is omitted.** It used to clone from the first match silently; it now exits `15` naming `--env`. Interactively it still prompts.
-- **Unknown options are now a parse error**: `flowline <command> --bogus` exits `15` instead of being ignored.
+- **`provision`'s `--allow-overwrite` is replaced by `--force overwrite`.** An existing target now asks before overwriting, and needs the flag non-interactively; it used to proceed without asking.
+- **`drift` exits `0` when it finds orphans**, as it always has for a clean comparison. Pass `--exit-code` to get `22` when there is something to report, matching `git diff --exit-code`.
+- **`clone` fails instead of guessing** when several environments are configured and `--env` is omitted: exit `15` naming `--env`. Interactively it still prompts.
+- **Unknown options are a parse error.** `flowline <command> --bogus` exits `15` instead of being ignored.
 
 ### Added
 
-- **`flowline settings` manages what a solution import can't carry**: environment variable values, connection reference bindings, and the on/off state of cloud flows, classic workflows, business rules, business process flows, actions and plugin steps. These differ per environment or get reset by an import, so they are what is left to fix after a `deploy`.
+- **`flowline settings` manages what a solution import can't carry**: environment variable values, connection reference bindings, and the on/off state of cloud flows, classic workflows, business rules, business process flows, actions and plugin steps.
 
-  `settings pull [target]` captures a settings file from an environment; `settings push <target>` applies one. A pull merges rather than overwrites — values you filled in are kept, new components are added, and an entry whose component is gone is reported rather than dropped — and then offers to fill in what it could not capture, letting you pick a connection from the environment instead of copying an id out of the maker portal. Secrets are never read: a Key Vault-backed variable stores a reference, which is captured; any other secret store gets a placeholder and a warning. Re-running the same file changes nothing, and `--dry-run` reports what would change without writing.
+  - `settings push <target>` — apply a settings file to an environment.
+  - `settings pull [target]` — capture one from an environment, merging into an existing file rather than overwriting it, then offering to fill in what it could not capture.
+  - `settings state <target> [name]` — turn one component on or off, or read its state.
+  - `settings value <target> [name]` — set one environment variable value or connection reference binding, or read either.
 
-  `settings state <target> [name]` and `settings value <target> [name]` change one component without a file at all, so turning a flow on at go-live no longer means opening the maker portal. Narrow either with `--type`. Omit the name and you get a searchable picker at a terminal, or a listing in a script. A change made this way is deliberate drift, so when the settings file would put the component back, the run says so and names the file. Business rules, business process flows and actions can be switched but are never carried in a settings file, so nothing puts those back.
+  Narrow the component operations with `--type`, or omit the name for a searchable picker. Secrets are never read on capture. See the [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#settings).
 
-- **`flowline diff` reports what changed between two points in git history**, naming solution components rather than XML files. It contacts no environment: no connection, no authentication, no network. `--write` produces a `CHANGES.md`, and `--exit-code` returns `22` when there was anything to report, so CI can branch on "is there anything to sync or deploy" without parsing output. `diff` is the git-history counterpart to `drift`, which compares committed source against a live environment.
-- **`clone` and `pull` keep the shared `deploymentSettings.json` in step with the solution**: a solution that gains an environment variable or connection reference gains the key too, with an empty value. Values already filled in survive, and a key whose component left the solution is reported rather than deleted. It reads the solution on disk only.
-- **Long-running commands report their state in the terminal tab**: past two seconds a command sets the terminal's progress indicator and names itself in the tab title, then marks the outcome when it stops. Nothing to configure, and piped or CI runs are left alone.
+- **`flowline diff` reports what changed between two points in git history**, naming solution components rather than XML files, with no connection, authentication or network. Compare with `diff A B`, `diff A..B` or `diff A...B`; `--write` produces a `CHANGES.md`, and `--exit-code` returns `22` when there was anything to report. It is the git-history counterpart to `drift`.
+- **`clone` and `pull` keep the shared `deploymentSettings.json` in step with the solution.** A new environment variable or connection reference gains a key with an empty value, values already filled in survive, and a key whose component left the solution is reported rather than deleted.
+- **Long-running commands report their state in the terminal tab** past two seconds, then mark the outcome when they stop. Nothing to configure, and piped or redirected runs are left alone.
 - **The export command is now called `pull`**, with `sync` kept as a permanent alias.
 - **`scaffold plugins`** joins `scaffold webresources`, and is added to the nearest solution file when one is found.
-- **A URL passed to `--env` that isn't in `.flowline` yet gets offered a role to save under**, inferred from the environment type and from role keywords in its host name or display name. Interactively it is a picker with an escape hatch to use the URL once without saving; non-interactively it saves the inferred role, or fails naming the key to add.
+- **A URL passed to `--env` that isn't in `.flowline` yet gets offered a role to save under**, inferred from the environment type and from role keywords in its host or display name. See [Project Configuration](https://github.com/RemyDuijkeren/Flowline/wiki/02-Project-Configuration).
 
 ### Fixed
 
 - **Connection reference changes now show up in `sync` output and `CHANGES.md`.** They live inside `Other/Customizations.xml`, which the change summary skipped, so adding or removing one produced no visible entry.
-- **The "a newer Flowline is out" notice now reaches every command**, including `scaffold`, `sln add`, `status`, and any run that stops early on a missing project or a failing probe.
+- **The "a newer Flowline is out" notice now reaches every command**, including `scaffold`, `sln add`, `status`, and any run that stops early.
 
 ### Changed
 
 - **Form changes in `sync` and `diff` read as a form, not a flat list**: a section is nested under the tab that holds it, and a deleted form reports only its name.
 - **`--env` is optional in standalone `generate`**, targeting the active PAC auth profile's environment as standalone `push` already did.
-- **A reachable active PAC auth profile is used without a switch prompt.** Flowline probes whatever profile is active against the target first; the URL match, ambiguity picker and switch prompt still apply when it can't reach it.
+- **A reachable active PAC auth profile is used without a switch prompt.** The URL match, ambiguity picker and switch prompt still apply when it can't reach the target.
 - **`provision --copy` defaults to `minimal` for `dev` and `full` for `test`/`uat`**; pass `--copy full|minimal` to override.
 - **A declined `deploy` first-import confirmation exits `17` (`ForceRequired`)** instead of `130`; re-run with `--force first-import`.
 - **Every flag that persists to `.flowline` says so in its own `--help` text.**
