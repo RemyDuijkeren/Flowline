@@ -425,14 +425,28 @@ public class DiffCommandTests : IDisposable
         await WriteComponentAsync(srcFolder, "Entities/Account/Entity.xml", "<entity/>");
         var existing = Path.Combine(_root, "CHANGES.md");
         await File.WriteAllTextAsync(existing, "untouched");
-        var before = Directory.GetFiles(_root, "*", SearchOption.AllDirectories).Length;
+        var before = WorkingTreeFileCount();
         var (command, _) = MakeCommand();
 
         await command.DiffAsync(_root, from: null, to: null, writeTo: null, verbose: false, exitCodeOnChanges: false, CancellationToken.None);
 
         (await File.ReadAllTextAsync(existing)).Should().Be("untouched");
-        Directory.GetFiles(_root, "*", SearchOption.AllDirectories).Length.Should().Be(before);
+        WorkingTreeFileCount().Should().Be(before);
     }
+
+    /// <summary>
+    /// Everything under the root except git's own storage.
+    /// </summary>
+    /// <remarks>
+    /// This used to count <c>.git</c> too, and failed on CI about one run in three. Reading a repository
+    /// is not a read-only act for git: it can repack loose objects, drop a stale lock, or rewrite an index,
+    /// so the file count under <c>.git</c> moves on its own while the working tree does not. What the test
+    /// is actually about is whether the command wrote anything, and nothing it writes would land there.
+    /// </remarks>
+    int WorkingTreeFileCount() =>
+        Directory.GetFiles(_root, "*", SearchOption.AllDirectories)
+            .Count(f => !f.Contains($"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}",
+                StringComparison.Ordinal));
 
     /// <summary>R8/KTD5. The default target lands CHANGES.md at the project root, not inside the scanned
     /// source root.</summary>
