@@ -252,7 +252,70 @@ public class SettingsPullCommand(
             ? SettingsSupport.ResolveSolutionInput(settings.From)
             : (Path.Combine((await SolutionFileLayout.LoadAsync(RootFolder, ct)).DataverseSolutionFolder, "src"), false);
 
-        return await WriteAsync(service, solutionPath, solutionIsZip, location, inventory, mode, sweeping, ct);
+        return await WriteAsync(service, env, solutionPath, solutionIsZip, location, inventory, mode, sweeping, ct);
+    }
+
+    /// <summary>
+    /// Walks the entries the capture left blank and offers to fill them in (R19, KTD24).
+    /// </summary>
+    /// <remarks>
+    /// `pac solution create-settings` emits a skeleton with every value blank, and a capture leaves one
+    /// blank when the environment has nothing to read. Those blanks are the whole reason a settings file
+    /// gets hand-edited, and the two things needed to fill them are already here: the environment is
+    /// connected, and its connections can be listed and picked.
+    ///
+    /// Nothing is asked unless something is missing, so an ordinary refresh of an already-filled file is
+    /// silent, and a sweep over three filled files stays silent three times.
+    ///
+    /// One confirmation before the questions start, per environment. Someone who ran a capture did not
+    /// necessarily sign up for an interview, and a sweep has to be declinable per file.
+    /// </remarks>
+    async Task FillTheBlanksAsync(
+        SettingsDocument document, EnvironmentInfo environment, string path, string display, CancellationToken ct)
+    {
+        var gaps = SettingsFileGaps.Find(document);
+        if (gaps.Count == 0) return;
+
+        var summary = $"{gaps.Count} entr{(gaps.Count == 1 ? "y" : "ies")} in {Markup.Escape(display)} " +
+                      "still need a value";
+
+        // An unattended caller cannot answer, so it gets the count and nothing else. Not a failure: a file
+        // with blanks is inert rather than wrong, because the apply path skips an empty declared value.
+        if (!IsInteractive())
+        {
+            Console.Info($"{summary}. Run this interactively to fill them in.");
+            return;
+        }
+
+        if (!await Console.PromptAsync(new ConfirmationPrompt($"{summary}. Fill them in now?"), ct))
+            return;
+
+        var filled = 0;
+
+        foreach (var gap in gaps)
+        {
+            var answer = gap.Kind == SettingsGapKind.ConnectionReference
+                ? await ConnectionPicker.PickAsync(
+                    Console, environment, gap.ConnectorId, $"Bind {Markup.Escape(gap.Name)} to:", ct)
+                : await Console.PromptAsync(
+                    new TextPrompt<string>(FlowlineConsoleExtensions.Question(
+                        $"Value for {Markup.Escape(gap.Name)} (blank to skip):")).AllowEmpty(), ct);
+
+            // Blank means skip, not clear. An empty declared value is what the file already holds, so
+            // writing one back would be a no-op with the appearance of an answer.
+            if (string.IsNullOrEmpty(answer)) continue;
+
+            if (SettingsFileGaps.Fill(document, gap, answer)) filled++;
+        }
+
+        if (filled == 0)
+        {
+            Console.Info("Nothing filled in.");
+            return;
+        }
+
+        SettingsFileReader.Save(document, path);
+        Console.Ok($"Filled in {filled} of {gaps.Count} in {Markup.Escape(display)}");
     }
 
     static EnvironmentRole? ParseFileRole(string? role) =>
@@ -268,6 +331,7 @@ public class SettingsPullCommand(
     /// </remarks>
     async Task<int> WriteAsync(
         IOrganizationServiceAsync2 service,
+        EnvironmentInfo environment,
         string solutionPath,
         bool solutionIsZip,
         SettingsFileLocation location,
@@ -306,6 +370,10 @@ public class SettingsPullCommand(
             }
 
             SettingsFileReader.Save(result.Document, location.Path);
+
+            // Saved before the fill, not after: the capture is the part that cannot be retyped, and a
+            // session abandoned halfway through the questions must not cost it. The fill saves again.
+            await FillTheBlanksAsync(result.Document, environment, location.Path, display, ct);
 
             // A sweep prints its own finish line over the whole run, so each environment reports as a step
             // rather than signing off as if the run were done.
