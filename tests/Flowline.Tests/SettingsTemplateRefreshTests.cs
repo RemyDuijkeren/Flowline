@@ -70,6 +70,20 @@ public class SettingsTemplateLocationTests
     }
 }
 
+/// <remarks>
+/// Both tests here run <c>pac solution create-settings</c> for real, so both are skipped, following the
+/// convention <c>ProjectScaffolderPluginsTests</c> and <c>DataverseConnectorTests</c> already use: CI has
+/// no <c>pac</c> (no setup step in <c>.github/workflows/ci.yml</c>, unlike <c>dotnet</c>). Run them
+/// locally before trusting a change to the template refresh.
+///
+/// Without the skip this did not merely fail. <c>PacUtils</c> ends the process when <c>pac</c> is
+/// missing, so the test host crashed and took roughly six hundred unrelated tests with it, reporting
+/// 1043 of 1649 and a green-looking count for everything that never ran.
+///
+/// The collection is kept even though both tests are skipped: it stops the class being scheduled beside
+/// <c>PacUtilsTests</c>, which replaces the process-wide probe that decides whether <c>pac</c> exists,
+/// and it is what these tests need the moment anyone un-skips them locally.
+/// </remarks>
 [Collection(PacResolutionCollection.Name)]
 public class RefreshSharedTemplateAsyncTests : IDisposable
 {
@@ -138,7 +152,7 @@ public class RefreshSharedTemplateAsyncTests : IDisposable
     // no IOrganizationServiceAsync2 is constructed anywhere in this test, and the real `pac` subprocess still
     // succeeds — the ALREADY VERIFIED claim this unit was built on, reproduced through the command's own
     // entry point rather than a bare `pac` invocation.
-    [Fact]
+    [Fact(Skip = "Requires the pac CLI on PATH — not available in CI; run locally to verify the real write")]
     public async Task RefreshSharedTemplateAsync_NoEnvironmentOrAuth_WritesTheSharedTemplate()
     {
         WriteMinimalUnpackedSolution();
@@ -153,7 +167,7 @@ public class RefreshSharedTemplateAsyncTests : IDisposable
         console.Output.Should().Contain("Created");
     }
 
-    [Fact]
+    [Fact(Skip = "Requires the pac CLI on PATH — not available in CI; run locally to verify the real write")]
     public async Task RefreshSharedTemplateAsync_SecondRun_MergesRatherThanReplacing()
     {
         WriteMinimalUnpackedSolution();
