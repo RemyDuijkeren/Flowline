@@ -188,7 +188,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         if (isWrite)
             Console.Done(mode.IsReportOnly()
                 ? "Dry run complete — nothing was written. Run without --dry-run to apply."
-                : "Done. The settings file still decides this on the next push.");
+                : $"Done. The settings file still decides this on the next push. {SettingsSupport.Kaomoji}");
 
         return (int)SettingsComponentOutcomes.ExitCodeFor(outcome);
     }

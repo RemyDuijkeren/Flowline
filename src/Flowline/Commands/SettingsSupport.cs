@@ -283,9 +283,21 @@ public static class SettingsSupport
     public static string BuildDryRunCompleteMessage(string environment) =>
         $"Dry run complete — {Markup.Escape(environment)} is untouched. Run without --dry-run to apply.";
 
+    /// <summary>
+    /// The sign-off every settings command that actually did something ends on.
+    /// </summary>
+    /// <remarks>
+    /// One per command family, the way clone, deploy, provision and scaffold each have their own. A
+    /// salute, because what this family does is carry out a declared instruction.
+    ///
+    /// Only on a run that changed something. A dry run wrote nothing and has nothing to sign off, and a
+    /// cancelled or partly-applied run is not a success to celebrate.
+    /// </remarks>
+    public const string Kaomoji = "(￣^￣)ゞ";
+
     /// <summary>The finish line for a real apply.</summary>
     public static string BuildAppliedMessage(string environment) =>
-        $"{Markup.Escape(environment)} is configured. Re-run any time — the same file changes nothing twice.";
+        $"{Markup.Escape(environment)} is configured. Re-run any time — the same file changes nothing twice. {Kaomoji}";
 
     /// <summary>The finish line for a run that was interrupted partway through the file.</summary>
     /// <remarks>

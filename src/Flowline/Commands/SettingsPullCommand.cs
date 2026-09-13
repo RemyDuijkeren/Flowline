@@ -115,7 +115,7 @@ public class SettingsPullCommand(
 
         if (failed.Count == 0)
         {
-            Console.Done($"Captured {roles.Count} environment{(roles.Count == 1 ? "" : "s")}.");
+            Console.Done($"Captured {roles.Count} environment{(roles.Count == 1 ? "" : "s")}. {SettingsSupport.Kaomoji}");
             return (int)ExitCode.Success;
         }
 
@@ -385,7 +385,7 @@ public class SettingsPullCommand(
             if (sweeping)
                 Console.Ok($"Wrote {display}");
             else
-                Console.Done($"Wrote {display}");
+                Console.Done($"Wrote {display} {SettingsSupport.Kaomoji}");
 
             return (int)ExitCode.Success;
         }, Logger);
