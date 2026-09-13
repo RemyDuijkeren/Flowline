@@ -44,6 +44,7 @@ internal static class CancellablePrompt
     /// <inheritdoc cref="AskAsync{T}(IAnsiConsole, SelectionPrompt{T}, CancellationToken)"/>
     public static async Task<IReadOnlyList<T>> AskAsync<T>(
         IAnsiConsole console, MultiSelectionPrompt<T> prompt, CancellationToken ct)
+        where T : notnull
     {
         prompt.AddCancelResult(() => null!);
 

@@ -34,7 +34,14 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     protected ILogger Logger => _logger ??= loggerFactory.CreateLogger(GetType().Name);
 
     protected string RootFolder { get; private set; } = Directory.GetCurrentDirectory();
-    protected ProjectConfig? Config { get; private set; }
+    /// <summary>The project's .flowline configuration, or an empty one when there is no file yet.</summary>
+    /// <remarks>
+    /// Not nullable, and assigned before any command body runs (see ExecuteAsync). It was annotated
+    /// nullable, which was never true of it -- the loader falls back to an empty config rather than null --
+    /// and the annotation cost every reader a `Config!` to get past, twenty-five of them across the
+    /// commands, each one hiding the next real nullability warning behind it.
+    /// </remarks>
+    protected ProjectConfig Config { get; private set; } = null!;
     protected virtual bool ShowWelcome => true;
     protected virtual bool RequiresFlowlineProject => true;
 
