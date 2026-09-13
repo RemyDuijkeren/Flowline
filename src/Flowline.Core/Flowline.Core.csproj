@@ -20,7 +20,11 @@
     <PackageReference Include="System.Reflection.MetadataLoadContext" />
     <PackageReference Include="MinVer" PrivateAssets="All" />
 
-    <!-- https://github.com/advisories/GHSA-37gx-xxp4-5rgx -->
+    <!--
+      Referenced only to pin it: nothing here uses the package. It arrives transitively via
+      Dataverse.Client at 8.0.2, which carries eight high-severity advisories. The version, and the
+      reasoning, live in Directory.Packages.props.
+    -->
     <PackageReference Include="System.Security.Cryptography.Xml" />
   </ItemGroup>
 

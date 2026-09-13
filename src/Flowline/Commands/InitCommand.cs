@@ -69,7 +69,7 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         string? devUrl = null;
         if (!string.IsNullOrWhiteSpace(settings.Env))
         {
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
                 (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
             devUrl = target.Url;
         }
@@ -78,7 +78,7 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         if (devEnv is null)
             return 0; // user chose "+ Create new environment" — resolver already emitted the provision advice
 
-        var exitCode = await CreateSolutionAsync(devEnv, name, settings, RootFolder, Config!, cancellationToken, devUrl);
+        var exitCode = await CreateSolutionAsync(devEnv, name, settings, RootFolder, Config, cancellationToken, devUrl);
         if (exitCode != 0)
             return exitCode;
 

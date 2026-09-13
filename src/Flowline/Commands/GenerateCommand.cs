@@ -116,19 +116,19 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
         {
             // R8: a passed [solution] no longer selects among multiple configured solutions (only one
             // exists) — it now just needs to match the one already configured.
-            if (Config!.Solution != null)
+            if (Config.Solution != null)
                 ValidateSolutionMatchesConfig(settings.Solution, Config.Solution.UniqueName);
 
-            projectSln = Config!.GetOrUpdateSolution(settings.Solution, settings: settings);
+            projectSln = Config.GetOrUpdateSolution(settings.Solution, settings: settings);
             if (projectSln == null)
                 throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as an argument or configure a single solution in .flowline.");
 
             // KTD8: generate accepts any role (incl. Production) — onlyRole:null, and the type guard is
             // skipped below when the environment is actually checked. Any URL the resolver saves lands
-            // in Config in-memory here; the existing end-of-run Config!.Save(RootFolder) (ShouldPersistSettings,
+            // in Config in-memory here; the existing end-of-run Config.Save(RootFolder) (ShouldPersistSettings,
             // below) is what actually flushes it once generation succeeds — matching how projectSln's own
             // mutations above are already deferred to that one save.
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, onlyRole: null, IsInteractive(), settings,
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: null, IsInteractive(), settings,
                 (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
             devUrl = target.Url;
             resolvedRole = target.Role;
@@ -271,7 +271,7 @@ public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseC
                 projectSln.Generate ??= new GenerateConfig();
                 projectSln.Generate.Namespace = modelNamespace;
             }
-            Config!.Save(RootFolder);
+            Config.Save(RootFolder);
         }
 
         Console.Done($"Types generated into [bold]{outputLabel}[/] in {FormatDuration(sw.Elapsed)} ᕦ(ò_óˇ)ᕤ");

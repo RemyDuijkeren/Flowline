@@ -109,7 +109,7 @@ public class TerminalTabStatusTests
     }
 
     [Fact]
-    public void RevealAndFinishRacingOnRealThreads_NeverLeavesProgressSet()
+    public async Task RevealAndFinishRacingOnRealThreads_NeverLeavesProgressSet()
     {
         for (var attempt = 0; attempt < 200; attempt++)
         {
@@ -119,7 +119,9 @@ public class TerminalTabStatusTests
             var reveal = Task.Run(() => { gate.Wait(); h.Status.Reveal(); });
             var finish = Task.Run(() => { gate.Wait(); h.Status.Finish(0); });
             gate.Set();
-            Task.WaitAll(reveal, finish);
+            // Awaited rather than waited on: the race under test is between the two threadpool threads
+            // above, which is unchanged, and a blocking wait in a test is its own deadlock risk.
+            await Task.WhenAll(reveal, finish);
 
             var written = h.Written;
             written.Should().BeOneOf("", Indeterminate + Remove);

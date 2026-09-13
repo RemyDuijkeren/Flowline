@@ -52,7 +52,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         // role above. Resolved through the shared seam (KTD1) so a bare --env dev or a non-Production URL
         // is refused before any PAC profile is resolved or .flowline is touched; the resolver already
         // saves a first-seen URL to .flowline in memory, so this doesn't route back through GetOrUpdateUrl.
-        var source = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, onlyRole: EnvironmentRole.Prod, IsInteractive(), settings,
+        var source = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Prod, IsInteractive(), settings,
             (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
         var (prodEnv, _) = await GetAndCheckEnvironmentAsync(source.Url, EnvironmentRole.Prod, settings, cancellationToken);
 
@@ -192,7 +192,7 @@ public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runti
         if (!copyResult.IsSuccess)
             throw new FlowlineException(ExitCode.GeneralError, "Copy from prod didn't finish — check 'pac admin status' and the Power Platform admin center. Use --verbose for more details.");
 
-        Config!.Save();
+        Config.Save();
         Console.Done($"Provisioned! Prod copied into [bold]{targetDisplayName}[/]. Run 'clone' or 'pull' to get going. ٩(◕‿◕｡)۶");
 
         return 0;

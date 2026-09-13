@@ -125,7 +125,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
 
         var sln = standalone
             ? ResolveStandaloneSolution(settings.Path!, artifactManifest!.Value)
-            : Config!.Solution ?? throw new FlowlineException(ExitCode.ConfigInvalid, "No solution configured — run 'clone' first.");
+            : Config.Solution ?? throw new FlowlineException(ExitCode.ConfigInvalid, "No solution configured — run 'clone' first.");
 
         // R14: standalone only — a CI job in a scratch folder has no other way to tell which mode it
         // got or where identity came from. Project mode says nothing new here: identity has always come
@@ -265,7 +265,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         }
         else
         {
-            var hasTestOrUat = !string.IsNullOrEmpty(Config!.TestUrl) || !string.IsNullOrEmpty(Config.UatUrl);
+            var hasTestOrUat = !string.IsNullOrEmpty(Config.TestUrl) || !string.IsNullOrEmpty(Config.UatUrl);
             var cacheMessage = BuildCacheStatusMessage(cacheOutcome, sln.UniqueName, cacheEntry?.CommitSha, currentCommitSha,
                 // Only shapes the message's wording (pipeline framing is noise in CI) — never gates a
                 // prompt, so an env-var probe is right here rather than a console capability check.
@@ -381,7 +381,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
         }
     }
 
-    private string ResolveTargetUrl(Settings settings, bool standalone) => ResolveTargetUrl(settings.Target, Config!, standalone);
+    private string ResolveTargetUrl(Settings settings, bool standalone) => ResolveTargetUrl(settings.Target, Config, standalone);
 
     // R15: `standalone` only reshapes the "can't resolve" message below — a role keyword resolves the
     // same way either way, since Config is `new ProjectConfig()` (all URLs empty) in standalone, so
@@ -468,7 +468,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
     private async Task ValidateDtapGateAsync(
         ProjectSolution sln, string gateVersion, string targetUrl, Settings settings, CancellationToken ct)
     {
-        var dtapDecision = ResolveDtapGate(Config!, targetUrl);
+        var dtapDecision = ResolveDtapGate(Config, targetUrl);
 
         if (dtapDecision.Outcome == DtapGateOutcome.DevBlock)
             throw new FlowlineException(ExitCode.ValidationFailed,
@@ -480,7 +480,7 @@ public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseCon
             // ordinary for a target outside the configured tiers, but a standalone run skips it for a
             // different reason — there is no config — and a promotion gate that silently does nothing is
             // exactly the shape an operator should be able to see in a CI log.
-            if (!HasAnyEnvironmentUrl(Config!))
+            if (!HasAnyEnvironmentUrl(Config))
                 Console.Skip("Skipping DTAP gate — no environment config here to order promotions by.");
             return;
         }

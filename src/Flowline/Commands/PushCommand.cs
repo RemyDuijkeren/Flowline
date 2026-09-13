@@ -89,7 +89,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         // R8: a passed [solution] no longer selects among multiple configured solutions (only one
         // exists) — it now just needs to match the one already configured. Checked before any
         // Dataverse round-trip (env/solution lookups happen further down in ResolveEnvironmentAndSolutionAsync).
-        if (!standaloneMode && Config!.Solution != null)
+        if (!standaloneMode && Config.Solution != null)
             ValidateSolutionMatchesConfig(settings.Solution, Config.Solution.UniqueName);
 
         var runMode = ResolveRunMode(settings);
@@ -108,7 +108,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         }
         else
         {
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
                 (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
             environmentUrl = target.Url;
             resolvedRole = target.Role;
@@ -120,7 +120,7 @@ public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConne
         // R11: .flowline is only written once the resolver actually saved something (a first-seen URL) —
         // a keyword/URL match against an already-saved role never reaches here with configSaved true.
         if (configSaved)
-            Config!.Save();
+            Config.Save();
 
         if (!standaloneMode)
             environmentUrl = devEnv.EnvironmentUrl!;

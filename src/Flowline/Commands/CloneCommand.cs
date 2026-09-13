@@ -59,7 +59,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         }
         else
         {
-            (sourceEnv, projectSln, solutionInfo) = await ResolveConfiguredSourceAsync(settings, Config!, cancellationToken);
+            (sourceEnv, projectSln, solutionInfo) = await ResolveConfiguredSourceAsync(settings, Config, cancellationToken);
         }
 
         Logger.LogInformation("source={EnvironmentUrl} solution={SolutionName}", sourceEnv.EnvironmentUrl, projectSln.UniqueName);

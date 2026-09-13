@@ -42,7 +42,7 @@ public class PullCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // R3: DEV-only — refused before any PAC profile resolve, connect, or .flowline write.
-        var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config!, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
+        var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
             (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
         var (devEnv, _) = await GetAndCheckEnvironmentAsync(target.Url, target.Role, settings, cancellationToken, devOnly: true);
 
@@ -53,7 +53,7 @@ public class PullCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
 
         Logger.LogInformation("target={EnvironmentUrl} solution={SolutionName} bump={Bump}", devEnv.EnvironmentUrl, projectSln.UniqueName, settings.Bump);
 
-        Config!.Save();
+        Config.Save();
         // KTD6: the resolver's own setter already prints "Saved to .flowline: DevUrl" when it actually
         // saved something — this line only adds noise when nothing changed.
         if (target.Saved)

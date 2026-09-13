@@ -38,7 +38,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     /// <remarks>
     /// Not nullable, and assigned before any command body runs (see ExecuteAsync). It was annotated
     /// nullable, which was never true of it -- the loader falls back to an empty config rather than null --
-    /// and the annotation cost every reader a `Config!` to get past, twenty-five of them across the
+    /// and the annotation cost every reader a `Config` to get past, twenty-five of them across the
     /// commands, each one hiding the next real nullability warning behind it.
     /// </remarks>
     protected ProjectConfig Config { get; private set; } = null!;
@@ -247,10 +247,10 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
     // this rather than duplicating its own switch.
     protected string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl, TSettings settings) => role switch
     {
-        EnvironmentRole.Prod => Config!.GetOrUpdateProdUrl(inputUrl, settings),
-        EnvironmentRole.Uat  => Config!.GetOrUpdateUatUrl(inputUrl, settings),
-        EnvironmentRole.Test => Config!.GetOrUpdateTestUrl(inputUrl, settings),
-        EnvironmentRole.Dev  => Config!.GetOrUpdateDevUrl(inputUrl, settings),
+        EnvironmentRole.Prod => Config.GetOrUpdateProdUrl(inputUrl, settings),
+        EnvironmentRole.Uat  => Config.GetOrUpdateUatUrl(inputUrl, settings),
+        EnvironmentRole.Test => Config.GetOrUpdateTestUrl(inputUrl, settings),
+        EnvironmentRole.Dev  => Config.GetOrUpdateDevUrl(inputUrl, settings),
         _ => throw new ArgumentOutOfRangeException(nameof(role))
     };
 
@@ -334,7 +334,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         CancellationToken cancellationToken = default,
         bool bypassCache = false)
     {
-        var projectSln = Config!.GetOrUpdateSolution(inputName, includeManaged, settings);
+        var projectSln = Config.GetOrUpdateSolution(inputName, includeManaged, settings);
         if (projectSln == null)
             throw new FlowlineException(ExitCode.ConfigInvalid, "No solution is configured for this project yet — run 'flowline clone <solution>' first.");
 
