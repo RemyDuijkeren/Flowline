@@ -355,10 +355,24 @@ public static class SettingsSupport
         _ => $"{string.Join(", ", tables.Take(tables.Count - 1))} and {tables[^1]}",
     };
 
+    /// <summary>
+    /// Warns about what a fresh deploy would not reproduce (KTD33).
+    /// </summary>
+    /// <remarks>
+    /// Says what is at stake rather than counting omissions. The old wording reported that N components
+    /// "aren't in the file", which was true of most of any solution and so was never a reason to do
+    /// anything.
+    ///
+    /// One sentence covers both halves of the set — a component switched off here, and a value nothing has
+    /// set — because the question is the same for both. The remedy is one command, since this is exactly
+    /// what a capture would add.
+    /// </remarks>
     public static string BuildUndeclaredWarning(int count) =>
         count == 1
-            ? "1 component in this solution isn't in the file — run with --verbose to see it."
-            : $"{count} components in this solution aren't in the file — run with --verbose to list them.";
+            ? "1 component isn't recorded in the settings file, so a fresh deploy wouldn't reproduce it. "
+              + "Run 'settings pull' to record it, or --verbose to see it."
+            : $"{count} components aren't recorded in the settings file, so a fresh deploy wouldn't "
+              + "reproduce them. Run 'settings pull' to record them, or --verbose to list them.";
 
     /// <summary>A capture's dry run leaves a file unwritten, not an environment untouched.</summary>
     public static string BuildPullDryRunMessage(string path) =>

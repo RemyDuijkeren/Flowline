@@ -135,16 +135,58 @@ public class FormAndViewStateTests
 
         var inventory = new SolutionInventory([
             new InventoryComponent(ConfigurableComponentKind.CloudFlow, "declared_flow", Guid.NewGuid(), true),
-            Form("account", "Information", true),
-            View("account", "Active Accounts", true),
-            new InventoryComponent(ConfigurableComponentKind.BusinessRule, "contoso_Rule", Guid.NewGuid(), true),
+            Form("account", "Information", false),
+            View("account", "Active Accounts", false),
+            new InventoryComponent(ConfigurableComponentKind.BusinessRule, "contoso_Rule", Guid.NewGuid(), false),
         ]);
 
         var outcome = await new ConfigureApplyService()
             .ApplyAsync(service, document, inventory, RunMode.Normal, CancellationToken.None);
 
-        // The business rule is still reported: it is captured, and forms and views are the only exception.
+        // All three are off and undeclared, so all three would qualify on the state test alone. Only the
+        // business rule is reported: forms and views are excluded from capture outright (KTD29).
         outcome.Undeclared.Should().ContainSingle().Which.Should().Contain("contoso_Rule");
+    }
+
+    // ── KTD33: undeclared reports what a fresh deploy would lose ─────────────
+
+    // A component that is on and undeclared needs no line. On is what an import produces, so the file and
+    // the environment already agree and there is nothing a capture would add. This is what made the old
+    // report useless: a solution's components are mostly on, so it listed forty of them every run.
+    [Fact]
+    public async Task Apply_AnUndeclaredComponentThatIsOn_IsNotReported()
+    {
+        var service = Service();
+        var document = SettingsFileReader.Parse("""{ "CloudFlows": { "declared_flow": true } }""");
+
+        var inventory = new SolutionInventory([
+            new InventoryComponent(ConfigurableComponentKind.CloudFlow, "declared_flow", Guid.NewGuid(), true),
+            new InventoryComponent(ConfigurableComponentKind.PluginStep, "contoso_StepThatIsOn", Guid.NewGuid(), true),
+            new InventoryComponent(ConfigurableComponentKind.PluginStep, "contoso_StepThatIsOff", Guid.NewGuid(), false),
+        ]);
+
+        var outcome = await new ConfigureApplyService()
+            .ApplyAsync(service, document, inventory, RunMode.Normal, CancellationToken.None);
+
+        outcome.Undeclared.Should().ContainSingle().Which.Should().Contain("contoso_StepThatIsOff");
+    }
+
+    // A value class has no on to be in, so absence is the whole gap: nothing has said what the variable
+    // should be, and a fresh environment gets no value at all.
+    [Theory]
+    [InlineData(ConfigurableComponentKind.EnvironmentVariable, "contoso_ApiUrl")]
+    [InlineData(ConfigurableComponentKind.ConnectionReference, "contoso_Dataverse")]
+    public async Task Apply_AnUndeclaredValueClass_IsAlwaysReported(ConfigurableComponentKind kind, string name)
+    {
+        var service = Service();
+        var document = SettingsFileReader.Parse("""{ "CloudFlows": {} }""");
+
+        var outcome = await new ConfigureApplyService().ApplyAsync(
+            service, document,
+            new SolutionInventory([new InventoryComponent(kind, name, Guid.NewGuid(), null)]),
+            RunMode.Normal, CancellationToken.None);
+
+        outcome.Undeclared.Should().ContainSingle().Which.Should().Contain(name);
     }
 
     // A form's write lands but the app keeps showing the old state until the table is published, so the

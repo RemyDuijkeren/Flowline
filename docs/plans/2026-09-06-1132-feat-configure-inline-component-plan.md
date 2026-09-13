@@ -187,6 +187,18 @@ None blocking. Two questions are deferred to implementation and named in U5 and 
 - KTD8. **Inline results use their own outcome type, not the file-apply outcome.** The apply outcome reports every solution component the file does not declare, which for a one-component invocation is everything else in the solution, and it maps an all-skipped run to `Inconclusive`. Neither is right for a single named component. Governs R11.
 - KTD9. **Addressing uses the unique, schema or logical name, case-insensitively, and an empty `--value` is rejected rather than written.** The inventory already matches case-insensitively on those keys, and display names are not addressable, so the not-found message names which key was searched. Because the value is a flag, `--value ""` is a deliberate request rather than an omission, so it is refused naming the deferred clear capability: the apply path skips empty values precisely so a captured file re-applies as a no-op. Governs R7, R8, R11.
 - KTD10. **The picker runs after the inventory spinner closes, over the already-materialized inventory.** Spectre forbids a prompt inside a status display, and the inventory read currently sits inside one. Governs R9.
+- KTD33. **The undeclared report names what a fresh deploy would lose, not everything the file omits.**
+  (session-settled: user-directed.) A settings file is a partial declaration by design, so most of a
+  solution being absent from it is the normal state. Reporting that as a warning on every run made a
+  warning that never varied, which is the kind people learn to skip, and it cost more than it gave: forty
+  components listed on a solution whose file declared seven. Narrowed to the set where absence actually
+  costs something. A state class counts only when it is off, because off and undeclared means nothing
+  records the decision and a deploy into a fresh environment activates it on import; undeclared and on
+  needs no line, since on is what an import produces anyway. A value class counts whenever it is absent,
+  because a value has no equivalent default. The two halves are the same question and the answer is
+  exactly what a capture would add, which is why the warning names `settings pull` as the remedy.
+  Removing the report entirely was the runner-up, and stays the answer if off-and-undeclared turns out to
+  be routine too. Governs R9.
 - KTD32. **A name is qualified by its table when it means nothing without one.** (session-settled:
   user-directed.) Forms and views needed this to be addressable at all. Business rules need it for the
   same reason and it was missed: a rule has no unique name (the column is null on every one, confirmed

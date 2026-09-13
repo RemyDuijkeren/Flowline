@@ -102,7 +102,7 @@ public class SettingsPushCommand(
         }
 
         foreach (var undeclared in outcome.Undeclared)
-            Console.Verbose($"Not declared in the settings file: {Markup.Escape(undeclared)}");
+            Console.Verbose($"Not recorded in the settings file: {Markup.Escape(undeclared)}");
 
         if (outcome.Undeclared.Count > 0)
             Console.Warning(SettingsSupport.BuildUndeclaredWarning(outcome.Undeclared.Count));

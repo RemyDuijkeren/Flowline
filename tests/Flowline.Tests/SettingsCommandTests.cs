@@ -241,11 +241,23 @@ public class SettingsCommandTests : IDisposable
     }
 
     [Theory]
-    [InlineData(1, "1 component in this solution isn't in the file")]
-    [InlineData(46, "46 components in this solution aren't in the file")]
+    [InlineData(1, "1 component isn't recorded in the settings file")]
+    [InlineData(46, "46 components aren't recorded in the settings file")]
     public void BuildUndeclaredWarning_ReadsAsAColleagueWroteIt(int count, string expected)
     {
         SettingsSupport.BuildUndeclaredWarning(count).Should().StartWith(expected);
+    }
+
+    // The warning has to say what it costs, not how many lines are missing. It used to report that N
+    // components "aren't in the file", which is true of most of any solution and so was never a reason to
+    // act -- a warning that fires unchanged on every run is one people learn to skip.
+    [Fact]
+    public void BuildUndeclaredWarning_SaysWhatIsAtStakeAndHowToFixIt()
+    {
+        var message = SettingsSupport.BuildUndeclaredWarning(3);
+
+        message.Should().Contain("a fresh deploy wouldn't reproduce");
+        message.Should().Contain("settings pull");
     }
 
     // ── Force vocabulary (KTD10) ─────────────────────────────────────────────

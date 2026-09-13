@@ -90,4 +90,8 @@ public sealed record ApplyOutcome(
     /// </remarks>
     public string SummaryLine() =>
         $"{Applied} applied, {Unchanged} unchanged, {Skipped} skipped, {Failed} failed, {Undeclared.Count} undeclared";
+
+    // "undeclared" counts what an operator would act on, not everything the file omits -- see
+    // ConfigureApplyService.Undeclared. A file is a partial declaration, so most of a solution being
+    // absent from it is normal, and reporting that on every run taught people to skip the line.
 }

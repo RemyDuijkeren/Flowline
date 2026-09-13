@@ -164,12 +164,29 @@ public sealed class ConfigureApplyService
         return await apply(match.Component!).ConfigureAwait(false);
     }
 
-    /// <summary>Solution components in the captured classes the file does not name (R9).</summary>
+    /// <summary>Components this environment would not get back from a fresh deploy (R9, KTD33).</summary>
     /// <remarks>
-    /// Restricted to the classes a capture writes (KTD29), which is narrower than the classes a file can
-    /// declare. Forms and views are declarable and deliberately not listed here: a solution holds dozens
-    /// of each, so reporting every one an operator has not declared would be hundreds of lines telling
-    /// them to declare things they have no reason to, and it would bury the entries that matter.
+    /// Not every component the file omits. A settings file is a partial declaration by design, so most of
+    /// a solution being absent from it is the normal state, and a line reporting the normal state on every
+    /// run is one an operator learns to skip. That is what this used to do: forty-odd components on a
+    /// solution whose file declared seven, identical run after run.
+    ///
+    /// What is left is the set where absence actually costs something, which differs by what the class
+    /// carries.
+    ///
+    /// A <b>state</b> class counts only when the component is <i>off</i>. Off and undeclared means someone
+    /// turned it off here and nothing records that decision, so a deploy into a fresh environment
+    /// activates it on import and nobody notices. Undeclared and on needs no line: on is what an import
+    /// produces anyway, so the file and the environment already agree.
+    ///
+    /// A <b>value</b> class counts whenever it is absent, because a value has no such default. Nothing has
+    /// said what the variable or the binding should be, so a fresh environment gets neither.
+    ///
+    /// Both halves are the same question — what would this environment not get back — and the answer is
+    /// exactly the set <c>settings pull</c> would add, which is why that is the remedy named.
+    ///
+    /// Forms and views are excluded outright by <see cref="ConfigurableComponentKinds.IsCaptured"/>
+    /// (KTD29).
     /// </remarks>
     static IReadOnlyList<string> Undeclared(
         SolutionInventory inventory,
@@ -181,6 +198,9 @@ public sealed class ConfigureApplyService
 
         return inventory.Components
             .Where(c => ConfigurableComponentKinds.IsCaptured(c.Kind))
+            // Covers both halves: a state class that is off, and a value class, whose Enabled is null
+            // because it has no state to be on.
+            .Where(c => c.Enabled != true)
             .Where(c => !declaredSet.Contains((c.Kind, c.Name.ToLowerInvariant())))
             .Select(c => $"{c.Kind}: {c.Name}")
             .ToList();

@@ -204,9 +204,11 @@ public class ConfigureApplyServiceTests
     {
         var service = Service();
         var document = DocumentWith("""{ "CloudFlows": { "declared_flow": true } }""");
+        // Off, because that is what makes an undeclared component worth reporting: nothing records the
+        // decision, so a fresh environment activates it on import (KTD33).
         var inventory = new SolutionInventory([
             Flow("declared_flow", true),
-            new InventoryComponent(ConfigurableComponentKind.BusinessRule, "contoso_ShowHideRit", Guid.NewGuid(), true),
+            new InventoryComponent(ConfigurableComponentKind.BusinessRule, "contoso_ShowHideRit", Guid.NewGuid(), false),
         ]);
 
         var outcome = await new ConfigureApplyService()

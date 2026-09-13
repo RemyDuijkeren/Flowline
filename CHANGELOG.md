@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`settings push` only warns about components a fresh deploy would lose.** It used to report every
+  component missing from the settings file, which on a real solution is most of them, unchanged on every
+  run. It now reports a component that is switched off here with nothing recording that, and a variable
+  or binding nothing has set: exactly what `settings pull` would add.
+
 ### Fixed
 
 - **Changing a component's state now offers to update the settings file for every class, not three.** The
