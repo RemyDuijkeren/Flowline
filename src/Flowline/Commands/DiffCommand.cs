@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Core;
@@ -32,7 +32,7 @@ public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
     public sealed class Settings : FlowlineSettings
     {
         [CommandArgument(0, "[from]")]
-        [Description("Git ref to compare from — a commit, tag, or branch (default: HEAD). 'A..B' is shorthand for 'A B'; 'A...B' compares the merge base of A and B against B")]
+        [Description("Git ref to compare from: a commit, tag, or branch (default: HEAD). 'A..B' is shorthand for 'A B'; 'A...B' compares the merge base of A and B against B")]
         public string? From { get; set; }
 
         [CommandArgument(1, "[to]")]

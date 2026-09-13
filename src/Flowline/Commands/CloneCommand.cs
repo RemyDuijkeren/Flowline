@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
@@ -28,7 +28,7 @@ public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOp
         public string? Solution { get; set; }
 
         [CommandOption("--managed [true|false]")]
-        [Description("Include managed artifacts — --managed alone means true, --managed false means false (saved to .flowline)")]
+        [Description("Include managed artifacts: --managed alone means true, --managed false means false (saved to .flowline)")]
         [DefaultValue(true)]
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
     }

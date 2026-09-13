@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.RegularExpressions;
 using Flowline.Config;
 using Flowline.Core;
@@ -44,7 +44,7 @@ public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOpt
         public string? DisplayName { get; set; }
 
         [CommandOption("--publisher-prefix <PREFIX>")]
-        [Description("Publisher prefix — reuses a matching publisher or creates one (omit to pick interactively)")]
+        [Description("Publisher prefix: reuses a matching publisher or creates one (omit to pick interactively)")]
         public string? PublisherPrefix { get; set; }
 
         [CommandOption("--publisher-name <TEXT>")]

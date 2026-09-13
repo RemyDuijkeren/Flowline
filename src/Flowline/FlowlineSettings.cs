@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Flowline.Core;
 using Spectre.Console.Cli;
 
@@ -11,7 +11,7 @@ public class FlowlineSettings : CommandSettings
     public bool Verbose { get; set; } = false;
 
     [CommandOption("-f|--force <SPECIFIER>")]
-    [Description("Approve a specific hazard by name for this command; repeatable. Pass 'all' for everything this command gates — an invalid value lists the valid ones.")]
+    [Description("Approve a specific hazard by name for this command; repeatable. Pass 'all' for everything this command gates. An invalid value lists the valid ones.")]
     public string[] Force { get; set; } = [];
 
     public bool HasForce(string specifier) =>

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Spectre.Console.Cli;
 
 namespace Flowline;
@@ -14,6 +14,6 @@ public class DataverseSettings : FlowlineSettings
     public bool NoCache { get; set; } = false;
 
     [CommandOption("-a|--auto-select-auth-profile")]
-    [Description("Automatically switch PAC CLI's active auth profile to match the one Flowline resolved, without asking — the switch is not restored afterward")]
+    [Description("Automatically switch PAC CLI's active auth profile to match the one Flowline resolved, without asking. The switch stays in place after the run.")]
     public bool AutoSwitchProfile { get; set; } = false;
 }

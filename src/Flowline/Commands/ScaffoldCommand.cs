@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
@@ -38,7 +38,7 @@ public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtim
         public string Part { get; set; } = null!;
 
         [CommandOption("-o|--output <PATH>")]
-        [Description("Scaffold into this folder instead of the current one — the solution file is looked up there too. Created when missing.")]
+        [Description("Scaffold into this folder instead of the current one; the solution file is looked up there too. Created when missing.")]
         public string? Output { get; set; }
 
         [CommandOption("--name <NAME>")]

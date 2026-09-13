@@ -300,26 +300,26 @@ namespace Flowline
 
             // init = create a brand-new publisher + empty unmanaged solution in DEV, then scaffold the repo
             config.AddCommand<InitCommand>("init")
-                  .WithDescription("Create an empty unmanaged solution and optional a new publisher in a DEV environment, then scaffold the repo around it. Front door for greenfield — no Dataverse solution exists yet. Targets DEV only, via --env dev (default) or a DEV environment URL.")
+                  .WithDescription("Create an empty unmanaged solution, and optionally a publisher, in a DEV environment, then scaffold the repo around it. Run when the Dataverse solution still has to be created. DEV only, via --env dev (default) or a DEV URL.")
                   .WithExample("init", "MySolution")
                   .WithExample("init", "MySolution", "--env", "https://contoso-dev.crm4.dynamics.com", "--publisher-prefix", "contoso");
 
             // clone = Clone solution from environment to local folder
             config.AddCommand<CloneCommand>("clone") // init (new repo) or clone (existing repo)
-                  .WithDescription("Initialize a Flowline project from an existing Dataverse solution. Creates folder structure, unpacks solution XML, scaffolds Plugins and WebResources projects, and generates AGENTS.md. Reads from --env <role|url> — usually PROD, the default source of truth — or an already-configured environment when --env is omitted. One-time setup per solution — safe to re-run (will recreate what is missing).")
+                  .WithDescription("Set up a Flowline project from an existing Dataverse solution: folder structure, unpacked XML, Plugins and WebResources projects, AGENTS.md. Reads from --env <role|url>, usually PROD, or the configured environment. Run once per solution; safe to re-run, it recreates what is missing.")
                   .WithExample("clone", "ContosoCustomizations", "--env", "https://contoso.crm4.dynamics.com")
                   .WithExample("clone", "ContosoCustomizations", "--env", "https://contoso-test.crm4.dynamics.com", "--managed");
 
             // Push assets to dev environment (upload and push assets to environment: plugins, webresources, pcf controls, etc.)
             config.AddCommand<PushCommand>("push")
-                .WithDescription("Build and register plugin assembly and web resources directly to DEV — skips pack/import. Reads [[Step]] attributes to create or update plugin registrations. Run after plugin or web resource changes. Targets DEV only, via --env dev (default) or a DEV environment URL.")
+                .WithDescription("Build the plugin assembly and web resources and register them straight into DEV, plugin steps included. Run after plugin or web resource changes. DEV only, via --env dev (default) or a DEV URL.")
                 .WithExample("push")
                 .WithExample("push", "ContosoCustomizations", "--scope", "webresources")
                 .WithExample("push", "ContosoCustomizations", "--plugin-file", "./bin/Release/Plugins.dll", "--webresources", "./dist");
 
             // Pull changes to local repo (export solution and unpack). KD9: pull is the primary name, sync a permanent alias.
             config.AddCommand<PullCommand>("pull")
-                  .WithDescription("Export solution from DEV, bump the patch version, and unpack to source-controlled XML. Builds afterward to validate the synced source, then writes CHANGES.md and the context docs. Run after testing changes in DEV. Requires no uncommitted changes in the unpacked solution source. Targets DEV only, via --env dev (default) or a DEV environment URL. Alias: sync")
+                  .WithDescription("Export the solution from DEV, bump the patch version, unpack it to source-controlled XML, and write CHANGES.md and the context docs. Run after testing in DEV, with a clean working tree. DEV only, via --env dev (default) or a DEV URL. Alias: sync")
                   .WithAlias("sync")
                   .WithExample("pull")
                   .WithExample("pull", "--managed", "--bump", "minor")
@@ -327,7 +327,7 @@ namespace Flowline
 
             // Deploy (pack and import solution into environment)
             config.AddCommand<DeployCommand>("deploy")
-                  .WithDescription("Pack solution from repo and import into target environment (test, uat, prod, or URL). Packing from source requires a clean git working directory; deploying a pre-built zip with --path from a folder with no project does not. Reuses a cached pack when nothing changed since the last one; --no-cache forces a fresh pack.")
+                  .WithDescription("Pack the solution from the repo and import it into the target environment (test, uat, prod, or URL). Needs a clean git working tree, or --path to import a pre-built zip from any folder. Reuses a cached pack while the source is unchanged; --no-cache forces a fresh one.")
                   .WithExample("deploy", "prod")
                   .WithExample("deploy", "https://contoso-test.crm4.dynamics.com/")
                   .WithExample("deploy", "test", "--path", "artifacts/ContosoCustomizations_1_2_0_0.zip")
@@ -335,25 +335,25 @@ namespace Flowline
 
             // copy/provision = Copy Source environment to destination environment
             config.AddCommand<ProvisionCommand>("provision")
-                  .WithDescription("Create a DEV, TEST, or UAT environment by copying from production. Saves environment URL to .flowline. One-time setup for new environments.")
+                  .WithDescription("Create a DEV, TEST, or UAT environment by copying production. Saves the environment URL to .flowline. One-time setup per environment.")
                   .WithExample("provision", "dev")
                   .WithExample("provision", "dev", "--env", "https://contoso.crm4.dynamics.com", "--force", "overwrite")
                   .WithExample("provision", "test", "--copy", "full", "--suffix", "mytest");
 
             // Generate early-bound C# types from solution entities via pac modelbuilder build
             config.AddCommand<GenerateCommand>("generate")
-                  .WithDescription("Generate early-bound C# types from solution entities and custom APIs. Overwrites Plugins/Models/ with generated .cs files. Run after adding or modifying entities or custom APIs. Targets any environment via --env (default: dev).")
+                  .WithDescription("Generate early-bound C# types from solution entities and custom APIs, overwriting Plugins/Models/. Run after adding or changing entities or custom APIs. Targets any environment via --env (default: dev).")
                   .WithExample("generate")
                   .WithExample("generate", "ContosoCustomizations", "--namespace", "Contoso.Plugins.Models", "--extra-tables", "account,contact")
                   .WithExample("generate", "--generator", "xrmcontext3");
 
             config.AddCommand<StatusCommand>("status")
-                  .WithDescription("Show configured environments, connection status, solution version, PAC CLI auth status, and git state. Use to verify setup before running commands.")
+                  .WithDescription("Show configured environments, connection status, solution version, PAC CLI auth, and git state. Run to verify setup before other commands.")
                   .WithExample("status");
 
             // drift = read-only comparison of committed source vs a named live environment (never mutates)
             config.AddCommand<DriftCommand>("drift")
-                  .WithDescription("Compare committed source against a live environment (dev, test, uat, prod, or a URL) and report components present there but not declared in source. Read-only — never deletes or modifies anything. Run against prod/test for drift detection, or dev before pull/deploy as a preview. Use 'diff' to compare two points in git history instead.")
+                  .WithDescription("Compare committed source against a live environment (dev, test, uat, prod, or a URL) and list components that live there but are missing from source. Read-only. Run against prod or test to catch drift, or dev as a preview before pull. Git history instead: 'diff'.")
                   .WithExample("drift", "prod")
                   .WithExample("drift", "test")
                   .WithExample("drift", "https://contoso-test.crm4.dynamics.com/")
@@ -361,7 +361,7 @@ namespace Flowline
 
             // diff = read-only comparison of two points in git history; the git counterpart to drift
             config.AddCommand<DiffCommand>("diff")
-                  .WithDescription("Report which solution components changed between two points in git history: two optional ref positionals, or a git-style range. Reads git and the unpacked solution XML only — no Dataverse connection, no authentication, no network. Run before a commit to see what a DEV session actually changed, or between two tags to see what a release contains. Read-only — changes nothing. Use 'drift' to compare against a live environment instead.")
+                  .WithDescription("Report which solution components changed between two points in git history: two optional refs, or a git-style range. Read-only and offline. Run before a commit to see what a DEV session changed, or between two tags for a release. Live environment instead: 'drift'.")
                   .WithExample("diff")
                   .WithExample("diff", "v1.2.0")
                   .WithExample("diff", "v1.2.0", "v1.3.0")
@@ -392,15 +392,12 @@ namespace Flowline
                 settings.SetDescription(
                     "Read or change one environment's configuration: environment variable values, " +
                     "connection references, and flow, workflow, plugin step, form and view state. " +
-                    "Both component operations take the environment, then optionally the component name; " +
-                    "omit the name to list or pick one, and narrow the list with --type. They run any " +
-                    "time without a deploy and the component must already be in the target. For the " +
-                    "classes a settings file declares, the file still wins on the next push; a business " +
-                    "rule, business process flow or action is not one of those, so a change to one of " +
-                    "them stays.");
+                    "Component operations take the environment, then optionally the component name; " +
+                    "omit the name to list or pick one, and narrow with --type. They run any time, " +
+                    "against components already present in the target.");
 
                 settings.AddCommand<SettingsPushCommand>("push")
-                        .WithDescription("Apply a settings file to an environment. Only components the file names are touched, and re-running the same file changes nothing.")
+                        .WithDescription("Apply a settings file to an environment. Touches only the components the file names, and is safe to re-run.")
                         .WithExample("settings", "push", "test")
                         .WithExample("settings", "push", "prod", "--dry-run")
                         .WithExample("settings", "push", "test", "--settings-file", "settings.test.json");
@@ -409,7 +406,7 @@ namespace Flowline
                         // Omitting the environment stopped meaning "sweep them all" when that form became
                         // a prompt at a terminal and a typed failure in a script. The bare example went
                         // with it: it read as a scriptable form and is not one.
-                        .WithDescription("Write a settings file from an environment. Omit it to pick from the ones the project configures; a script must name one.")
+                        .WithDescription("Write a settings file from an environment. Omit the environment at a terminal to pick from the ones the project configures; scripts must name one.")
                         .WithExample("settings", "pull", "test")
                         .WithExample("settings", "pull", "https://contoso-test.crm4.dynamics.com/", "--solution-name", "ContosoCustomizations");
 
@@ -425,7 +422,7 @@ namespace Flowline
                         .WithExample("settings", "state", "prod", "contoso_AutoNumber", "--on");
 
                 settings.AddCommand<SettingsValueCommand>("value")
-                        .WithDescription("Set an environment variable's value or bind a connection reference, or read either. An empty value is refused.")
+                        .WithDescription("Set an environment variable's value or bind a connection reference, or read either. Requires a non-empty value.")
                         .WithExample("settings", "value", "prod", "contoso_ApiUrl", "--value", "https://api.contoso.com")
                         .WithExample("settings", "value", "test", "--type", "connref")
                         .WithExample("settings", "value", "test", "contoso_ApiUrl");
@@ -434,7 +431,7 @@ namespace Flowline
             // scaffold = write a project template locally; needs no Dataverse connection
             config.AddCommand<ScaffoldCommand>("scaffold")
                   .WithAlias("new")
-                  .WithDescription("Write a project template into this folder. Needs no Dataverse connection, no authentication, and no network. Writes the project where you are standing, and looks for a solution file here and upward as far as the repo root: found, the project is named after it and added to it; not found, the template lands alone and the run says so. Skips and changes nothing when the project is already there. Alias: new")
+                  .WithDescription("Write a project template into the current folder, offline. Names the project after the nearest solution file up to the repo root and adds it there; with none found the template lands alone and the run says so. Skips when the project is already there. Alias: new")
                   .WithExample("scaffold", "webresources")
                   .WithExample("new", "webresources")
                   .WithExample("scaffold", "webresources", "--output", "./ContosoSales", "--name", "Scripts");
@@ -442,10 +439,10 @@ namespace Flowline
             // A branch rather than a flat 'sln-add' because 'flowline sln add' reads as a one-word substitution for the 'dotnet sln add'.
             config.AddBranch("sln", sln =>
             {
-                sln.SetDescription(".NET modify solution file (.sln or .slnx) command.");
+                sln.SetDescription("Modify a .NET solution file (.sln or .slnx).");
 
                 sln.AddCommand<SlnAddCommand>("add")
-                   .WithDescription("Add a .cdsproj to a solution file. 'dotnet sln add' can't add .cdsproj to a solution file, so this is the replacement for it.")
+                   .WithDescription("Add a .cdsproj to a .sln or .slnx solution file, the way 'dotnet sln add' does for other project types.")
                    .WithExample("sln", "add", "Solution/MySolution.cdsproj");
             });
         }

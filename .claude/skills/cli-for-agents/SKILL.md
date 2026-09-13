@@ -111,8 +111,22 @@ command or a named place — not "try again" or "check your setup". Nothing prin
 help — unused command docs stay out of the agent's context.
 
 `.WithDescription(...)` follows **what + when to run + what changes**
-([Program.cs:288-374](../../../src/Flowline/Program.cs#L288-L374) are the reference set). "Push
-plugins" fails. Same for `[Description]` on every `[CommandOption]` — an undocumented flag is
+([Program.cs:302-446](../../../src/Flowline/Program.cs#L302-L446) are the reference set). "Push
+plugins" fails.
+
+Those three clauses are the whole budget. Spectre prints the same string in the root command table
+and in `<cmd> --help`, so anything extra becomes a wall on the root screen:
+
+- **Cut** rationale, mechanism and comparative asides: why the command exists, which PAC primitive
+  it wraps, what it skips internally.
+- **Keep** the state change (`overwriting Plugins/Models/`, `saves the URL to .flowline`) and the
+  target (`DEV only, via --env dev`). They read as internals; they are what the agent acts on.
+- **Preconditions stay, phrased positively.** "Needs a clean working tree", not "requires no
+  uncommitted changes". "Works offline", not "no Dataverse connection, no authentication, no
+  network". Dropping the precondition breaks the agent contract; only the phrasing changes.
+- No em dashes, in help text as everywhere else.
+
+Same budget for `[Description]` on every `[CommandOption]` — an undocumented flag is
 invisible to an agent reading `--help`. Every flag whose value persists to `.flowline` ends its
 description with "(saved to .flowline)": see `--env` (any of clone, init, push, pull, generate,
 provision) and `--managed` (pull).
