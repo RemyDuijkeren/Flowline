@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Flowline.Core;
 using Flowline.Core.Configure;
 using Flowline.Core.Console;
@@ -96,7 +96,10 @@ public class SettingsPullCommand(
         // has a way out that is not Ctrl+C.
         if (roles.Count == 0)
         {
-            Console.Info("Nothing picked, so nothing was captured.");
+            Console.CannotContinue(
+                "Nothing picked, so nothing was captured.",
+                "Re-run 'flowline settings pull' and pick at least one environment, or name one: "
+                + "'flowline settings pull test'.");
             return (int)ExitCode.Success;
         }
 

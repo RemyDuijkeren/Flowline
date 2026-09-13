@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Flowline.Core;
 using Flowline.Core.Configure;
 using Flowline.Core.Console;
@@ -96,7 +96,8 @@ public class SettingsPushCommand(
                     Console.Skip(Markup.Escape(component.Detail ?? $"{component.Name} skipped"));
                     break;
                 case ComponentOutcomeKind.Failed:
-                    Console.Error(Markup.Escape(component.Detail ?? $"{component.Name} failed"));
+                    Console.Error(Markup.Escape(
+                        component.Detail ?? SettingsSupport.BuildFailedLine(component.Name)));
                     break;
             }
         }

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Flowline.Core;
 using Flowline.Core.Configure;
 using Flowline.Core.Console;
@@ -130,7 +130,13 @@ public abstract class SettingsComponentCommandBase<TSettings>(
             var candidates = inventory.OfKinds(kinds).ToArray();
             if (candidates.Length == 0)
             {
-                Console.Info($"No {SettingsComponentNames.Plural(kinds)} in this solution.");
+                // Exits 0, so the Next line is the only thing the caller gets. One kind in play means
+                // --type narrowed it, and widening is the cheaper move than adding a component.
+                Console.CannotContinue(
+                    $"No {SettingsComponentNames.Plural(kinds)} in this solution.",
+                    kinds.Count == 1
+                        ? "Drop --type to look at every class, or add one to the solution in Dataverse and re-run."
+                        : "Add one to the solution in Dataverse, then re-run.");
                 return (int)ExitCode.Success;
             }
 
@@ -250,7 +256,9 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         // Unreachable while the prompt stays in leaf mode, and cheap insurance if it ever does not: a
         // header carries no component, and returning one would address nothing.
         return answer.Component
-               ?? throw new FlowlineException(ExitCode.GeneralError, "A group heading isn't a component.");
+               ?? throw new FlowlineException(ExitCode.GeneralError,
+                   "The picker returned a group heading instead of a component. Name the component on the " +
+                   "command line instead of picking it.");
     }
 
     /// <summary>
@@ -322,7 +330,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         {
             Console.Warning(
                 $"Couldn't check {Markup.Escape(Path.GetFileName(location.Path))} — {Markup.Escape(ex.Message)} " +
-                "The change was made; whether the next 'settings push' puts it back is unknown.");
+                "The change was made; whether the next 'flowline settings push' puts it back is unknown.");
             return;
         }
 
@@ -353,14 +361,15 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         if (!CanOffer(mode))
         {
             Console.Warning(
-                $"{file} declares {Markup.Escape(name)} differently — the next 'settings push' will put it " +
-                "back. Change the file too to make this stick.");
+                $"{file} declares {Markup.Escape(name)} differently — the next 'flowline settings push' will " +
+                $"put it back. Edit {file} to declare it, or re-run at a terminal without --dry-run to be " +
+                "offered the change.");
             return;
         }
 
         await OfferAsync(document, location.Path, kind, name, writtenEnabled, writtenValue, file,
-            $"{file} declares {Markup.Escape(name)} differently, so the next 'settings push' will put it " +
-            "back. Change the file?", allowRemove: true, ct);
+            $"{file} declares {Markup.Escape(name)} differently, so the next 'flowline settings push' will " +
+            "put it back. Change the file?", allowRemove: true, ct);
     }
 
     /// <summary>
@@ -413,7 +422,11 @@ public abstract class SettingsComponentCommandBase<TSettings>(
 
         if (!changed)
         {
-            Console.Warning($"Couldn't change {file} — it was left as it was.");
+            // The write returns false only when the file has no section for this class, so that is the
+            // one thing worth saying: a bare "couldn't change it" sends nobody anywhere.
+            Console.Warning(
+                $"Couldn't record {Markup.Escape(name)} in {file} — it has no {SettingsComponentNames.Singular(kind)} " +
+                "section. Run 'flowline settings pull' to rebuild the file, or add the entry by hand.");
             return;
         }
 
@@ -466,10 +479,12 @@ public abstract class SettingsComponentCommandBase<TSettings>(
                 Console.Skip($"{name} already matches — nothing written");
                 break;
             case SingleComponentActionKind.Skipped:
-                Console.Error(Markup.Escape(outcome.Detail ?? $"{outcome.Component.Name} was refused"));
+                Console.Error(Markup.Escape(
+                    outcome.Detail ?? SettingsSupport.BuildRefusedLine(outcome.Component.Name)));
                 break;
             case SingleComponentActionKind.Failed:
-                Console.Error(Markup.Escape(outcome.Detail ?? $"{outcome.Component.Name} failed"));
+                Console.Error(Markup.Escape(
+                    outcome.Detail ?? SettingsSupport.BuildFailedLine(outcome.Component.Name)));
                 break;
         }
     }

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Xml.Linq;
 using Flowline.Core;
 using Flowline.Core.Configure;
@@ -19,7 +19,7 @@ namespace Flowline.Commands;
 public abstract class SettingsSettings : DataverseSettings
 {
     [CommandOption("--solution-name <name>")]
-    [Description("Solution unique name — required outside a Flowline project, rejected inside one")]
+    [Description("Solution unique name: required outside a Flowline project, and set by the project inside one")]
     public string? SolutionName { get; set; }
 
     [CommandOption("--dry-run")]
@@ -343,6 +343,22 @@ public static class SettingsSupport
         $"The change is saved, but publishing {NameThem(tables)} failed — {detail} " +
         "The app shows the old state until that table is published.";
 
+    /// <summary>What a component reports when Dataverse refused the write and said nothing usable.</summary>
+    /// <remarks>
+    /// The fallback only runs when the outcome carried no detail, so there is no reason to pass on. Naming
+    /// the component and where to look at it is what is left, and it is what an operator or an agent acts
+    /// on — "X was refused" on its own is neither.
+    /// </remarks>
+    public static string BuildRefusedLine(string name) =>
+        $"Dataverse refused the change to {name} and gave no reason. Check the component in the maker " +
+        "portal, then re-run.";
+
+    /// <summary>What a component reports when the write failed and carried no detail.</summary>
+    /// <remarks>Retry first: unlike a refusal, a failure with nothing attached is usually transport.</remarks>
+    public static string BuildFailedLine(string name) =>
+        $"Couldn't write {name}, and Dataverse gave no reason. Re-run to retry; if it keeps failing, check " +
+        "the component in the maker portal.";
+
     /// <summary>Says which tables a real run would publish.</summary>
     public static string BuildWouldPublishLine(IReadOnlyList<string> tables) =>
         $"Would publish {NameThem(tables)} so the form change takes effect.";
@@ -370,9 +386,9 @@ public static class SettingsSupport
     public static string BuildUndeclaredWarning(int count) =>
         count == 1
             ? "1 component isn't recorded in the settings file, so a fresh deploy wouldn't reproduce it. "
-              + "Run 'settings pull' to record it, or --verbose to see it."
+              + "Run 'flowline settings pull' to record it, or --verbose to see it."
             : $"{count} components aren't recorded in the settings file, so a fresh deploy wouldn't "
-              + "reproduce them. Run 'settings pull' to record them, or --verbose to list them.";
+              + "reproduce them. Run 'flowline settings pull' to record them, or --verbose to list them.";
 
     /// <summary>A capture's dry run leaves a file unwritten, not an environment untouched.</summary>
     public static string BuildPullDryRunMessage(string path) =>

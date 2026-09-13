@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Config;
 using Flowline.Core;
@@ -257,7 +257,10 @@ public class SettingsCommandTests : IDisposable
         var message = SettingsSupport.BuildUndeclaredWarning(3);
 
         message.Should().Contain("a fresh deploy wouldn't reproduce");
-        message.Should().Contain("settings pull");
+
+        // The full invocation, not the bare operation: a suggestion an agent can paste has to include
+        // the executable.
+        message.Should().Contain("flowline settings pull");
     }
 
     // ── Force vocabulary (KTD10) ─────────────────────────────────────────────
@@ -404,6 +407,31 @@ public class SettingsCommandTests : IDisposable
     public void BuildUpdatedLine_EscapesAComponentNameThatLooksLikeMarkup() =>
         SettingsSupport.BuildUpdatedLine("Flow [red]x[/]", wasSuspended: false)
             .Should().Contain("[[red]]");
+
+    // A component outcome that carried no detail used to report "<name> failed", which names the
+    // component and nothing else. An agent reading that cannot tell whether to retry, fix something, or
+    // stop, so both fallbacks have to name the component and the next move.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ADetaillessOutcome_NamesTheComponentAndWhatToDo(bool refused)
+    {
+        var line = refused
+            ? SettingsSupport.BuildRefusedLine("ApprovalFlow")
+            : SettingsSupport.BuildFailedLine("ApprovalFlow");
+
+        line.Should().Contain("ApprovalFlow");
+        line.Should().Contain("maker portal");
+    }
+
+    // Retry is the right first move for a failure and the wrong one for a refusal: Dataverse turning the
+    // change down does not become true on the second attempt.
+    [Fact]
+    public void OnlyAFailure_AsksForARetry()
+    {
+        SettingsSupport.BuildFailedLine("ApprovalFlow").Should().Contain("Re-run");
+        SettingsSupport.BuildRefusedLine("ApprovalFlow").Should().NotContain("Re-run to retry");
+    }
 
     // ── KTD23: the transposed invocation ─────────────────────────────────────
 
