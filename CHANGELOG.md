@@ -7,35 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **`settings push` only warns about components a fresh deploy would lose.** It used to report every
-  component missing from the settings file, which on a real solution is most of them, unchanged on every
-  run. It now reports a component that is switched off here with nothing recording that, and a variable
-  or binding nothing has set: exactly what `settings pull` would add.
-
-### Fixed
-
-- **Changing a component's state now offers to update the settings file for every class, not three.** The
-  check for "does the file say otherwise" only covered cloud flows, classic workflows and plugin steps, so
-  switching a business rule, business process flow or action back after declaring it never prompted, and
-  the next `settings push` silently undid it.
-
-### Added
-
-- **`settings state` reaches main forms and public views**, as `--type form` and `--type view`, addressed
-  as `table.name`. Built for releasing a change that is already deployed: switch the new form on and the
-  old one off in one run. A form change only takes effect once its table is published, so the run
-  publishes it and says so; note that this republishes every pending customization on that table. A view
-  change is live immediately.
-- **Business rules are addressed as `table.rule name`.** A rule has no unique name, so its key is its
-  display name, and names like "Set date" say nothing about which table they govern.
-- **A settings file can declare forms and views**, in `Forms` and `Views` sections. Unlike every other
-  class, a `pull` never captures them and `push` never reports them as undeclared: they are added one at
-  a time when you switch one and accept the offer to record it. See
-  [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#forms-and-views).
-
-## [0.19.0] - 2026-09-12
+## [0.19.0] - 2026-09-13
 
 ### Breaking
 
@@ -48,15 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`flowline settings` manages what a solution import can't carry**: environment variable values, connection reference bindings, and the on/off state of cloud flows, classic workflows, business rules, business process flows, actions and plugin steps.
+- **`flowline settings` manages what a solution import can't carry**: environment variable values, connection reference bindings, and the on/off state of cloud flows, classic workflows, business rules, business process flows, actions, plugin steps, main forms and public views.
 
   - `settings push <target>` — apply a settings file to an environment.
   - `settings pull [target]` — capture one from an environment, merging into an existing file rather than overwriting it, then offering to fill in what it could not capture.
   - `settings state <target> [name]` — turn one component on or off, or read its state.
   - `settings value <target> [name]` — set one environment variable value or connection reference binding, or read either.
 
-  Narrow the component operations with `--type`, or omit the name for a searchable picker. After a change, an interactive run offers to record it in the settings file so it survives the next push. Secrets are never read on capture. See the [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#settings).
+  Narrow the component operations with `--type`, or omit the name for a searchable picker. After a change, an interactive run offers to record it in the settings file so it survives the next push. A push warns about what a fresh deploy wouldn't reproduce: a component switched off here with nothing recording that, and a value nothing has set. Secrets are never read on capture. See the [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#settings).
 
+- **Main forms and public views are addressed as `table.name`**, under `--type form` and `--type view`. Built for releasing a change that is already deployed: switch the new form on and the old one off in one run. A form change only takes effect once its table is published, so the run publishes it and says so; note that this republishes every pending customization on that table. A view change is live immediately.
+- **Business rules are addressed as `table.rule name`.** A rule has no unique name, so its key is its display name, and names like "Set date" say nothing about which table they govern.
+- **A settings file can declare forms and views**, in `Forms` and `Views` sections. Unlike every other class, a `pull` never captures them and `push` never reports them as undeclared: they are added one at a time when you switch one and accept the offer to record it. See the [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#forms-and-views).
 - **`flowline diff` reports what changed between two points in git history**, naming solution components rather than XML files, with no connection, authentication or network. Compare with `diff A B`, `diff A..B` or `diff A...B`; `--write` produces a `CHANGES.md`, and `--exit-code` returns `22` when there was anything to report. It is the git-history counterpart to `drift`.
 - **`clone` and `pull` keep the shared `deploymentSettings.json` in step with the solution.** A new environment variable or connection reference gains a key with an empty value, values already filled in survive, and a key whose component left the solution is reported rather than deleted.
 - **Long-running commands report their state in the terminal tab** past two seconds, then mark the outcome when they stop. Nothing to configure, and piped or redirected runs are left alone.
@@ -77,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`provision --copy` defaults to `minimal` for `dev` and `full` for `test`/`uat`**; pass `--copy full|minimal` to override.
 - **A declined `deploy` first-import confirmation exits `17` (`ForceRequired`)** instead of `130`; re-run with `--force first-import`.
 - **Every flag that persists to `.flowline` says so in its own `--help` text.**
+- **Command help is shorter.** Each description now says what the command does, when to run it, and what changes after, and leaves out why it exists and which PAC primitive it wraps. `flowline --help` reads as a list again rather than a wall.
 
 ## [0.18.0] - 2026-08-24
 
