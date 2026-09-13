@@ -297,6 +297,52 @@ public static class SettingsSupport
         "Re-run to finish.";
 
     /// <summary>How many solution components this file says nothing about.</summary>
+    /// <summary>
+    /// Says which tables were published, and that the change is now live (KTD30).
+    /// </summary>
+    /// <remarks>
+    /// Every clause is past tense and about what happened. An earlier version ended on "a form change
+    /// isn't visible until its table is published", which is true and read as an instruction: the line
+    /// announced a finished step and then appeared to ask for one.
+    ///
+    /// The cost of the publish moved to <see cref="BuildPublishScopeNote"/> rather than being dropped.
+    /// It is real but it is not news on most runs, and competing with the result is what made this line
+    /// confusing.
+    /// </remarks>
+    public static string BuildPublishedLine(IReadOnlyList<string> tables) =>
+        $"Published {NameThem(tables)} — the form {(tables.Count == 1 ? "change is" : "changes are")} live now.";
+
+    /// <summary>What else went out with the publish, for a run that asked for detail.</summary>
+    /// <remarks>
+    /// Publishing a table sends every pending customization on it, not only the form that was switched.
+    /// Someone with unfinished work on that table is entitled to know, and the publish request has no
+    /// narrower scope to offer: a per-form publish is accepted by Dataverse and silently does nothing.
+    /// </remarks>
+    public static string BuildPublishScopeNote(IReadOnlyList<string> tables) =>
+        $"Publishing {(tables.Count == 1 ? "a table" : "these tables")} also sends out any other pending "
+        + "customizations on it.";
+
+    /// <summary>Says a publish was refused, and what the change is waiting on.</summary>
+    /// <remarks>
+    /// Never phrased as a failed run. The state change was written and stands; only the publish that makes
+    /// it visible did not, and re-running it is safe.
+    /// </remarks>
+    public static string BuildPublishFailedLine(IReadOnlyList<string> tables, string detail) =>
+        $"The change is saved, but publishing {NameThem(tables)} failed — {detail} " +
+        "The app shows the old state until that table is published.";
+
+    /// <summary>Says which tables a real run would publish.</summary>
+    public static string BuildWouldPublishLine(IReadOnlyList<string> tables) =>
+        $"Would publish {NameThem(tables)} so the form change takes effect.";
+
+    static string NameThem(IReadOnlyList<string> tables) => tables.Count switch
+    {
+        0 => "customizations",
+        1 => tables[0],
+        2 => $"{tables[0]} and {tables[1]}",
+        _ => $"{string.Join(", ", tables.Take(tables.Count - 1))} and {tables[^1]}",
+    };
+
     public static string BuildUndeclaredWarning(int count) =>
         count == 1
             ? "1 component in this solution isn't in the file — run with --verbose to see it."

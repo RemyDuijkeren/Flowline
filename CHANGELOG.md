@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Changing a component's state now offers to update the settings file for every class, not three.** The
+  check for "does the file say otherwise" only covered cloud flows, classic workflows and plugin steps, so
+  switching a business rule, business process flow or action back after declaring it never prompted, and
+  the next `settings push` silently undid it.
+
+### Added
+
+- **`settings state` reaches main forms and public views**, as `--type form` and `--type view`, addressed
+  as `table.name`. Built for releasing a change that is already deployed: switch the new form on and the
+  old one off in one run. A form change only takes effect once its table is published, so the run
+  publishes it and says so; note that this republishes every pending customization on that table. A view
+  change is live immediately.
+- **Business rules are addressed as `table.rule name`.** A rule has no unique name, so its key is its
+  display name, and names like "Set date" say nothing about which table they govern.
+- **A settings file can declare forms and views**, in `Forms` and `Views` sections. Unlike every other
+  class, a `pull` never captures them and `push` never reports them as undeclared: they are added one at
+  a time when you switch one and accept the offer to record it. See
+  [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#forms-and-views).
+
 ## [0.19.0] - 2026-09-12
 
 ### Breaking

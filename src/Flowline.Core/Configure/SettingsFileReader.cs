@@ -67,6 +67,12 @@ public static class SettingsFileReader
                 case SettingsDocument.ActionsProperty:
                     ReadStateEntries(value, property.Key, document.Actions);
                     break;
+                case SettingsDocument.FormsProperty:
+                    ReadStateEntries(value, property.Key, document.Forms);
+                    break;
+                case SettingsDocument.ViewsProperty:
+                    ReadStateEntries(value, property.Key, document.Views);
+                    break;
                 case SettingsDocument.PluginStepsProperty:
                     ReadStateEntries(value, property.Key, document.PluginSteps);
                     break;
@@ -111,6 +117,12 @@ public static class SettingsFileReader
 
         if (document.Actions.Count > 0)
             obj[SettingsDocument.ActionsProperty] = WriteStateEntries(document.Actions);
+
+        if (document.Forms.Count > 0)
+            obj[SettingsDocument.FormsProperty] = WriteStateEntries(document.Forms);
+
+        if (document.Views.Count > 0)
+            obj[SettingsDocument.ViewsProperty] = WriteStateEntries(document.Views);
 
         if (document.PluginSteps.Count > 0)
             obj[SettingsDocument.PluginStepsProperty] = WriteStateEntries(document.PluginSteps);

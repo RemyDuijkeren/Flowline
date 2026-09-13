@@ -207,6 +207,17 @@ public sealed class ConfigurePullService
             ConfigurableComponentKind.Action, added, vanished);
         AppendState(document.PluginSteps, existing?.PluginSteps, inventory,
             ConfigurableComponentKind.PluginStep, added, vanished);
+
+        // Carried, never captured (KTD29). A solution holds dozens of forms and views, nearly all of them
+        // in the state they should be in, so sweeping them in would bury the handful of entries a file is
+        // actually for. They arrive one at a time, from a run that switched one and was told to record it.
+        //
+        // Carried rather than skipped, because a pull rebuilds the document: leaving these two out would
+        // have the next capture quietly delete every form and view someone had declared.
+        AppendState(document.Forms, existing?.Forms, inventory,
+            ConfigurableComponentKind.Form, added, vanished, capture: false);
+        AppendState(document.Views, existing?.Views, inventory,
+            ConfigurableComponentKind.View, added, vanished, capture: false);
     }
 
     /// <summary>
@@ -220,19 +231,29 @@ public sealed class ConfigurePullService
     /// presence set is every component of the class, so a flow someone switched back on is not mistaken for
     /// one that left the solution.
     /// </remarks>
+    /// <param name="capture">
+    /// Whether a component that is off and undeclared is added to the section. False for the classes a
+    /// capture carries but never fills in, which still merge what the file already declares and still
+    /// report an entry that no longer resolves.
+    /// </param>
     static void AppendState(
         IList<ComponentStateEntry> into,
         IList<ComponentStateEntry>? existing,
         SolutionInventory inventory,
         ConfigurableComponentKind kind,
         List<string> added,
-        List<string> vanished)
+        List<string> vanished,
+        bool capture = true)
     {
         var present = inventory.OfKind(kind).ToList();
 
+        var candidates = capture
+            ? present.Where(c => c.Enabled == false).Select(c => new ComponentStateEntry(c.Name, false))
+            : [];
+
         var result = SettingsFileMerger.MergeStates(
             existing ?? [],
-            present.Where(c => c.Enabled == false).Select(c => new ComponentStateEntry(c.Name, false)),
+            candidates,
             present.Select(c => c.Name));
 
         // Declared entries keep their position, so a pull does not reshuffle a section someone reads in a

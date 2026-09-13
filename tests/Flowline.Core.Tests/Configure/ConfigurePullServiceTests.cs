@@ -101,6 +101,53 @@ public class ConfigurePullServiceTests
             .Should().Contain("shared_commondataserviceforapps");
     }
 
+    // ── Forms and views: carried, never captured (KTD29) ─────────────────────────
+
+    // A solution holds dozens of forms and views in the state they should already be in. Sweeping in every
+    // one that happens to be off would bury the handful of entries a file is actually for.
+    [Fact]
+    public async Task Build_AFormThatIsOff_IsNotCaptured()
+    {
+        var result = await new ConfigurePullService().BuildAsync(
+            Service(), Doc(PacSkeleton), null,
+            new SolutionInventory([
+                new InventoryComponent(ConfigurableComponentKind.Form, "account.Old", Guid.NewGuid(), false, Table: "account"),
+                new InventoryComponent(ConfigurableComponentKind.View, "account.Archive", Guid.NewGuid(), false, Table: "account"),
+            ]),
+            CancellationToken.None);
+
+        result.Document.Forms.Should().BeEmpty();
+        result.Document.Views.Should().BeEmpty();
+    }
+
+    // Carried rather than skipped. A pull rebuilds the document, so a section left unwired would have the
+    // next capture quietly delete every form and view someone had declared.
+    [Fact]
+    public async Task Build_AFormAlreadyDeclared_SurvivesTheCapture()
+    {
+        var existing = Doc("""
+            {
+              "EnvironmentVariables": [],
+              "ConnectionReferences": [],
+              "Forms": { "account.New": true },
+              "Views": { "account.Archive": false }
+            }
+            """);
+
+        var result = await new ConfigurePullService().BuildAsync(
+            Service(), Doc(PacSkeleton), existing,
+            new SolutionInventory([
+                new InventoryComponent(ConfigurableComponentKind.Form, "account.New", Guid.NewGuid(), true, Table: "account"),
+                new InventoryComponent(ConfigurableComponentKind.View, "account.Archive", Guid.NewGuid(), false, Table: "account"),
+            ]),
+            CancellationToken.None);
+
+        result.Document.Forms.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new { Name = "account.New", Enabled = true });
+        result.Document.Views.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new { Name = "account.Archive", Enabled = false });
+    }
+
     // ── Merge (R12b) ─────────────────────────────────────────────────────────
 
     // R12 asks a pull to capture live values and R12b asks it to preserve what the file already has. They

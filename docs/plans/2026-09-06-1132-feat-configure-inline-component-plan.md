@@ -86,6 +86,9 @@ This plan owns the **`settings` command surface**, including the rename it requi
 - R9. When the component name is omitted, an interactive session shows a searchable single-select picker over that kind; a non-interactive session lists the components and exits 0. For the three state kinds each listed line carries the component's current state; for the two value kinds the list is names only.
 - R9b. When an interactive session asks for a connection reference's new value, it offers the target environment's connections for that reference's connector, plus entering an id by hand and creating one in the maker portal. A listing that fails or returns nothing leaves the typed-id path and does not fail the run.
 - R19. After a capture writes the file, an interactive run offers to fill in each declared entry that has no value: an environment variable with nothing set, and a connection reference with nothing bound. A secret placeholder is not offered. A non-interactive run reports the count and exits 0.
+- R22. `settings state` addresses main forms and public views, keyed by table and name together. A file
+  may declare them; a capture never writes them and the undeclared report never lists them. A run that
+  switched a form names the tables that need a publish rather than publishing them.
 - R20. A settings file declares the state of every class that has one: cloud flows, classic workflows, business rules, business process flows, actions and plugin steps, in a section each. Within one apply, every activation runs before every deactivation.
 - R21. After a component write, an interactive run that is not a dry run offers to bring the settings file into line with it: declaring the new state, removing the declaration, or leaving the file alone where it disagrees, and adding the declaration where it is silent. A dry run and an unattended run never write the file.
 - R9d. The picker gathers components whose names share leading text under a heading that cannot itself be picked, dropping that text from the rows beneath it. The shared text is found by cutting at delimiters, and a group forms only when it saves more characters than its heading costs. Blocks are ordered by their most interesting member, an ungrouped component winning a tie. The non-interactive listing stays flat.
@@ -184,6 +187,41 @@ None blocking. Two questions are deferred to implementation and named in U5 and 
 - KTD8. **Inline results use their own outcome type, not the file-apply outcome.** The apply outcome reports every solution component the file does not declare, which for a one-component invocation is everything else in the solution, and it maps an all-skipped run to `Inconclusive`. Neither is right for a single named component. Governs R11.
 - KTD9. **Addressing uses the unique, schema or logical name, case-insensitively, and an empty `--value` is rejected rather than written.** The inventory already matches case-insensitively on those keys, and display names are not addressable, so the not-found message names which key was searched. Because the value is a flag, `--value ""` is a deliberate request rather than an omission, so it is refused naming the deferred clear capability: the apply path skips empty values precisely so a captured file re-applies as a no-op. Governs R7, R8, R11.
 - KTD10. **The picker runs after the inventory spinner closes, over the already-materialized inventory.** Spectre forbids a prompt inside a status display, and the inventory read currently sits inside one. Governs R9.
+- KTD32. **A name is qualified by its table when it means nothing without one.** (session-settled:
+  user-directed.) Forms and views needed this to be addressable at all. Business rules need it for the
+  same reason and it was missed: a rule has no unique name (the column is null on every one, confirmed
+  against a live solution), so its key has always been its display name, and a list of "Set date" and
+  "Show hide columns" tells an operator nothing about which table each governs. Cloud flows, classic
+  workflows, actions and business process flows are left bare because each names itself, so a table
+  prefix would be noise to read and longer to type. The test that fixes the line is whether the name
+  alone identifies the thing. Governs R22.
+- KTD29. **Forms and views are declarable but never captured.** (session-settled: user-directed.) Every
+  other class is something a solution normally wants declared, so sweeping them in and listing what was
+  left out is help. These two are not: a solution carries dozens of each, almost all in the state they
+  should be in and none of them anyone's business to declare. Capturing them would bury the entries that
+  matter and the undeclared report would run to hundreds of lines. So they arrive one at a time, from the
+  same offer that records any other switch. A capture still carries what the file already declares,
+  because a pull rebuilds the document and an unwired section would be silently deleted. Governs R22.
+- KTD30. **A form change is published by the run that made it, at table scope.** (session-settled:
+  user-directed.) Confirmed live: straight after the write the published row still reads active while the
+  unpublished row reads inactive, and a view shows no such gap. An earlier version of this decision had
+  the run name the tables and leave the publish to the operator, on the grounds that a table-wide publish
+  is wider than anything else the settings surface does. Overruled in use, and rightly: a command whose
+  whole purpose is making a form change take effect should not leave it not taking effect, and the advice
+  it printed pointed at `pac solution publish`, which is documented as publishing all customizations and
+  is therefore *wider* than the table publish it was avoiding.
+  The scope is the table because nothing smaller works, and the near misses fail silently. The schema's
+  `dashboards` node is documented as taking "Guid of the systemform to publish" and a dashboard is a
+  `systemform` row, so it reads like the per-form route; passing a main form's id is accepted and
+  publishes nothing. An invented `systemforms` node is accepted and ignored too. Both were tried live and
+  both left the published row unchanged, which is the trap: a narrower publish would report success and
+  leave the form invisible. The cost stays real and is stated in the output, because publishing a table
+  republishes every pending customization on it. Governs R22.
+- KTD31. **Main forms only.** (session-settled: evidence.) Confirmed live against three form types: a
+  quick create form refuses the write ("Only Main forms can be inactive"), and a quick view form and a
+  card form accept it and change nothing, the unpublished row reading the same value afterwards. The
+  silent pair is the reason for the restriction rather than the loud one: admitting them would let a
+  settings file declare a state that never happens and report it as applied. Governs R22.
 - KTD27. **The file offer has three answers, and an explicit `true` is not redundant.** (session-settled: user-directed.) The run already knew the file would undo what was just done and said so; offering to fix it is the half that was missing. Three answers rather than two because declaring the opposite and declaring nothing are different: a solution import turns flows off and on again and does not restore the state of one that already existed, so "make sure this is on" is a thing the file has to be able to say, and removing the entry instead hands the component back to the environment. It is offered for a component the file does not name at all for the same reason. An earlier version of this reasoning claimed a declared `true` would be stripped by the next capture; that was wrong — `SettingsFileMerger` keeps every existing entry's declared value — and it was the only argument for not offering. Never in a dry run, which has written nothing to record, and never unattended, because the file is committed and that is not a decision to take on a caller's behalf. Governs R21.
 - KTD28. **Activations run before deactivations within the apply.** (session-settled: user-directed.) Some components cannot be switched off while they are the last of their kind still on, so a release that swaps one for another has to raise the new before lowering the old. Ordering it in the apply is what makes the swap declarable in one file rather than a two-step procedure someone has to remember. It costs one sort and nothing when no such constraint exists. Governs R20.
 - KTD26. **The picker groups by found prefixes, and a group has to pay for its heading.** (session-settled: user-directed, after an options pass and a live trial.) A plugin step is named for its class and message and runs past a hundred characters, so it wrapped at an arbitrary column; a heading moves what every sibling repeats out of the rows and breaks the line where it means something. The key is found by cutting names at `.`, `]`, `|` and `:` rather than taught per kind, which is why it grouped cloud flows on their bracketed entity prefix without being told about brackets, and why a solution sharing nothing gets no headings. Kind was rejected as the axis: grouping only plugin steps would be right for one solution and wrong for a team with eight flows on one entity, and it would reintroduce the kind-per-behaviour coupling KTD25 removed. The bar is whether the group saves more characters than the row its heading spends, measured against one conventional line rather than the real terminal width, because a narrow terminal needs grouping more and scaling the bar with the width would give it less. Ordering ranks whole blocks by their best member, an ungrouped component winning a tie, because a Spectre group is one contiguous block and its rows cannot be split across the state tiers. The non-interactive listing is left flat and one line per component, since that output is documented as machine-readable. The heading takes the brand's secondary colour rather than `dim`, which rendered near-invisible on a dark terminal and cost the grouping its point. (Rejected: grouping by plugin class, which on a codebase that names the registration in the class produces one group per step; and eliding names, since the picker's search matches the displayed text.) Governs R9d.

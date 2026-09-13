@@ -433,6 +433,22 @@ public class SettingsCommandSurfaceTests : IDisposable
         SettingsComponentOutcomes.DescribeState(on: false).Should().Be("[red]○ off[/]");
     }
 
+    // ── KTD30: the publish line ──────────────────────────────────────────────
+
+    // The line reports a finished step, so every clause is past tense. It used to end on "a form change
+    // isn't visible until its table is published" — true, and read as an instruction, so the run looked
+    // like it had published and then asked the user to publish.
+    [Theory]
+    [InlineData(new[] { "account" }, "Published account — the form change is live now.")]
+    [InlineData(new[] { "account", "contact" }, "Published account and contact — the form changes are live now.")]
+    public void BuildPublishedLine_ReportsWhatHappened(string[] tables, string expected)
+    {
+        var line = SettingsSupport.BuildPublishedLine(tables);
+
+        line.Should().Be(expected);
+        line.Should().NotContain("until", "the line reports a finished step, not a pending one");
+    }
+
     // ── KTD25: the type column ───────────────────────────────────────────────
 
     static InventoryComponent Rule(string name, bool enabled = true) =>

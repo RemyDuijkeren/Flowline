@@ -107,6 +107,37 @@ public class SettingsPushCommand(
         if (outcome.Undeclared.Count > 0)
             Console.Warning(SettingsSupport.BuildUndeclaredWarning(outcome.Undeclared.Count));
 
+        // Once for the run, not once per form: a release that switches six forms on one table needs one
+        // publish, and six identical lines would read as six problems.
+        if (outcome.TablesNeedingPublish.Count > 0)
+        {
+            var failures = outcome.PublishFailures ?? [];
+
+            if (failures.Count > 0)
+                Console.Warning(Markup.Escape(SettingsSupport.BuildPublishFailedLine(
+                    [.. failures.Select(f => f.Table)], failures[0].Detail)));
+
+            var published = outcome.TablesNeedingPublish
+                .Where(t => !failures.Any(f => string.Equals(f.Table, t, StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+
+            if (published.Length > 0)
+            {
+                Console.Ok(Markup.Escape(SettingsSupport.BuildPublishedLine(published)));
+                Console.Verbose(Markup.Escape(SettingsSupport.BuildPublishScopeNote(published)));
+            }
+        }
+        else if (outcome.ReportOnly && outcome.Components.Any(c =>
+                     c is { Kind: ConfigurableComponentKind.Form, Outcome: ComponentOutcomeKind.Applied }))
+        {
+            Console.Info(Markup.Escape(SettingsSupport.BuildWouldPublishLine(
+                [.. outcome.Components
+                    .Where(c => c is { Kind: ConfigurableComponentKind.Form, Outcome: ComponentOutcomeKind.Applied })
+                    .Select(c => c.Table).OfType<string>()
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase)])));
+        }
+
         Console.Info(outcome.SummaryLine());
 
         // An interrupted run must not sign off as if it finished the file. The components above are what it

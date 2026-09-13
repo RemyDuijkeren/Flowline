@@ -13,7 +13,9 @@ namespace Flowline.Core.Configure;
 public sealed record ApplyOutcome(
     IReadOnlyList<ComponentOutcome> Components,
     IReadOnlyList<string> Undeclared,
-    bool Cancelled = false)
+    bool Cancelled = false,
+    bool ReportOnly = false,
+    IReadOnlyList<PublishFailure>? PublishFailures = null)
 {
     /// <summary>Components whose declared state was written.</summary>
     public int Applied => Components.Count(c => c.Outcome == ComponentOutcomeKind.Applied);
@@ -26,6 +28,28 @@ public sealed record ApplyOutcome(
 
     /// <summary>Components Dataverse refused.</summary>
     public int Failed => Components.Count(c => c.Outcome == ComponentOutcomeKind.Failed);
+
+    /// <summary>Tables whose form changes need a publish before an app shows them (KTD30).</summary>
+    /// <remarks>
+    /// A form's activation is a customization, so the write lands and the app keeps showing the old state
+    /// until the table is published. The run publishes these itself: a command whose whole purpose is
+    /// making a form change take effect would otherwise leave it not taking effect. See
+    /// <see cref="CustomizationPublisher"/> for why the table is the smallest scope available.
+    ///
+    /// A view needs no publish, so it never appears here.
+    /// </remarks>
+    public IReadOnlyList<string> TablesNeedingPublish =>
+        ReportOnly
+            // A dry run wrote nothing, so nothing is pending. Answered here rather than left to each
+            // caller: the property promises "written but not yet visible", and a caller that forgot to
+            // guard would have a preview tell someone to publish a change that never happened.
+            ? []
+            : [.. Components
+            .Where(c => c is { Kind: ConfigurableComponentKind.Form, Outcome: ComponentOutcomeKind.Applied })
+            .Select(c => c.Table)
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>
     /// The exit code this run returns (KTD1).

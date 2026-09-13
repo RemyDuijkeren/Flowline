@@ -259,8 +259,8 @@ public class SolutionComponentInventoryTests
     }
 
     // Dataverse generates a business process flow's unique name from the backing entity it creates, so
-    // it arrives as msdyn_bpf_<guid>: unreadable in a list and untypeable at a prompt. No settings file
-    // has a section for this class, so its unique name is a contract with nobody.
+    // it arrives as msdyn_bpf_<guid>: unreadable in a list and untypeable at a prompt. The display name is
+    // what the file declares too, so the two agree on one addressing key.
     [Fact]
     public async Task ReadAsync_ABusinessProcessFlow_IsAddressedByItsDisplayName()
     {
@@ -270,11 +270,51 @@ public class SolutionComponentInventoryTests
         inventory.Components.Should().ContainSingle().Which.Name.Should().Be("Rijopdracht intake");
     }
 
+    // A business rule has no unique name at all (null on every one, confirmed against a live solution), so
+    // its name has always been the display name — and "Set date" says nothing about which table it governs.
+    // Qualifying it by table is the same fix forms and views needed, for the same reason.
+    [Fact]
+    public async Task ReadAsync_ABusinessRule_IsQualifiedByItsTable()
+    {
+        var inventory = await ReadOneWorkflowAsync(
+            WorkflowCategoryBusinessRule, uniqueName: null, displayName: "Set date", primaryEntity: "opdracht");
+
+        var rule = inventory.Components.Should().ContainSingle().Subject;
+        rule.Name.Should().Be("opdracht.Set date");
+        rule.Table.Should().Be("opdracht");
+    }
+
+    // A rule with no primary entity is still addressable, just unqualified. Dropping it would make it
+    // invisible, which is worse than an unqualified name.
+    [Fact]
+    public async Task ReadAsync_ABusinessRuleWithNoTable_KeepsItsBareName()
+    {
+        var inventory = await ReadOneWorkflowAsync(
+            WorkflowCategoryBusinessRule, uniqueName: null, displayName: "Set date", primaryEntity: null);
+
+        inventory.Components.Should().ContainSingle().Which.Name.Should().Be("Set date");
+    }
+
+    // The qualification is deliberately not applied to every class. A cloud flow, a classic workflow, an
+    // action and a business process flow each name themselves, so prefixing a table would be noise to read
+    // and a longer thing to type. Only names that mean nothing alone get qualified.
+    [Theory]
+    [InlineData(WorkflowCategoryClassic)]
+    [InlineData(WorkflowCategoryAction)]
+    [InlineData(WorkflowCategoryModernFlow)]
+    public async Task ReadAsync_TheSelfNamingClasses_AreNotQualifiedByTable(int category)
+    {
+        var inventory = await ReadOneWorkflowAsync(
+            category, uniqueName: "contoso_Thing", displayName: "Thing", primaryEntity: "account");
+
+        inventory.Components.Should().ContainSingle().Which.Name.Should().Be("contoso_Thing");
+    }
+
     // Every other class keeps the unique name, which is stable across renames and is what a settings file
-    // keys on.
+    // keys on. Business rules are absent because they have no unique name to keep: the column is null on
+    // every one of them, so they are addressed by table and display name instead.
     [Theory]
     [InlineData(0)]
-    [InlineData(2)]
     [InlineData(3)]
     [InlineData(5)]
     public async Task ReadAsync_EveryOtherProcessClass_KeepsItsUniqueName(int category)
@@ -284,12 +324,21 @@ public class SolutionComponentInventoryTests
         inventory.Components.Should().ContainSingle().Which.Name.Should().Be("contoso_Unique");
     }
 
+    const int WorkflowCategoryClassic = 0;
+    const int WorkflowCategoryBusinessRule = 2;
+    const int WorkflowCategoryAction = 3;
     const int WorkflowCategoryBusinessProcessFlow = 4;
+    const int WorkflowCategoryModernFlow = 5;
 
     static Task<SolutionInventory> ReadOneWorkflowAsync(int category) =>
         ReadOneWorkflowAsync(category, "contoso_Thing", null);
 
-    static async Task<SolutionInventory> ReadOneWorkflowAsync(int category, string uniqueName, string? displayName)
+    static Task<SolutionInventory> ReadOneWorkflowAsync(
+        int category, string? uniqueName, string? displayName, string? primaryEntity) =>
+        ReadOneWorkflowAsync(category, uniqueName!, displayName, primaryEntity, qualified: true);
+
+    static async Task<SolutionInventory> ReadOneWorkflowAsync(
+        int category, string uniqueName, string? displayName, string? primaryEntity = null, bool qualified = false)
     {
         var id = Guid.NewGuid();
         var service = Substitute.For<IOrganizationServiceAsync2>();
@@ -303,6 +352,8 @@ public class SolutionComponentInventoryTests
                 {
                     var row = WorkflowRow(id, uniqueName, category);
                     if (displayName is not null) row["name"] = displayName;
+                    if (qualified && uniqueName is null) row["uniquename"] = null;
+                    if (primaryEntity is not null) row["primaryentity"] = primaryEntity;
                     return Task.FromResult(new EntityCollection([row]));
                 }
                 return Task.FromResult(new EntityCollection([]));

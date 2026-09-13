@@ -40,13 +40,18 @@ public enum SingleComponentActionKind
 /// way a read can tell a stopped-itself flow from one that was never started. Always <c>false</c> for a
 /// plugin step or a value kind.
 /// </param>
+/// <param name="PublishFailure">
+/// Why the table could not be published, when a form was switched and the publish that makes it visible
+/// was refused. The state change still happened, so this is reported rather than thrown.
+/// </param>
 public sealed record SingleComponentOutcome(
     InventoryComponent Component,
     SingleComponentActionKind Action,
     bool? PriorEnabled = null,
     string? PriorValue = null,
     string? Detail = null,
-    bool WasSuspended = false);
+    bool WasSuspended = false,
+    string? PublishFailure = null);
 
 /// <summary>
 /// Resolves one component by kind and name, reads its current state or value, or writes a new one (R6, R8,
@@ -105,7 +110,19 @@ public static class SingleComponentService
             service, component, desiredEnabled.Value, mode, ct, currentlySuspended: component.Suspended)
             .ConfigureAwait(false);
 
-        return FromWrite(write, component, priorEnabled: component.Enabled);
+        var outcome = FromWrite(write, component, priorEnabled: component.Enabled);
+
+        // A switched form is invisible until its table is published, so the run that switched it publishes
+        // (KTD30). Only for a form, only when something was actually written, and never in a dry run,
+        // which has nothing pending to publish.
+        if (component is not { Kind: ConfigurableComponentKind.Form, Table: { Length: > 0 } table }
+            || write.Outcome != ComponentOutcomeKind.Applied
+            || mode.IsReportOnly())
+            return outcome;
+
+        var failures = await CustomizationPublisher.PublishTablesAsync(service, [table], ct).ConfigureAwait(false);
+
+        return failures.Count == 0 ? outcome : outcome with { PublishFailure = failures[0].Detail };
     }
 
     /// <summary>Reads or writes an environment variable's or a connection reference's value.</summary>

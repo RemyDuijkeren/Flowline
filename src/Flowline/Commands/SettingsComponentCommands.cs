@@ -424,6 +424,28 @@ public abstract class SettingsComponentCommandBase<TSettings>(
     /// <summary>What this invocation asked to write, for the override comparison.</summary>
     protected abstract (bool? Enabled, string? Value) WrittenBy(TSettings settings);
 
+    /// <summary>Says what the publish that follows a form change did (KTD30).</summary>
+    void ReportPublish(SingleComponentOutcome outcome, RunMode mode)
+    {
+        if (outcome.Component is not { Kind: ConfigurableComponentKind.Form, Table: { Length: > 0 } table })
+            return;
+
+        if (mode.IsReportOnly())
+        {
+            Console.Info(Markup.Escape(SettingsSupport.BuildWouldPublishLine([table])));
+            return;
+        }
+
+        if (outcome.PublishFailure is { Length: > 0 } detail)
+        {
+            Console.Warning(Markup.Escape(SettingsSupport.BuildPublishFailedLine([table], detail)));
+            return;
+        }
+
+        Console.Ok(Markup.Escape(SettingsSupport.BuildPublishedLine([table])));
+        Console.Verbose(Markup.Escape(SettingsSupport.BuildPublishScopeNote([table])));
+    }
+
     void Report(SingleComponentOutcome outcome, RunMode mode)
     {
         var name = Markup.Escape(outcome.Component.Name);
@@ -438,6 +460,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
                 break;
             case SingleComponentActionKind.Applied:
                 Console.Ok(SettingsSupport.BuildUpdatedLine(outcome.Component.Name, outcome.WasSuspended));
+                ReportPublish(outcome, mode);
                 break;
             case SingleComponentActionKind.Unchanged:
                 Console.Skip($"{name} already matches — nothing written");
@@ -718,6 +741,8 @@ internal static class SettingsComponentNames
         ConfigurableComponentKind.BusinessProcessFlow => "bpf",
         ConfigurableComponentKind.Action => "action",
         ConfigurableComponentKind.PluginStep => "plugin",
+        ConfigurableComponentKind.Form => "form",
+        ConfigurableComponentKind.View => "view",
         ConfigurableComponentKind.EnvironmentVariable => "envvar",
         ConfigurableComponentKind.ConnectionReference => "connref",
         _ => "component",
@@ -745,6 +770,8 @@ internal static class SettingsComponentNames
         ConfigurableComponentKind.BusinessProcessFlow => "business process flow",
         ConfigurableComponentKind.Action => "action",
         ConfigurableComponentKind.PluginStep => "plugin step",
+        ConfigurableComponentKind.Form => "form",
+        ConfigurableComponentKind.View => "view",
         ConfigurableComponentKind.EnvironmentVariable => "environment variable",
         ConfigurableComponentKind.ConnectionReference => "connection reference",
         _ => "component",
@@ -758,6 +785,8 @@ internal static class SettingsComponentNames
         ConfigurableComponentKind.BusinessProcessFlow => "business process flows",
         ConfigurableComponentKind.Action => "actions",
         ConfigurableComponentKind.PluginStep => "plugin steps",
+        ConfigurableComponentKind.Form => "main forms",
+        ConfigurableComponentKind.View => "public views",
         ConfigurableComponentKind.EnvironmentVariable => "environment variables",
         ConfigurableComponentKind.ConnectionReference => "connection references",
         _ => "components",
@@ -801,12 +830,12 @@ public class SettingsStateCommand(
     /// ones with no hand-written check — the same thing that already makes <c>--value</c> on a flow a
     /// parse error. Spectre matches these case-insensitively, so the user types <c>bpf</c>.
     /// </remarks>
-    public enum StateType { Flow, Workflow, Rule, Bpf, Action, Plugin }
+    public enum StateType { Flow, Workflow, Rule, Bpf, Action, Plugin, Form, View }
 
     public sealed class Settings : SettingsComponentSettings
     {
         [CommandOption("--type <type>")]
-        [Description("Narrow to one class: flow, workflow, rule, bpf, action, or plugin")]
+        [Description("Narrow to one class: flow, workflow, rule, bpf, action, plugin, form, or view")]
         public StateType? Type { get; set; }
 
         [CommandOption("--on")]
@@ -841,6 +870,8 @@ public class SettingsStateCommand(
         StateType.Bpf => ConfigurableComponentKind.BusinessProcessFlow,
         StateType.Action => ConfigurableComponentKind.Action,
         StateType.Plugin => ConfigurableComponentKind.PluginStep,
+        StateType.Form => ConfigurableComponentKind.Form,
+        StateType.View => ConfigurableComponentKind.View,
         // Unreachable: the parser only accepts the values above. An exception rather than a typed exit
         // code, because reaching it would mean the enum and this map disagree, not that input was bad.
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a state type."),

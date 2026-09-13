@@ -21,6 +21,8 @@ public class SettingsComponentCommandTests
     [InlineData(SettingsStateCommand.StateType.Bpf, ConfigurableComponentKind.BusinessProcessFlow)]
     [InlineData(SettingsStateCommand.StateType.Action, ConfigurableComponentKind.Action)]
     [InlineData(SettingsStateCommand.StateType.Plugin, ConfigurableComponentKind.PluginStep)]
+    [InlineData(SettingsStateCommand.StateType.Form, ConfigurableComponentKind.Form)]
+    [InlineData(SettingsStateCommand.StateType.View, ConfigurableComponentKind.View)]
     public void StateTypes_MapToTheirKind(SettingsStateCommand.StateType type, ConfigurableComponentKind expected) =>
         SettingsStateCommand.KindFor(type).Should().Be(expected);
 

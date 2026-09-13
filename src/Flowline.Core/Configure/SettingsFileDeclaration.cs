@@ -76,16 +76,7 @@ public static class SettingsFileDeclaration
 
     /// <summary>The typed state section for a class, or <c>null</c> when the file has none.</summary>
     static IList<ComponentStateEntry>? SectionFor(SettingsDocument document, ConfigurableComponentKind kind) =>
-        kind switch
-        {
-            ConfigurableComponentKind.CloudFlow => document.CloudFlows,
-            ConfigurableComponentKind.Workflow => document.Workflows,
-            ConfigurableComponentKind.BusinessRule => document.BusinessRules,
-            ConfigurableComponentKind.BusinessProcessFlow => document.BusinessProcessFlows,
-            ConfigurableComponentKind.Action => document.Actions,
-            ConfigurableComponentKind.PluginStep => document.PluginSteps,
-            _ => null,
-        };
+        document.StateSection(kind);
 
     static (string Section, string NameProperty, string ValueProperty)? ValueSectionFor(ConfigurableComponentKind kind) =>
         kind switch

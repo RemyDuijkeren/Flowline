@@ -35,6 +35,12 @@ public enum ConfigurableComponentKind
 
     /// <summary>Business process flow, addressed by <c>workflow.uniquename</c>.</summary>
     BusinessProcessFlow,
+
+    /// <summary>Main form, addressed by <c>table.form name</c>.</summary>
+    Form,
+
+    /// <summary>Public view, addressed by <c>table.view name</c>.</summary>
+    View,
 }
 
 /// <summary>Which component classes each half of the surface deals in (KTD25).</summary>
@@ -57,6 +63,8 @@ public static class ConfigurableComponentKinds
         ConfigurableComponentKind.BusinessProcessFlow,
         ConfigurableComponentKind.Action,
         ConfigurableComponentKind.PluginStep,
+        ConfigurableComponentKind.Form,
+        ConfigurableComponentKind.View,
     ];
 
     /// <summary>Classes with a value, which <c>settings value</c> addresses.</summary>
@@ -82,10 +90,30 @@ public static class ConfigurableComponentKinds
         ConfigurableComponentKind.BusinessProcessFlow,
         ConfigurableComponentKind.Action,
         ConfigurableComponentKind.PluginStep,
+        ConfigurableComponentKind.Form,
+        ConfigurableComponentKind.View,
     ];
+
+    /// <summary>Classes a capture writes into the file, and the undeclared report covers.</summary>
+    /// <remarks>
+    /// Narrower than <see cref="FileManaged"/>, and the difference is forms and views. Every other class
+    /// is something a solution normally wants declared, so sweeping them in on a capture and listing the
+    /// ones left out is help. Forms and views are not: a solution carries dozens of each, almost all of
+    /// them in the state they should be in and none of them anyone's business to declare. Capturing them
+    /// would bury the entries that matter, and reporting them undeclared would tell an operator to write
+    /// hundreds of lines they do not want.
+    ///
+    /// So they reach the file one way only -- by being switched, and the run offering to record it. That
+    /// is the shape the feature has: a release toggles two forms, not a hundred.
+    /// </remarks>
+    public static readonly ConfigurableComponentKind[] Captured =
+        [.. FileManaged.Except([ConfigurableComponentKind.Form, ConfigurableComponentKind.View])];
 
     /// <summary>Whether a settings file can carry this class at all.</summary>
     public static bool IsFileManaged(ConfigurableComponentKind kind) => FileManaged.Contains(kind);
+
+    /// <summary>Whether a capture writes this class, and the undeclared report lists it.</summary>
+    public static bool IsCaptured(ConfigurableComponentKind kind) => Captured.Contains(kind);
 }
 
 /// <summary>One component found in the target, with the state the file would be reconciling against.</summary>
@@ -118,6 +146,16 @@ public static class ConfigurableComponentKinds
 /// same connector can be bound, so this is what narrows a list of the environment's connections to the
 /// ones that would work. <c>null</c> for every other class.
 /// </param>
+/// <param name="Table">
+/// The logical name of the table a form or a view belongs to. Already part of <see cref="Name"/>, and
+/// carried separately because a publish is addressed by table and splitting the name back apart would be
+/// guessing at a separator that a form name is allowed to contain. <c>null</c> for every other class.
+/// </param>
+/// <param name="IsDefault">
+/// Whether a view is its table's default. Dataverse refuses to deactivate one, so carrying this is what
+/// lets a run say which view to make default first instead of relaying an error code. Always
+/// <c>false</c> for every other class.
+/// </param>
 public sealed record InventoryComponent(
     ConfigurableComponentKind Kind,
     string Name,
@@ -127,7 +165,9 @@ public sealed record InventoryComponent(
     int? Type = null,
     int? SecretStore = null,
     bool Suspended = false,
-    string? ConnectorId = null);
+    string? ConnectorId = null,
+    string? Table = null,
+    bool IsDefault = false);
 
 /// <summary>Everything the target holds for one solution, in the classes a settings file can declare.</summary>
 public sealed record SolutionInventory(IReadOnlyList<InventoryComponent> Components)
@@ -245,6 +285,25 @@ public static class SolutionComponentInventory
     /// <summary><c>solutioncomponent.componenttype</c> for an environment variable definition.</summary>
     public const int EnvironmentVariableDefinitionComponentType = 380;
 
+    /// <summary><c>solutioncomponent.componenttype</c> for a form or a dashboard.</summary>
+    /// <remarks>Matches <c>FormEventReader</c>'s own constant, which reads the same table.</remarks>
+    public const int SystemFormComponentType = 60;
+
+    /// <summary><c>solutioncomponent.componenttype</c> for a view.</summary>
+    public const int SavedQueryComponentType = 26;
+
+    /// <summary><c>systemform.type</c> for a main form.</summary>
+    public const int FormTypeMain = 2;
+
+    /// <summary><c>savedquery.querytype</c> for a public view.</summary>
+    public const int QueryTypePublicView = 0;
+
+    /// <summary><c>systemform.formactivationstate</c>: 1 Active.</summary>
+    internal const int FormActivationStateActive = 1;
+
+    /// <summary><c>systemform.formactivationstate</c>: 0 Inactive.</summary>
+    internal const int FormActivationStateInactive = 0;
+
     /// <summary>Reads every configurable component the named solution holds in the target.</summary>
     public static async Task<SolutionInventory> ReadAsync(
         IOrganizationServiceAsync2 service,
@@ -258,6 +317,8 @@ public static class SolutionComponentInventory
         components.AddRange(await ReadPluginStepsAsync(service, Ids(componentIds, SdkMessageProcessingStepComponentType), ct).ConfigureAwait(false));
         components.AddRange(await ReadEnvironmentVariablesAsync(service, Ids(componentIds, EnvironmentVariableDefinitionComponentType), ct).ConfigureAwait(false));
         components.AddRange(await ReadConnectionReferencesAsync(service, componentIds.Select(c => c.ObjectId).ToList(), ct).ConfigureAwait(false));
+        components.AddRange(await ReadFormsAsync(service, Ids(componentIds, SystemFormComponentType), ct).ConfigureAwait(false));
+        components.AddRange(await ReadViewsAsync(service, Ids(componentIds, SavedQueryComponentType), ct).ConfigureAwait(false));
 
         return new SolutionInventory(components);
     }
@@ -299,7 +360,7 @@ public static class SolutionComponentInventory
 
         var query = new QueryExpression("workflow")
         {
-            ColumnSet = new ColumnSet("workflowid", "uniquename", "name", "statecode", "category"),
+            ColumnSet = new ColumnSet("workflowid", "uniquename", "name", "statecode", "category", "primaryentity"),
             NoLock = true,
         };
         query.Criteria.AddCondition("workflowid", ConditionOperator.In, ids.Cast<object>().ToArray());
@@ -319,7 +380,8 @@ public static class SolutionComponentInventory
                 AddressableName(e),
                 e.Id,
                 IsWorkflowActive(e),
-                Suspended: IsWorkflowSuspended(e)))
+                Suspended: IsWorkflowSuspended(e),
+                Table: e.GetAttributeValue<string>("primaryentity")))
             .Where(c => c.Name.Length > 0)
             .ToList();
     }
@@ -330,21 +392,42 @@ public static class SolutionComponentInventory
     /// on; <c>name</c> is the renameable display label and is otherwise only a fallback for a row that
     /// has no unique name.
     ///
-    /// A business process flow is the exception. Dataverse generates its unique name from the backing
-    /// entity it creates, so it arrives as <c>msdyn_bpf_d3d97bac8c294105840e99e37a9d1c39</c>: unreadable
-    /// in a list and untypeable at a prompt. Nothing is lost by preferring the display name there,
-    /// because no settings file has a section for this class (KTD25a), so its unique name is a contract
-    /// with nobody. Two flows sharing a display name resolve the way any other ambiguous name does.
+    /// Two classes are exceptions, for opposite reasons.
+    ///
+    /// A <b>business process flow</b> has a unique name Dataverse generates from the backing entity it
+    /// creates, so it arrives as <c>msdyn_bpf_d3d97bac8c294105840e99e37a9d1c39</c>: unreadable in a list
+    /// and untypeable at a prompt. Its display name names the process, so that is what it is addressed by.
+    ///
+    /// A <b>business rule</b> has no unique name at all — the column is null on every one of them
+    /// (confirmed against a live solution), so the name has always been the display name. That name is
+    /// meaningless on its own: rules are called "Set date" and "Show hide columns", and a list of them
+    /// says nothing about which table each one governs. So a rule is qualified by its table, exactly as a
+    /// form and a view are, and for the same reason.
+    ///
+    /// The rule for which classes get qualified is <i>whether the name means anything without its
+    /// table</i>. A form called "Information" and a rule called "Set date" do not. A cloud flow, a classic
+    /// workflow, an action and a business process flow all name themselves, and qualifying those would be
+    /// noise in the common case and a longer thing to type in every case.
     /// </remarks>
     static string AddressableName(Entity workflow)
     {
         var unique = workflow.GetAttributeValue<string>("uniquename");
         var display = workflow.GetAttributeValue<string>("name");
 
-        if (KindOf(workflow) == ConfigurableComponentKind.BusinessProcessFlow)
-            return display ?? unique ?? string.Empty;
+        return KindOf(workflow) switch
+        {
+            ConfigurableComponentKind.BusinessProcessFlow => display ?? unique ?? string.Empty,
 
-        return unique ?? display ?? string.Empty;
+            // Falls back to the bare name rather than dropping the rule: a rule with no primary entity
+            // should not be invisible, and an unqualified name still addresses it.
+            ConfigurableComponentKind.BusinessRule =>
+                QualifiedName(workflow.GetAttributeValue<string>("primaryentity"), display)
+                    is { Length: > 0 } qualified
+                    ? qualified
+                    : display ?? unique ?? string.Empty,
+
+            _ => unique ?? display ?? string.Empty,
+        };
     }
 
     /// <summary>Which class a Process row belongs to, by its category.</summary>
@@ -387,6 +470,125 @@ public static class SolutionComponentInventory
     /// </remarks>
     internal static bool IsWorkflowSuspended(Entity workflow) =>
         workflow.GetAttributeValue<OptionSetValue>("statecode")?.Value == ComponentStateWriter.WorkflowStateSuspended;
+
+    /// <summary>
+    /// Qualifies a form or view name with the table it belongs to.
+    /// </summary>
+    /// <remarks>
+    /// The second exception to "the name is the addressing key", after a business process flow's unique
+    /// name. A bare form name is not an address: every table has an "Information" form, and a solution
+    /// holding twenty tables holds twenty of them. The table is what makes it one.
+    ///
+    /// A dot, matching the shape a plugin step's name already has, and never parsed back apart -- a form
+    /// name is allowed to contain dots, so the table travels separately on
+    /// <see cref="InventoryComponent.Table"/> for the one caller that needs it. Two forms on one table
+    /// sharing a name is still reachable and resolves the way any other ambiguous name does.
+    /// </remarks>
+    static string QualifiedName(string? table, string? name) =>
+        string.IsNullOrEmpty(table) || string.IsNullOrEmpty(name) ? string.Empty : $"{table}.{name}";
+
+    /// <summary>Reads the solution's main forms.</summary>
+    /// <remarks>
+    /// <b>Main forms only</b>, and the reason is not preference. Confirmed against a live environment: a
+    /// quick create form refuses the write outright ("Only Main forms can be inactive"), and a quick view
+    /// form and a card form accept it and do nothing -- the row comes back unchanged. Admitting those
+    /// would let a settings file declare a state that silently never happens, which is worse than not
+    /// offering them at all. Dashboards share this table and are excluded by the same filter.
+    ///
+    /// <c>objecttypecode</c> on a result row is the table's logical name, not its numeric code
+    /// (confirmed live, see <c>FormEventReader</c>).
+    /// </remarks>
+    static async Task<List<InventoryComponent>> ReadFormsAsync(
+        IOrganizationServiceAsync2 service, List<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        EntityNameLookup.EnsureInLimit(ids.Count, "form IDs", "Split the solution or narrow what the settings file declares.");
+
+        var query = new QueryExpression("systemform")
+        {
+            ColumnSet = new ColumnSet("formid", "name", "objecttypecode", "formactivationstate"),
+            NoLock = true,
+        };
+        query.Criteria.AddCondition("formid", ConditionOperator.In, ids.Cast<object>().ToArray());
+        query.Criteria.AddCondition("type", ConditionOperator.Equal, FormTypeMain);
+
+        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+
+        return entities
+            .Select(e =>
+            {
+                var table = e.GetAttributeValue<string>("objecttypecode");
+                return new InventoryComponent(
+                    ConfigurableComponentKind.Form,
+                    QualifiedName(table, e.GetAttributeValue<string>("name")),
+                    e.Id,
+                    IsFormActive(e),
+                    Table: table);
+            })
+            .Where(c => c.Name.Length > 0)
+            .ToList();
+    }
+
+    /// <summary>
+    /// <c>systemform.formactivationstate</c>: 0 Inactive, 1 Active.
+    /// </summary>
+    /// <remarks>
+    /// Its own column rather than a <c>statecode</c>, so it has no <c>statuscode</c> to keep in step and
+    /// none of the polarity traps the other two tables have.
+    /// </remarks>
+    internal static bool IsFormActive(Entity form) =>
+        form.GetAttributeValue<OptionSetValue>("formactivationstate")?.Value == FormActivationStateActive;
+
+    /// <summary>Reads the solution's public views.</summary>
+    /// <remarks>
+    /// Public views only. The same table holds advanced-find views, lookup views, associated views and the
+    /// queries behind charts, none of which an app shows as a view anyone would toggle.
+    ///
+    /// A default view is read like any other and carries <see cref="InventoryComponent.IsDefault"/>,
+    /// because Dataverse refuses to deactivate one and a run that knows that in advance can say so
+    /// instead of relaying an error code.
+    /// </remarks>
+    static async Task<List<InventoryComponent>> ReadViewsAsync(
+        IOrganizationServiceAsync2 service, List<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        EntityNameLookup.EnsureInLimit(ids.Count, "view IDs", "Split the solution or narrow what the settings file declares.");
+
+        var query = new QueryExpression("savedquery")
+        {
+            ColumnSet = new ColumnSet("savedqueryid", "name", "returnedtypecode", "statecode", "isdefault"),
+            NoLock = true,
+        };
+        query.Criteria.AddCondition("savedqueryid", ConditionOperator.In, ids.Cast<object>().ToArray());
+        query.Criteria.AddCondition("querytype", ConditionOperator.Equal, QueryTypePublicView);
+
+        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+
+        return entities
+            .Select(e =>
+            {
+                var table = e.GetAttributeValue<string>("returnedtypecode");
+                return new InventoryComponent(
+                    ConfigurableComponentKind.View,
+                    QualifiedName(table, e.GetAttributeValue<string>("name")),
+                    e.Id,
+                    IsViewActive(e),
+                    Table: table,
+                    IsDefault: e.GetAttributeValue<bool>("isdefault"));
+            })
+            .Where(c => c.Name.Length > 0)
+            .ToList();
+    }
+
+    /// <summary>
+    /// <c>savedquery.statecode</c>: 0 Active, 1 Inactive.
+    /// </summary>
+    /// <remarks>
+    /// Same polarity as a plugin step and the opposite of a workflow, which is why this is a named helper
+    /// rather than a comparison written out at the call site.
+    /// </remarks>
+    internal static bool IsViewActive(Entity view) =>
+        view.GetAttributeValue<OptionSetValue>("statecode")?.Value == 0;
 
     static async Task<List<InventoryComponent>> ReadPluginStepsAsync(
         IOrganizationServiceAsync2 service, List<Guid> ids, CancellationToken ct)

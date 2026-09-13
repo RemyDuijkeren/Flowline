@@ -30,22 +30,29 @@ public enum ComponentOutcomeKind
 /// Set when a cloud flow or classic workflow was in the Suspended state before being activated, so KTD8's report can say so and a
 /// re-suspension by the platform stays visible.
 /// </param>
+/// <param name="Table">
+/// The table a form or a view belongs to, carried so a run can name which tables still need a publish.
+/// <c>null</c> for every class that needs none.
+/// </param>
 public sealed record ComponentOutcome(
     ConfigurableComponentKind Kind,
     string Name,
     ComponentOutcomeKind Outcome,
     string? Detail = null,
-    bool WasSuspended = false);
+    bool WasSuspended = false,
+    string? Table = null);
 
-/// <summary>Turns cloud flows, classic workflows and plugin steps on or off (R7, KTD7, KTD8).</summary>
+/// <summary>Turns any class with an on and an off on or off (R7, KTD7, KTD8).</summary>
 /// <remarks>
 /// State is written by updating <c>statecode</c> and <c>statuscode</c> directly, following
 /// <c>OrphanCleanupService.TryDeactivateWorkflowAsync</c>. Nothing in this codebase uses
 /// <c>SetStateRequest</c>, which is the deprecated route.
 ///
-/// <b>The two tables have opposite polarity.</b> A workflow is on at statecode 1 and a plugin step is on at
-/// statecode 0. Both pairs below are confirmed against a shipping implementation as well as Flowline's own
-/// deactivation path, because getting one backwards silently inverts every declaration in a settings file.
+/// <b>The tables do not agree on polarity.</b> A workflow is on at statecode 1; a plugin step and a view
+/// are on at statecode 0. Every pair below is confirmed against a shipping implementation or Flowline's
+/// own deactivation path, because getting one backwards silently inverts every declaration in a settings
+/// file. A form is the exception to the shape as well as the polarity: it carries its own
+/// <c>formactivationstate</c> column and no statuscode at all.
 /// </remarks>
 public static class ComponentStateWriter
 {
@@ -61,6 +68,12 @@ public static class ComponentStateWriter
     const int StepStateDisabled = 1;
     const int StepStatusEnabled = 1;
     const int StepStatusDisabled = 2;
+
+    // savedquery: statecode 0 Active / 1 Inactive, statuscode 1 Active / 2 Inactive
+    const int ViewStateActive = 0;
+    const int ViewStateInactive = 1;
+    const int ViewStatusActive = 1;
+    const int ViewStatusInactive = 2;
 
     /// <summary>Applies one declared state, or reports why it could not be applied.</summary>
     /// <param name="currentlySuspended">
@@ -79,7 +92,16 @@ public static class ComponentStateWriter
         bool currentlySuspended)
     {
         if (component.Enabled == desiredEnabled && !currentlySuspended)
-            return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Unchanged);
+            return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Unchanged,
+                Table: component.Table);
+
+        // Pre-empted rather than left to the fault, because this one is both certain and actionable.
+        // Dataverse answers "Default views cannot be deactivated", which arrives here as an error code
+        // that tells an operator nothing about what to do instead (confirmed live).
+        if (component is { Kind: ConfigurableComponentKind.View, IsDefault: true } && !desiredEnabled)
+            return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Failed,
+                $"'{component.Name}' is the table's default view, and Dataverse won't deactivate one. " +
+                "Make another view the default first, then re-run.");
 
         var update = BuildStateUpdate(component, desiredEnabled);
         if (update is null)
@@ -91,13 +113,13 @@ public static class ComponentStateWriter
         // change, which made the preview useless for the one thing it is for.
         if (mode.IsReportOnly())
             return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Applied,
-                "would change", WasSuspended: currentlySuspended);
+                "would change", WasSuspended: currentlySuspended, Table: component.Table);
 
         try
         {
             await service.UpdateAsync(update, ct).ConfigureAwait(false);
             return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Applied,
-                WasSuspended: currentlySuspended);
+                WasSuspended: currentlySuspended, Table: component.Table);
         }
         catch (FaultException<OrganizationServiceFault> ex)
         {
@@ -130,6 +152,19 @@ public static class ComponentStateWriter
         {
             ["statecode"] = new OptionSetValue(enabled ? StepStateEnabled : StepStateDisabled),
             ["statuscode"] = new OptionSetValue(enabled ? StepStatusEnabled : StepStatusDisabled),
+        },
+        // A form is the one class here with no statecode. Activation is its own column, so there is no
+        // statuscode to keep in step -- writing one would be rejected.
+        ConfigurableComponentKind.Form => new Entity("systemform", component.Id)
+        {
+            ["formactivationstate"] = new OptionSetValue(enabled
+                ? SolutionComponentInventory.FormActivationStateActive
+                : SolutionComponentInventory.FormActivationStateInactive),
+        },
+        ConfigurableComponentKind.View => new Entity("savedquery", component.Id)
+        {
+            ["statecode"] = new OptionSetValue(enabled ? ViewStateActive : ViewStateInactive),
+            ["statuscode"] = new OptionSetValue(enabled ? ViewStatusActive : ViewStatusInactive),
         },
         _ => null,
     };

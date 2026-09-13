@@ -46,6 +46,40 @@ public sealed class SettingsDocument
     /// <summary>Top-level property name holding declared custom process action state.</summary>
     public const string ActionsProperty = "Actions";
 
+    /// <summary>Top-level property name holding declared main form activation.</summary>
+    public const string FormsProperty = "Forms";
+
+    /// <summary>Top-level property name holding declared public view state.</summary>
+    public const string ViewsProperty = "Views";
+
+    /// <summary>
+    /// The section holding declared state for one class, or <c>null</c> when the class carries a value
+    /// rather than a state.
+    /// </summary>
+    /// <remarks>
+    /// The one place that knows which section holds which class. It exists because there used to be two,
+    /// and they drifted: the apply path's own copy listed cloud flows, classic workflows and plugin steps
+    /// and answered "no section" for everything else. The effect was silent and specific — a run that
+    /// switched a business rule, a business process flow, an action, a form or a view never noticed that
+    /// the file declared the opposite, so it never offered to fix it and the next push quietly undid the
+    /// change.
+    ///
+    /// Anything that needs to find a class's section goes through here, so a class added to the document
+    /// cannot be half-wired again.
+    /// </remarks>
+    public IList<ComponentStateEntry>? StateSection(ConfigurableComponentKind kind) => kind switch
+    {
+        ConfigurableComponentKind.CloudFlow => CloudFlows,
+        ConfigurableComponentKind.Workflow => Workflows,
+        ConfigurableComponentKind.BusinessRule => BusinessRules,
+        ConfigurableComponentKind.BusinessProcessFlow => BusinessProcessFlows,
+        ConfigurableComponentKind.Action => Actions,
+        ConfigurableComponentKind.PluginStep => PluginSteps,
+        ConfigurableComponentKind.Form => Forms,
+        ConfigurableComponentKind.View => Views,
+        _ => null,
+    };
+
     /// <summary>Every top-level property Flowline does not own, in the order the source file carried them.</summary>
     public IDictionary<string, JsonNode?> PassThrough { get; init; } = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
 
@@ -79,6 +113,28 @@ public sealed class SettingsDocument
 
     /// <summary>Declared state for plugin steps, keyed by step unique name (KTD9).</summary>
     public IList<ComponentStateEntry> PluginSteps { get; init; } = [];
+
+    /// <summary>
+    /// Declared activation for main forms, keyed by <c>table.form name</c>.
+    /// </summary>
+    /// <remarks>
+    /// Qualified by table because a bare form name addresses nothing -- every table has an Information
+    /// form. Main forms only: the other form types either refuse the write or accept it and do nothing.
+    ///
+    /// Unlike every section above it, a capture never fills this one in. A solution holds dozens of forms
+    /// and almost none of them are anyone's business to declare, so entries arrive here one at a time,
+    /// when a run switches a form and is told to record it.
+    /// </remarks>
+    public IList<ComponentStateEntry> Forms { get; init; } = [];
+
+    /// <summary>
+    /// Declared state for public views, keyed by <c>table.view name</c>.
+    /// </summary>
+    /// <remarks>
+    /// Qualified and capture-exempt for the same reasons as <see cref="Forms"/>. A table's default view
+    /// cannot be deactivated, so declaring one <c>false</c> fails the entry rather than the run.
+    /// </remarks>
+    public IList<ComponentStateEntry> Views { get; init; } = [];
 
     /// <summary>
     /// The line ending the source file used, inherited on write (R12c).

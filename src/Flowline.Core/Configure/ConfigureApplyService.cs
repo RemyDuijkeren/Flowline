@@ -42,10 +42,22 @@ public sealed class ConfigureApplyService
             // An interrupted run has already written to a live environment. Returning what happened so far
             // is the only way the operator learns which components those were; throwing here would leave
             // them to find out by re-reading the environment.
-            return new ApplyOutcome(outcomes, Undeclared(inventory, declaredNames), Cancelled: true);
+            return new ApplyOutcome(outcomes, Undeclared(inventory, declaredNames), Cancelled: true,
+                ReportOnly: mode.IsReportOnly());
         }
 
-        return new ApplyOutcome(outcomes, Undeclared(inventory, declaredNames));
+        var applied = new ApplyOutcome(outcomes, Undeclared(inventory, declaredNames),
+            ReportOnly: mode.IsReportOnly());
+
+        // After the writes, never instead of them: a form whose state changed is invisible until its
+        // table is published, and a failure here leaves a change that did happen rather than undoing one.
+        if (applied.TablesNeedingPublish.Count == 0) return applied;
+
+        var failures = await CustomizationPublisher
+            .PublishTablesAsync(service, applied.TablesNeedingPublish, ct)
+            .ConfigureAwait(false);
+
+        return applied with { PublishFailures = failures };
     }
 
     async Task ApplyTiersAsync(
@@ -105,6 +117,8 @@ public sealed class ConfigureApplyService
                 (Kind: ConfigurableComponentKind.BusinessRule, Entries: document.BusinessRules),
                 (Kind: ConfigurableComponentKind.BusinessProcessFlow, Entries: document.BusinessProcessFlows),
                 (Kind: ConfigurableComponentKind.Action, Entries: document.Actions),
+                (Kind: ConfigurableComponentKind.Form, Entries: document.Forms),
+                (Kind: ConfigurableComponentKind.View, Entries: document.Views),
                 (Kind: ConfigurableComponentKind.PluginStep, Entries: document.PluginSteps),
             }
             .SelectMany(section => section.Entries.Select(entry => (section.Kind, Entry: entry)))
@@ -150,12 +164,12 @@ public sealed class ConfigureApplyService
         return await apply(match.Component!).ConfigureAwait(false);
     }
 
-    /// <summary>Solution components in the covered classes the file does not name (R9).</summary>
+    /// <summary>Solution components in the captured classes the file does not name (R9).</summary>
     /// <remarks>
-    /// Restricted to the classes a file can declare (KTD25). The inventory is wider than the file: it
-    /// carries business rules, actions and business process flows so the inline surface can switch them,
-    /// and reporting those as undeclared would tell an operator to add sections that do not exist and
-    /// bury the entries that really are missing.
+    /// Restricted to the classes a capture writes (KTD29), which is narrower than the classes a file can
+    /// declare. Forms and views are declarable and deliberately not listed here: a solution holds dozens
+    /// of each, so reporting every one an operator has not declared would be hundreds of lines telling
+    /// them to declare things they have no reason to, and it would bury the entries that matter.
     /// </remarks>
     static IReadOnlyList<string> Undeclared(
         SolutionInventory inventory,
@@ -166,7 +180,7 @@ public sealed class ConfigureApplyService
             .ToHashSet();
 
         return inventory.Components
-            .Where(c => ConfigurableComponentKinds.IsFileManaged(c.Kind))
+            .Where(c => ConfigurableComponentKinds.IsCaptured(c.Kind))
             .Where(c => !declaredSet.Contains((c.Kind, c.Name.ToLowerInvariant())))
             .Select(c => $"{c.Kind}: {c.Name}")
             .ToList();
@@ -214,10 +228,10 @@ public sealed class ConfigureApplyService
                 DisagreesOnValue(SettingsSectionEntries.EnvironmentVariables, "SchemaName", "Value"),
             ConfigurableComponentKind.ConnectionReference =>
                 DisagreesOnValue(SettingsSectionEntries.ConnectionReferences, "LogicalName", "ConnectionId"),
-            ConfigurableComponentKind.CloudFlow => DisagreesOnState(document.CloudFlows),
-            ConfigurableComponentKind.Workflow => DisagreesOnState(document.Workflows),
-            ConfigurableComponentKind.PluginStep => DisagreesOnState(document.PluginSteps),
-            _ => false,
+            // Every state class, through the document's own map. Listing them here is what went wrong
+            // before: five classes were missing and the default arm answered "the file says nothing",
+            // so a run that contradicted the file never offered to fix it.
+            _ => document.StateSection(kind) is { } section && DisagreesOnState(section),
         };
     }
 

@@ -391,7 +391,7 @@ namespace Flowline
                 // ones, and its help API exposes no parameter name to render a fuller signature with.
                 settings.SetDescription(
                     "Read or change one environment's configuration: environment variable values, " +
-                    "connection references, and flow, workflow and plugin step state. " +
+                    "connection references, and flow, workflow, plugin step, form and view state. " +
                     "Both component operations take the environment, then optionally the component name; " +
                     "omit the name to list or pick one, and narrow the list with --type. They run any " +
                     "time without a deploy and the component must already be in the target. For the " +
@@ -419,7 +419,7 @@ namespace Flowline
                 // command list growing with it. One class per flag set, so the parser still rejects
                 // --value on a flow and --on on a variable with no hand-written check (KTD4).
                 settings.AddCommand<SettingsStateCommand>("state")
-                        .WithDescription("Turn a component on or off, or read its state. Covers cloud flows, classic workflows, business rules, business process flows, actions and plugin steps.")
+                        .WithDescription("Turn a component on or off, or read its state. Covers cloud flows, classic workflows, business rules, business process flows, actions, plugin steps, main forms and public views.")
                         .WithExample("settings", "state", "prod", "ApprovalFlow", "--off")
                         .WithExample("settings", "state", "test", "--type", "flow")
                         .WithExample("settings", "state", "prod", "contoso_AutoNumber", "--on");
