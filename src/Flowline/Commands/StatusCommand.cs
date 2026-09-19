@@ -151,9 +151,10 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
                 "Checking environments...",
                 _ => Task.WhenAll(envs.Select(async e =>
                 {
-                    var who = !string.IsNullOrEmpty(e.Url)
+                    var check = !string.IsNullOrEmpty(e.Url)
                         ? await PacUtils.GetEnvWhoAsync(e.Url!, cancellationToken)
-                        : null;
+                        : default;
+                    var who = check.Who;
 
                     var versions = new Dictionary<string, string?>();
                     if (who is not null && solution is not null)
@@ -170,7 +171,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
                         versions[solution.UniqueName] = version;
                     }
 
-                    return new StatusGrid.EnvStatus(e.Label, e.Url, who, versions);
+                    return new StatusGrid.EnvStatus(e.Label, e.Url, who, versions, check.FailureReason);
                 })));
         }
         else
@@ -178,7 +179,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
             results = envs.Select(e => new StatusGrid.EnvStatus(e.Label, e.Url, null, new Dictionary<string, string?>())).ToArray();
         }
 
-        foreach (var (label, url, who, _) in results)
+        foreach (var (label, url, who, _, checkError) in results)
         {
             if (string.IsNullOrEmpty(url))
             {
@@ -191,7 +192,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
             if (who is not null)
                 Console.MarkupLine($"    [green]✓[/] {Markup.Escape(who.ConnectedAs)}");
             else
-                Console.MarkupLine($"    [yellow]✗ Not authenticated[/]");
+                Console.MarkupLine($"    [red]✗[/] Couldn't check: {Markup.Escape(checkError ?? "pac gave no reason")}");
 
             if (profileNotes.TryGetValue(label, out var note) && note is not null)
                 Console.MarkupLine($"    [yellow]⚠[/] {Markup.Escape(note)}");

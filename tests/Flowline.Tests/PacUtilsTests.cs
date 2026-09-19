@@ -288,3 +288,40 @@ public class ParseVersionFromPacOutputTests
         result.Should().Be("1.0.0.1");
     }
 }
+
+// The reason line is the whole point of the change: status used to answer "Not authenticated" for any
+// non-zero exit, including a lost race for the token store on an environment the user is signed in to.
+public class FirstMeaningfulLineTests
+{
+    [Fact]
+    public void FirstMeaningfulLine_PrefersTheFirstNonBlankLine_AndIgnoresPacsTrailingHelp()
+    {
+        var stderr = "\n\n  Could not connect to the Dataverse organization.  \nHints:\n  Parse failed on: --version\n";
+
+        var reason = PacUtils.FirstMeaningfulLine(stderr, "");
+
+        reason.Should().Be("Could not connect to the Dataverse organization.");
+    }
+
+    [Fact]
+    public void FirstMeaningfulLine_FallsBackToStdout_WhenStderrIsEmpty()
+    {
+        PacUtils.FirstMeaningfulLine("", "No token cache item found of UNIVERSAL kind")
+            .Should().Be("No token cache item found of UNIVERSAL kind");
+    }
+
+    [Fact]
+    public void FirstMeaningfulLine_SaysSoRatherThanReturningNothing_WhenPacIsSilent()
+    {
+        PacUtils.FirstMeaningfulLine("", "   \n ").Should().Be("pac gave no reason");
+    }
+
+    [Fact]
+    public void FirstMeaningfulLine_TruncatesALineTooLongForAStatusRow()
+    {
+        var reason = PacUtils.FirstMeaningfulLine(new string('x', 400), "");
+
+        reason.Should().HaveLength(120);
+        reason.Should().EndWith("…");
+    }
+}

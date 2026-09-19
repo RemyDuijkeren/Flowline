@@ -165,7 +165,7 @@ public class StatusGridTests
 
         var (_, rows) = StatusGrid.BuildGridRows(solutions, envResults, _ => null, _ => false);
 
-        rows.Should().AllSatisfy(r => r.Cells[1].Kind.Should().Be(StatusGrid.GridCellKind.AuthFailed));
+        rows.Should().AllSatisfy(r => r.Cells[1].Kind.Should().Be(StatusGrid.GridCellKind.CheckFailed));
     }
 
     // ── Env columns: unconfigured omitted ───────────────────────────────────────
@@ -314,7 +314,7 @@ public class StatusGridTests
         var rows = new List<StatusGrid.GridRow>
         {
             new("MySolution",
-                [StatusGrid.GridCell.OfVersion("1.0.37"), StatusGrid.GridCell.Dash, StatusGrid.GridCell.AuthFailed, StatusGrid.GridCell.OfVersion("1.0.36")]),
+                [StatusGrid.GridCell.OfVersion("1.0.37"), StatusGrid.GridCell.Dash, StatusGrid.GridCell.CheckFailed, StatusGrid.GridCell.OfVersion("1.0.36")]),
         };
 
         var drifted = StatusGrid.DetectVersionDrift(rows);
@@ -392,7 +392,7 @@ public class StatusGridTests
         var rows = new List<StatusGrid.GridRow>
         {
             new("MySolution",
-                [StatusGrid.GridCell.OfVersion("1.4.0"), StatusGrid.GridCell.OfVersion("1.5.0"), StatusGrid.GridCell.Dash, StatusGrid.GridCell.AuthFailed]),
+                [StatusGrid.GridCell.OfVersion("1.4.0"), StatusGrid.GridCell.OfVersion("1.5.0"), StatusGrid.GridCell.Dash, StatusGrid.GridCell.CheckFailed]),
         };
 
         StatusGrid.RenderGrid(console, ["Dev", "Repo", "Test", "UAT"], rows);

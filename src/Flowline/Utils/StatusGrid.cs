@@ -7,20 +7,20 @@ namespace Flowline.Utils;
 
 internal static class StatusGrid
 {
-    internal enum GridCellKind { Dash, Version, AuthFailed }
+    internal enum GridCellKind { Dash, Version, CheckFailed }
 
     internal enum DriftKind { None, Pending, Inverted }
 
     internal readonly record struct GridCell(GridCellKind Kind, string? Value = null, DriftKind Drift = DriftKind.None, bool IsDirty = false)
     {
         public static readonly GridCell Dash = new(GridCellKind.Dash);
-        public static readonly GridCell AuthFailed = new(GridCellKind.AuthFailed);
+        public static readonly GridCell CheckFailed = new(GridCellKind.CheckFailed);
         public static GridCell OfVersion(string value) => new(GridCellKind.Version, value);
     }
 
     internal sealed record GridRow(string SolutionName, IReadOnlyList<GridCell> Cells);
 
-    internal readonly record struct EnvStatus(string Label, string? Url, WhoAmIInfo? Who, Dictionary<string, string?> Versions);
+    internal readonly record struct EnvStatus(string Label, string? Url, WhoAmIInfo? Who, Dictionary<string, string?> Versions, string? CheckError = null);
 
     internal static (IReadOnlyList<string> Headers, IReadOnlyList<GridRow> Rows) BuildGridRows(
         IReadOnlyList<ProjectSolution> solutions,
@@ -60,7 +60,7 @@ internal static class StatusGrid
             var envCells = configuredEnvs.Select(e =>
             {
                 if (e.Who is null)
-                    return GridCell.AuthFailed;
+                    return GridCell.CheckFailed;
 
                 return e.Versions.TryGetValue(sol.UniqueName, out var version) && version is not null
                     ? GridCell.OfVersion(version)
@@ -145,7 +145,7 @@ internal static class StatusGrid
     }
 
     internal const string Legend =
-        "[dim]—[/] not deployed   [red]✗[/] auth failed   [cyan]↑[/] behind   [yellow]⚠[/] ahead   [magenta]●[/] uncommitted";
+        "[dim]—[/] not deployed   [red]✗[/] check failed   [cyan]↑[/] behind   [yellow]⚠[/] ahead   [magenta]●[/] uncommitted";
 
     private static string RenderArrow(GridCell destination) => destination.Kind switch
     {
@@ -169,7 +169,7 @@ internal static class StatusGrid
                 _ => $"[green]{Markup.Escape(cell.Value!)}[/]",
             },
             GridCellKind.Dash => "[dim]—[/]",
-            GridCellKind.AuthFailed => "[red]✗ auth[/]",
+            GridCellKind.CheckFailed => "[red]✗ check[/]",
             _ => throw new ArgumentOutOfRangeException(nameof(cell)),
         };
 
