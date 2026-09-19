@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`flowline status` probes .NET, PAC CLI and Git fresh on every run** instead of reading a cache with a seven-day life. Installing or swapping a toolchain used to leave `status` reporting the old one for up to a week — most visibly a PAC CLI installed as a dotnet tool still shown as the slower `dnx` one-shot runner. The fresh probe also refreshes the cache the other commands read.
+
 ## [0.19.0] - 2026-09-13
 
 ### Breaking

@@ -100,13 +100,15 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
         try
         {
-            var dotNet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, false, cancellationToken);
+            // Probes run fresh (noCache: true): status reports what's installed now, not what a
+            // 7-day TTL remembers. The re-probe also rewrites the cache other commands read.
+            var dotNet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, true, cancellationToken);
             Console.MarkupLine($"[bold].NET SDK[/] version: [green]{dotNet.Version}[/]");
 
-            var pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, false, cancellationToken);
+            var pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, true, cancellationToken);
             Console.MarkupLine($"[bold]Power Platform CLI[/] version: [green]{pac.Version}[/] ({pac.InstallType})");
 
-            var git = await FlowlineValidator.Default.EnsureGitAsync(settings, false, cancellationToken);
+            var git = await FlowlineValidator.Default.EnsureGitAsync(settings, true, cancellationToken);
             Console.MarkupLine($"[bold]Git[/] version: [green]{git.Version}[/]");
         }
         catch
