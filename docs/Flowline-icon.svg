@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 24" role="img" aria-label="Flowline">
+  <defs>
+    <linearGradient id="f" x1="6.5" x2="19.3" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#431069"/>
+      <stop offset="1" stop-color="#25D2DB"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke-width="3.62" stroke-linecap="round">
+    <path stroke="#431069" d="M2.66 22.15V5A3.21 3.21 0 0 1 5.87 1.79H17.46"/>
+    <path stroke="url(#f)" d="M2.66 14.25A3.4 3.4 0 0 1 6.06 10.85H17"/>
+  </g>
+  <rect x="0" y="21.7" width="5.32" height="2.26" rx="1" fill="#431069"/>
+  <path fill="#25D2DB" d="M16.94 7.25 21.92 10.85 16.94 14.45Z"/>
+</svg>
