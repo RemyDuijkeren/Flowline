@@ -94,10 +94,57 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient, Flo
         return created;
     }
 
+    // PAC's own libsecret entry, read field by field out of a live keyring. MSAL looks a secret up by
+    // schema plus attributes, so every one of these has to match or the lookup quietly returns nothing
+    // -- which reads as an expired session and sends people off re-running 'pac auth create' for a
+    // token that was already there. The file name matters for a different reason: on Linux the file is
+    // only the cross-process lock, the token itself living in the keyring, and sharing PAC's name keeps
+    // both processes taking the same lock.
+    const string PacLinuxKeyringSchema = "com.microsoft.powerapps.cli";
+    const string PacLinuxKeyringLabel = "MSAL token cache for Power Platform CLI";
+    const string PacLinuxCacheFileName = "tokencache_msalv3_keychain.dat";
+    const string PacCacheFileName = "tokencache_msalv3.dat";
+
+    internal static StorageCreationProperties BuildLinuxKeyringStorageProperties() =>
+        new StorageCreationPropertiesBuilder(PacLinuxCacheFileName, GetPacCliDataDirectory())
+            .WithLinuxKeyring(
+                schemaName: PacLinuxKeyringSchema,
+                collection: "default",
+                secretLabel: PacLinuxKeyringLabel,
+                attribute1: new KeyValuePair<string, string>("CacheKind", "MSAL_Token_Cache"),
+                attribute2: new KeyValuePair<string, string>("Version", "1"))
+            .Build();
+
     static async Task<MsalCacheHelper> CreateMsalCacheHelperAsync()
     {
+        if (OperatingSystem.IsLinux())
+        {
+            try
+            {
+                var keyringHelper = await MsalCacheHelper.CreateAsync(BuildLinuxKeyringStorageProperties());
+
+                // Creating the helper succeeds even where no Secret Service is reachable -- a headless or
+                // SSH session with no D-Bus session bus -- and only a later read would fail. This check is
+                // what actually detects that, and it is safe to run against a live cache: it writes and
+                // reads under a key of its own, leaving the stored token alone.
+                keyringHelper.VerifyPersistence();
+                return keyringHelper;
+            }
+            catch (MsalCachePersistenceException)
+            {
+                // Fall through to the plaintext file below. It holds nothing PAC wrote, so the run still
+                // has to authenticate on its own, but it behaves the way it did before the keyring existed
+                // instead of failing on a store that cannot answer.
+            }
+        }
+
+        // Windows reads PAC's cache through the account broker and needs no keyring wiring. macOS lands
+        // here too, and this is NOT right for it: PAC uses the Mac Keychain, so the plaintext file is as
+        // empty there as it was on Linux. Left alone deliberately -- PAC's Keychain service and account
+        // names could not be verified from a Linux machine, and guessing them reproduces exactly the bug
+        // this branch fixes, only somewhere nobody can reproduce it.
         var storagePropsBuilder = new StorageCreationPropertiesBuilder(
-            cacheFileName: "tokencache_msalv3.dat",
+            cacheFileName: PacCacheFileName,
             cacheDirectory: GetPacCliDataDirectory());
 
         if (!OperatingSystem.IsWindows())

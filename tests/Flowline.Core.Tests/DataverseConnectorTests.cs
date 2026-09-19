@@ -1,3 +1,4 @@
+using System.Reflection;
 using Flowline;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
@@ -665,6 +666,41 @@ public class DataverseConnectorTests
                 password: "pa;LoginPrompt=Auto"));
 
         Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
+    }
+
+    // The literal values ARE the fix: MSAL looks a libsecret secret up by schema plus attributes, so a
+    // typo in any of them returns nothing rather than failing, and the run reports an expired session
+    // for a token that is sitting right there. Read out of a live keyring PAC had written. Reflection,
+    // because MSAL keeps these internal -- if it ever renames them this breaks loudly, which is right:
+    // the fix depends on that shape.
+    [Theory]
+    [InlineData("KeyringSchemaName", "com.microsoft.powerapps.cli")]
+    [InlineData("KeyringCollection", "default")]
+    [InlineData("KeyringSecretLabel", "MSAL token cache for Power Platform CLI")]
+    public void BuildLinuxKeyringStorageProperties_MatchesPacsOwnKeyringEntry(string field, string expected)
+    {
+        var properties = DataverseConnector.BuildLinuxKeyringStorageProperties();
+
+        var value = properties.GetType()
+            .GetField(field, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(properties);
+
+        Assert.Equal(expected, value);
+    }
+
+    [Fact]
+    public void BuildLinuxKeyringStorageProperties_MatchesPacsAttributesAndCacheFileName()
+    {
+        var properties = DataverseConnector.BuildLinuxKeyringStorageProperties();
+
+        KeyValuePair<string, string> Attribute(string field) =>
+            (KeyValuePair<string, string>)properties.GetType()
+                .GetField(field, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetValue(properties)!;
+
+        Assert.Equal(new KeyValuePair<string, string>("CacheKind", "MSAL_Token_Cache"), Attribute("KeyringAttribute1"));
+        Assert.Equal(new KeyValuePair<string, string>("Version", "1"), Attribute("KeyringAttribute2"));
+        Assert.Equal("tokencache_msalv3_keychain.dat", Path.GetFileName(properties.CacheFilePath));
     }
 
     // Asserts the exact casing, not just that a path comes back: PAC spells the folder "PowerAppsCli",
