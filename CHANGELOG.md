@@ -7,14 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-19
+
 ### Fixed
 
-- **`flowline status` checks environments over its own Dataverse connection instead of running the PAC CLI once per question.** It used to start two PAC processes per environment at the same time, and those processes fought over the one token store they share, so roughly half of runs reported a randomly chosen environment as unreachable. Measured against three environments, the check went from about 9.8 seconds to about 3, and the environments are now checked in order, which removes the contention rather than reducing it.
-- **`flowline status` no longer calls an environment unauthenticated when it simply couldn't check.** Any failed check was reported as "Not authenticated", which was a guess, and the wrong one whenever a check had merely lost a race. Status now says it couldn't check and prints the reason it was given; the grid column and legend say "check failed" rather than "auth failed" for the same reason.
-- **Flowline reuses the token `pac auth create` already acquired on Linux.** It was reading a plaintext cache file that PAC never writes, while PAC keeps its tokens in the system keyring, so every command that reached Dataverse stopped at a session-expired message and no amount of re-authenticating helped. Where no keyring is reachable, such as an SSH session with no desktop bus, commands fall back to the previous behaviour rather than failing on a store that cannot answer. macOS is still affected and is tracked separately.
-- **Every command that reads a PAC auth profile works on Linux and macOS again.** Flowline looked for PAC's data folder under a name spelled `PowerAppsCLI`, while PAC writes `PowerAppsCli`. Windows resolves either spelling, so this only ever failed off Windows, where `sync`, `push` and the rest reported the profile file as not found at a path that plainly existed. Flowline also no longer leaves an empty second folder beside PAC's real one.
-- **An error about PAC auth profiles no longer prints PAC's entire help text.** Flowline asked the CLI for its version with `pac --version`, which current PAC versions parse as an unknown argument and answer with full help; that answer ended up inside the error message. The version now comes from the startup check that already resolved it.
-- **`flowline status` probes .NET, PAC CLI and Git fresh on every run** instead of reading a cache with a seven-day life. Installing or swapping a toolchain used to leave `status` reporting the old one for up to a week — most visibly a PAC CLI installed as a dotnet tool still shown as the slower `dnx` one-shot runner. The fresh probe also refreshes the cache the other commands read.
+- **Linux and macOS: every command that reads a PAC auth profile works again.** Flowline looked for PAC's data folder under the wrong spelling, which only ever resolved on Windows.
+- **Linux: Flowline reuses the token `pac auth create` already acquired.** It read a plaintext file while PAC stores tokens in the system keyring, so commands stopped at a session-expired message that re-authenticating could not clear. macOS is still affected.
+- **`flowline status` is about twice as fast and no longer reports a random environment as unreachable.** It checks each environment over its own Dataverse connection, one at a time, instead of running concurrent PAC processes that contended for the token store.
+- **`flowline status` says it could not check an environment, with the reason, instead of claiming you are not authenticated.** The grid legend now reads "check failed".
+- **`flowline status` reports the .NET, PAC CLI and Git actually installed**, rather than what was installed up to seven days ago.
+- **An error about PAC auth profiles no longer prints PAC's entire help text.**
 
 ## [0.19.0] - 2026-09-13
 
@@ -580,7 +582,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI and release workflows.
 
 
-[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.19.0...HEAD
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.20.0...HEAD
+[0.20.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.19.0...0.20.0
 [0.19.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.18.0...0.19.0
 [0.18.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.17.0...0.18.0
 [0.17.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.16.0...0.17.0
