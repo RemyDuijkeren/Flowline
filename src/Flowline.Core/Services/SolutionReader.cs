@@ -38,6 +38,25 @@ public class SolutionReader
             solution.GetAttributeValue<EntityReference>("parentsolutionid"));
     }
 
+    /// <summary>The solution's installed version, or null when it isn't in that environment at all.</summary>
+    /// <remarks>Absent is a normal answer here, not a failure: status asks this of every environment,
+    /// including ones the solution has never been deployed to.</remarks>
+    public async Task<string?> GetInstalledVersionAsync(
+        IOrganizationServiceAsync2 service,
+        string uniqueName,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new QueryExpression("solution")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet("version"),
+            Criteria = { Conditions = { new ConditionExpression("uniquename", ConditionOperator.Equal, uniqueName) } }
+        };
+
+        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
+        return result.Entities.FirstOrDefault()?.GetAttributeValue<string>("version");
+    }
+
     public async Task<DataverseSolutionInfo> GetSupportedSolutionInfoAsync(IOrganizationServiceAsync2 service, string uniqueName, CancellationToken cancellationToken = default)
     {
         var solution = await GetSolutionInfoAsync(service, uniqueName, cancellationToken).ConfigureAwait(false);

@@ -530,53 +530,6 @@ public static class PacUtils
             throw new FlowlineException(ExitCode.ConnectionFailed, $"Failed to set solution version to {version} — check the environment URL and your PAC login.");
     }
 
-    public static async Task<EnvWhoResult> GetEnvWhoAsync(string environmentUrl, CancellationToken cancellationToken = default)
-    {
-        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
-        var result = await Cli.Wrap(cmdName)
-            .WithArguments(args => args
-                .AddIfNotNull(prefixArgs)
-                .Add("env").Add("who")
-                .Add("--environment").Add(environmentUrl)
-                .Add("--json"))
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteBufferedAsync(cancellationToken);
-
-        // A non-zero exit says the check didn't complete, not why. Reporting it as "not authenticated"
-        // was a guess, and a wrong one often enough to matter: concurrent pac processes lose a race for
-        // the shared token store and fail here on an environment the user is perfectly signed in to.
-        // Hand back pac's own first line instead and let the caller show it.
-        if (result.ExitCode != 0)
-            return EnvWhoResult.Failed(FirstMeaningfulLine(result.StandardError, result.StandardOutput));
-
-        try
-        {
-            using var doc = JsonDocument.Parse(result.StandardOutput);
-            var connectedAs = GetStringProperty(doc.RootElement,
-                "ConnectedAs", "UserEmail", "Email", "UserPrincipalName", "FriendlyName");
-            return EnvWhoResult.Ok(new WhoAmIInfo(connectedAs ?? "Connected"));
-        }
-        catch (JsonException)
-        {
-            // pac env who succeeded but output wasn't valid JSON (e.g. older CLI version without --json support)
-            return EnvWhoResult.Ok(new WhoAmIInfo("Connected"));
-        }
-    }
-
-    // pac leads with a sentence naming what failed and follows it with a wall of hints and usage. Only
-    // the first line is worth a status row; the log has the rest.
-    internal static string FirstMeaningfulLine(params string[] outputs)
-    {
-        var line = outputs
-            .SelectMany(o => (o ?? string.Empty).Split('\n'))
-            .Select(l => l.Trim())
-            .FirstOrDefault(l => l.Length > 0);
-
-        if (string.IsNullOrEmpty(line)) return "pac gave no reason";
-
-        return line.Length > 120 ? line[..119].TrimEnd() + "\u2026" : line;
-    }
-
     // R6: switching does not restore the previous profile afterward — this only sets the new active
     // profile, callers never re-select the prior one.
     public static async Task SelectAuthProfileAsync(PacProfile profile, IReadOnlyList<PacProfile> allProfiles, CancellationToken cancellationToken = default)
@@ -701,12 +654,5 @@ public class SolutionInfo
 }
 
 public record WhoAmIInfo(string ConnectedAs);
-
-/// <summary>Outcome of an environment identity check: who you are, or why we couldn't tell.</summary>
-public readonly record struct EnvWhoResult(WhoAmIInfo? Who, string? FailureReason)
-{
-    public static EnvWhoResult Ok(WhoAmIInfo who) => new(who, null);
-    public static EnvWhoResult Failed(string reason) => new(null, reason);
-}
 
 public record SolutionCheckResult(int CriticalCount, int TotalCount, string OutputDirectory);

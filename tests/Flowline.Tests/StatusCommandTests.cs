@@ -239,4 +239,30 @@ public class StatusCommandTests
         notes["Dev"].Should().BeNull();
         notes["Prod"].Should().Contain("No local PAC auth profile");
     }
+
+    // Kept the reason line honest: a failed check used to be rendered as "Not authenticated", which was
+    // a guess. These pin what the reader is shown instead.
+    [Fact]
+    public void FirstMeaningfulLine_TakesTheFirstNonBlankLine_AndDropsTrailingDetail()
+    {
+        var message = "\n\n  Could not connect to the Dataverse organization.  \nInner: socket closed\n";
+
+        Assert.Equal("Could not connect to the Dataverse organization.", StatusCommand.FirstMeaningfulLine(message));
+    }
+
+    [Fact]
+    public void FirstMeaningfulLine_SaysSoRatherThanReturningNothing_WhenThereIsNoMessage()
+    {
+        Assert.Equal("no reason given", StatusCommand.FirstMeaningfulLine("   \n "));
+        Assert.Equal("no reason given", StatusCommand.FirstMeaningfulLine(null));
+    }
+
+    [Fact]
+    public void FirstMeaningfulLine_TruncatesALineTooLongForAStatusRow()
+    {
+        var reason = StatusCommand.FirstMeaningfulLine(new string('x', 400));
+
+        Assert.Equal(120, reason.Length);
+        Assert.EndsWith("\u2026", reason);
+    }
 }

@@ -1,10 +1,12 @@
 using Flowline;
 using Flowline.Core.Models;
 using Flowline.Core.Console;
+using Microsoft.Crm.Sdk.Messages;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Broker;
 using Microsoft.Identity.Client.Extensions.Msal;
 using Microsoft.PowerPlatform.Dataverse.Client;
+using Microsoft.Xrm.Sdk.Query;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -61,6 +63,24 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient, Flo
         return profile.IsServicePrincipal
             ? await ConnectServicePrincipalAsync(profile, authority, resourceUrl, serviceUri, cacheHelper, cancellationToken)
             : await ConnectUserAsync(profile, authority, resourceUrl, serviceUri, cacheHelper, cancellationToken);
+    }
+
+    /// <summary>Who the environment says you are on an established connection.</summary>
+    /// <remarks>Asks Dataverse rather than trusting the PAC profile's stored user: the profile records
+    /// who signed in, which is not necessarily who the environment resolves that sign-in to.</remarks>
+    public static async Task<string> GetConnectedUserAsync(
+        IOrganizationServiceAsync2 service,
+        CancellationToken cancellationToken = default)
+    {
+        var who = (WhoAmIResponse)await service.ExecuteAsync(new WhoAmIRequest(), cancellationToken).ConfigureAwait(false);
+
+        var user = await service.RetrieveAsync(
+            "systemuser", who.UserId, new ColumnSet("internalemailaddress", "fullname"), cancellationToken).ConfigureAwait(false);
+
+        // An application user has no mailbox, so email can be absent on a perfectly valid connection.
+        return user.GetAttributeValue<string>("internalemailaddress")
+            ?? user.GetAttributeValue<string>("fullname")
+            ?? "Connected";
     }
 
     static string ResolveAuthority(PacProfile profile) =>
