@@ -667,6 +667,18 @@ public class DataverseConnectorTests
         Assert.Equal(ExitCode.ValidationFailed, ex.ExitCode);
     }
 
+    // Asserts the exact casing, not just that a path comes back: PAC spells the folder "PowerAppsCli",
+    // and on Linux and macOS the wrong casing means every profile read fails on a path that exists.
+    // Windows resolves either spelling, so nothing on the primary dev machine catches a regression here.
+    [Fact]
+    public void GetPacCliDataDirectory_UsesPacsOwnCasingForTheFolder()
+    {
+        var directory = DataverseConnector.GetPacCliDataDirectory();
+
+        Assert.Equal("PowerAppsCli", Path.GetFileName(directory));
+        Assert.Equal("Microsoft", Path.GetFileName(Path.GetDirectoryName(directory)));
+    }
+
     [Fact]
     public void LoadPacAuthProfiles_FileNotFound_ThrowsFlowlineExceptionWithActionableMessage()
     {

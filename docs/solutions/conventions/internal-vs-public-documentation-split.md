@@ -49,13 +49,13 @@ Maintainers, conversely, do need the full story to debug and extend the system.
 ## Examples
 
 **Token cache path — before (wiki, inappropriate):**
-> Flowline reads the PAC CLI token cache from `%LOCALAPPDATA%\Microsoft\PowerAppsCLI\tokencache_msalv3.dat`.
+> Flowline reads the PAC CLI token cache from `%LOCALAPPDATA%\Microsoft\PowerAppsCli\tokencache_msalv3.dat`.
 
 **After (wiki, user-focused):**
 > Flowline reads the PAC CLI token cache and acquires a token silently — no browser, no password prompt.
 
 **Implementation detail (stays in `docs/auth.md`):**
-> Token cache: `%LOCALAPPDATA%\Microsoft\PowerAppsCLI\tokencache_msalv3.dat`
+> Token cache: `%LOCALAPPDATA%\Microsoft\PowerAppsCli\tokencache_msalv3.dat`
 
 ---
 

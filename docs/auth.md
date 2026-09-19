@@ -13,7 +13,7 @@ Where PAC keeps that token depends on the profile — see the `Type` column in `
 - **`OperatingSystem`** — the Windows account broker (WAM). Default for profiles created with
   recent PAC CLI (2.9+).
 - **`File`** — PAC's MSAL token cache at
-  `%LOCALAPPDATA%\Microsoft\PowerAppsCLI\tokencache_msalv3.dat`.
+  `%LOCALAPPDATA%\Microsoft\PowerAppsCli\tokencache_msalv3.dat`.
 
 On Windows, Flowline asks the account broker first, then falls back to the file cache — so both
 profile types work with no extra setup. On macOS and Linux (no broker) it uses the file cache.

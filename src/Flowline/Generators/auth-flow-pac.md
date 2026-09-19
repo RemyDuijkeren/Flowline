@@ -30,7 +30,7 @@ sequenceDiagram
     Note over PG: no URL or credentials injected<br/>PAC uses its own active auth profile
 
     PG->>PAC: Launch pac modelbuilder build -o ... -enf ... -n ...
-    Note over PAC: reads active PAC auth profile<br/>from %LOCALAPPDATA%\Microsoft\PowerAppsCLI
+    Note over PAC: reads active PAC auth profile<br/>from %LOCALAPPDATA%\Microsoft\PowerAppsCli
     PAC->>DV: connect via PAC auth profile
     DV-->>PAC: metadata
     PAC->>PAC: generate .cs files

@@ -5,7 +5,6 @@ using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Broker;
 using Microsoft.Identity.Client.Extensions.Msal;
 using Microsoft.PowerPlatform.Dataverse.Client;
-using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -14,7 +13,7 @@ using Spectre.Console;
 
 namespace Flowline.Core.Services;
 
-public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
+public class DataverseConnector(IAnsiConsole console, HttpClient httpClient, FlowlineRuntimeOptions? runtimeOptions = null)
 {
     // Power Platform CLI's own registered app id (Microsoft-documented as "Power Platform CLI - pac":
     // https://github.com/MicrosoftDocs/power-platform/blob/main/power-platform/admin/apps-to-allow.md),
@@ -635,10 +634,14 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         return currentProfiles is { Count: 1 } ? currentProfiles[0] : null;
     }
 
+    // "PowerAppsCli" is PAC's own spelling, and the case matters: Windows resolves any casing, Linux
+    // and macOS do not. Spelled "PowerAppsCLI" here, every profile read failed on Linux with a
+    // not-found on a path that plainly exists, and MsalCacheHelper created a second, empty directory
+    // beside PAC's real one.
     internal static string GetPacCliDataDirectory()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(localAppData, "Microsoft", "PowerAppsCLI");
+        return Path.Combine(localAppData, "Microsoft", "PowerAppsCli");
     }
 
     PacAuthProfiles? _cachedAuthProfiles;
@@ -696,34 +699,9 @@ public class DataverseConnector(IAnsiConsole console, HttpClient httpClient)
         // Other exceptions bubble up
     }
 
-    string GetPacCliVersion()
-    {
-        try
-        {
-            using var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "pac",
-                    Arguments = "--version",
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-            process.Start();
-            var outputTask = process.StandardOutput.ReadToEndAsync();
-            if (!process.WaitForExit(2000))
-            {
-                process.Kill();
-                return "unknown (timeout)";
-            }
-            var outputText = outputTask.GetAwaiter().GetResult();
-            return string.IsNullOrWhiteSpace(outputText) ? "unknown" : outputText.Trim();
-        }
-        catch (Exception)
-        {
-            return "unknown (pac CLI not found)";
-        }
-    }
+    // Read, not probed. Setup resolves the version through PacUtils before any command runs, so
+    // re-shelling here only risked disagreeing with it -- which it did: the old probe ran
+    // 'pac --version', not a command on PAC 2.12, so pac parsed it as an unknown argument and printed
+    // its entire help, and that landed inside these error messages. Null only when setup never ran.
+    string GetPacCliVersion() => runtimeOptions?.ToolVersions?.PacVersion ?? "unknown";
 }

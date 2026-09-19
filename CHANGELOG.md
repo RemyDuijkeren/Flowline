@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every command that reads a PAC auth profile works on Linux and macOS again.** Flowline looked for PAC's data folder under a name spelled `PowerAppsCLI`, while PAC writes `PowerAppsCli`. Windows resolves either spelling, so this only ever failed off Windows, where `sync`, `push` and the rest reported the profile file as not found at a path that plainly existed. Flowline also no longer leaves an empty second folder beside PAC's real one.
+- **An error about PAC auth profiles no longer prints PAC's entire help text.** Flowline asked the CLI for its version with `pac --version`, which current PAC versions parse as an unknown argument and answer with full help; that answer ended up inside the error message. The version now comes from the startup check that already resolved it.
 - **`flowline status` probes .NET, PAC CLI and Git fresh on every run** instead of reading a cache with a seven-day life. Installing or swapping a toolchain used to leave `status` reporting the old one for up to a week — most visibly a PAC CLI installed as a dotnet tool still shown as the slower `dnx` one-shot runner. The fresh probe also refreshes the cache the other commands read.
 
 ## [0.19.0] - 2026-09-13
