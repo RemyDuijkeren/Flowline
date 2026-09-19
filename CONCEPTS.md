@@ -75,8 +75,18 @@ The required value passed to `--force`/`-f` (e.g. `--force recreate-assembly`) n
 
 ## Auth
 
+### PAC auth profile
+A named record PAC CLI keeps for one way of reaching Dataverse: which identity signs in, which authority and tenant it belongs to, and which environment it points at. Flowline holds no credentials of its own and resolves a profile per target environment rather than asking anyone to sign in again, so a profile is the unit of "who am I when I talk to this environment". A profile is metadata about a sign-in; the access token it stands for lives in the [[PAC token store]], and the two are kept in different places.
+
+Profiles come in kinds. A [[UNIVERSAL profile]] is a user login good for any environment in the tenant; a ServicePrincipal profile carries an application identity for headless use.
+
+### PAC token store
+Where PAC keeps the access tokens its profiles stand for. It is whatever secret store the operating system provides rather than one file format everywhere, so which store holds the token, and what identifies it inside that store, both change with the platform. Reading a profile therefore proves nothing about being able to get a token: the profile and the token are two different lookups against two different stores, and a reader has to target the store that platform's PAC actually writes.
+
+A reader that asks the wrong store, or asks the right store by the wrong identity, gets silence rather than an error, and silence is indistinguishable from an expired session. On a machine with no reachable secret store, such as a remote session with no desktop, the store cannot answer at all and a command has to authenticate on its own.
+
 ### UNIVERSAL profile
-A PAC auth profile created via browser/user login (`pac auth create` with no `--applicationId`). Stores the user's identity and an MSAL token cache entry. Can connect to any Dataverse environment the user has access to in their tenant. Multiple UNIVERSAL profiles can coexist — typically one per named environment (`Dev`, `Prod`, etc.) — each pointing to a different URL but using the same underlying user account. Contrast with a ServicePrincipal profile, which stores an application ID and tenant for headless/CI use.
+A [[PAC auth profile]] created via browser/user login (`pac auth create` with no `--applicationId`). Records the user's identity; the token it stands for is held in the [[PAC token store]], not in the profile. Can connect to any Dataverse environment the user has access to in their tenant. Multiple UNIVERSAL profiles can coexist — typically one per named environment (`Dev`, `Prod`, etc.) — each pointing to a different URL but using the same underlying user account. Contrast with a ServicePrincipal profile, which stores an application ID and tenant for headless/CI use.
 
 ## Code Generation
 
@@ -227,3 +237,6 @@ fails the push before any Dataverse write.
 - "Orphan" carries two directions and they are not the same thing — an [[Orphan component]] is in the
   environment and missing from source; a [[Global orphan]] is in source and missing from the solution.
   A sweep written for one is not safe for the other.
+- A [[PAC auth profile]] and the [[PAC token store]] had been treated as one thing. They are distinct:
+  the profile says who and where, the store holds the token, and they live in different places with
+  different platform rules. Finding a profile does not mean a token is reachable.
