@@ -33,7 +33,7 @@ public class TelemetryDisclosureTests : IDisposable
         TelemetryDisclosure.ShowOnce(new ValidationCacheStore(_cachePath), writer);
 
         var text = writer.ToString();
-        text.Should().StartWith("!", "it is a heads-up the reader may want to act on, not neutral detail");
+        text.TrimStart().Should().StartWith("!", "it is a heads-up the reader may want to act on, not neutral detail");
         text.Should().Contain("log file", "the claim that the local log is the payload is the verifiable one");
         text.Should().Contain("wiki/18-Telemetry", "a one-off notice cannot carry the whole story");
         text.Should().NotContain("anonym", "a salted hash is pseudonymisation, not anonymisation");
@@ -68,6 +68,17 @@ public class TelemetryDisclosureTests : IDisposable
         TelemetryDisclosure.ShowOnce(store, writer);
 
         writer.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TheNoticeIsSetOffFromWhateverThePrintedBeforeIt()
+    {
+        var writer = new StringWriter();
+
+        TelemetryDisclosure.ShowOnce(new ValidationCacheStore(_cachePath), writer);
+
+        writer.ToString().Should().StartWith(Environment.NewLine,
+            "it lands under the command's own last line, usually the finish line");
     }
 
     [Fact]
@@ -120,7 +131,8 @@ public class TelemetryDisclosureTests : IDisposable
 
         TelemetryDisclosure.ShowOnce(new ValidationCacheStore(_cachePath), writer, useColour: true);
 
-        writer.ToString().Should().StartWith("\u001b[33m").And.EndWithEquivalentOf("\u001b[0m" + Environment.NewLine);
+        writer.ToString().TrimStart().Should()
+            .StartWith("\u001b[33m").And.EndWithEquivalentOf("\u001b[0m" + Environment.NewLine);
     }
 
     [Fact]

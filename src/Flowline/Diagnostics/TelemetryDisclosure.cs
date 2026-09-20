@@ -45,6 +45,8 @@ public static class TelemetryDisclosure
             // every later run reads the marker and stays silent. The plan's own test list already
             // prefers the other trade ("repeating it beats failing a command"), so it applies to both
             // halves here.
+            // Set off from whatever the command printed last, which is usually its finish line.
+            stderr.WriteLine();
             stderr.WriteLine(useColour ? Yellow + Text + Reset : Text);
             stderr.Flush();
 
