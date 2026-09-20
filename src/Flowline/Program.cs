@@ -268,8 +268,8 @@ catch { } // Intentional: nothing about scrubbing setup is worth failing a launc
 // rules as every tag value.
 var runName = FlowlineScrubber.Current.Scrub(args.FirstOrDefault()) ?? applicationName;
 
-if (FlowlineTelemetry.Start(runName, FlowlineScrubber.Current, TelemetryConnectionString.Value, telemetryEnabled))
-    TelemetryDisclosure.ShowOnce();
+var telemetrySending = FlowlineTelemetry.Start(
+    runName, FlowlineScrubber.Current, TelemetryConnectionString.Value, telemetryEnabled);
 
 // Environment.Exit (five call sites in GitUtils/PacUtils/DotNetUtils) terminates without unwinding, so
 // the wrapper's finally never runs and the indicator would be left spinning for the rest of the
@@ -306,6 +306,13 @@ var exitCode = await tabStatus.RunAsync(async () =>
 });
 
 FlowlineTelemetry.RecordExit(exitCode);
+
+// After the command has had its say, so the notice reads as a footnote rather than as a banner above
+// the logo, and still before the flush below, which is what actually sends. Only on a run that built
+// a provider, so an opted-out run, or a build with no connection string, writes nothing (R2, R10).
+if (telemetrySending)
+    TelemetryDisclosure.ShowOnce();
+
 FlowlineTelemetry.Flush();
 Log.CloseAndFlush();
 return exitCode;
