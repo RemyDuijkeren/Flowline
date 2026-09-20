@@ -11,6 +11,7 @@ public sealed class ValidationCache
     public Dictionary<string, ValidationCacheEntry<EnvironmentInfo>> Environments { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ValidationCacheEntry<SolutionInfo>> Solutions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public DateTimeOffset? WelcomeShownAtUtc { get; set; }
+    public DateTimeOffset? TelemetryDisclosureShownAtUtc { get; set; }
     public ValidationCacheEntry<string?>? AvailableUpdate { get; set; }
 }
 
