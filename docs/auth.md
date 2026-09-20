@@ -27,6 +27,13 @@ Profile selection order:
 1. A resource-specific profile whose URL matches the target environment
 2. A UNIVERSAL profile (the active session from `pac auth create` without `--url`)
 
+## Telemetry follows PAC too
+
+Flowline defers to PAC CLI for one more thing: whether to send telemetry. `pac telemetry disable`
+turns Flowline's telemetry off as well, by reading PAC's own user settings file. It is read, never
+written. A pac opt-*in* is not read as consent to Flowline — that leaves Flowline's own default in
+charge. See the Telemetry section in the README for everything that sends and every way to stop it.
+
 ## Developer setup
 
 Authenticate once with PAC CLI. Flowline reuses the session automatically.

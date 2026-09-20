@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Flowline reports crashes and usage to its authors.** Every run sends the command, its exit code and duration, your OS and tool versions, whether you are on CI, and the full exception when something fails. On by default, disclosed on stderr the first time it sends. `pac telemetry disable` turns it off and persists; `FLOWLINE_TELEMETRY_OPTOUT` or `PP_TOOLS_TELEMETRY_OPTOUT` do the same for a CI image. Nothing about what a command did to an environment is sent, and everything that could name you or a client is hashed first — your log file shows exactly what was sent. See the Telemetry section in the README.
+
 ### Changed
 
 - **Log files hide more.** Environment URLs and email addresses were already replaced by a salted hash; filesystem paths, solution names and Git branch names now are too. A path keeps its shape, so `/home/<hash>/Projects/<hash>/Solution` still tells you what the layout was without naming you or your client.

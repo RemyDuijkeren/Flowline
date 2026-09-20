@@ -170,6 +170,69 @@ export function onChangeCreditlimit(executionContext) { ... }
 
 ---
 
+## Telemetry
+
+Flowline reports what breaks. Every run sends the command name, its exit code and duration, your
+OS, the Flowline, .NET, PAC CLI and Git versions in play, whether you are on CI, and — when a
+command fails — the full exception with its stack trace. It is on by default, and the first run
+that sends says so on stderr.
+
+Everything that could name you or a client is replaced by a salted hash before it leaves:
+environment URLs, email addresses, the user segment of filesystem paths, solution names and Git
+branch names. The machine is identified only by a value derived from a random per-machine salt,
+which is not reversible to any machine or user.
+
+The same hashing runs on your local log file, so **the log file is the payload**. Open the one the
+CLI prints a link to on failure and you are reading what was sent.
+
+What is never sent: anything about what a command did to an environment. No component names, no
+records, no solution contents. Flowline reports how it ran and how it failed, not what it ran
+against.
+
+### Turning it off
+
+**`pac telemetry disable`** turns Flowline's telemetry off too, and it persists. Flowline reads PAC
+CLI's own setting, because pac is the tool it wraps and the one you already have. The reverse does
+not hold: pac reading *enabled* is consent to pac, not to Flowline, so it leaves Flowline's own
+default in charge.
+
+For CI images and shells, set either of these to `1`, `true` or `yes`:
+
+| Variable | Whose it is |
+|---|---|
+| `FLOWLINE_TELEMETRY_OPTOUT` | Flowline's own |
+| `PP_TOOLS_TELEMETRY_OPTOUT` | PAC CLI's, honoured here |
+
+Turning telemetry off costs you nothing locally: the log file still carries its trace ID, still
+records the same stage timings, and is still scrubbed.
+
+There is **no way to disable telemetry for a whole repository in one commit**. A client who wants
+that sets one of the variables in their CI image and asks developers to run the pac command.
+
+### Why the default is on
+
+The failures worth fixing are the ones nobody files. A consultant hits an edge case mid-deploy at a
+client, works around it, and moves on; nothing reaches the backlog. Opt-in telemetry arrives exactly
+when a tool is least mature and needs it most, and a default can be relaxed later while the reverse
+cannot. The disclosure on first run is what makes that defensible.
+
+### Letting it through a firewall
+
+Prefer the **`AzureMonitor` service tag**, which is what Microsoft recommends and what survives the
+resource moving between stamps or regions.
+
+Where service tags are not available, allow the ingestion host on 443. The current host is
+`westeurope-5.in.applicationinsights.azure.com`. Note the `-5`: Microsoft documents the regional
+form as `{region}.in.applicationinsights.azure.com` with no stamp suffix, so an entry matching only
+the published form will not match this one. Treat the stamped host as the current value, not as a
+contract — allowing the suffix `.in.applicationinsights.azure.com` is more durable, though that is
+inferred from the observed host rather than documented by Microsoft.
+
+Blocking it entirely is supported and silent: a blocked or proxied endpoint does not change a
+command's exit code or its output.
+
+---
+
 ## Documentation
 
 Full docs live on the **[Wiki](https://github.com/RemyDuijkeren/Flowline/wiki)**. Using an AI agent? See **[AI Agents](https://github.com/RemyDuijkeren/Flowline/wiki/11-AI-Agents)** for the exit-code contract and how to install Flowline as a Claude Code / Codex plugin.
