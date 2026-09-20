@@ -19,9 +19,12 @@ namespace Flowline.Diagnostics;
 /// </remarks>
 public static class FlowlineTelemetry
 {
-    // U1 measured this against a blackholed endpoint: the exporter's own worst case is about four
-    // seconds, so without a bound of our own every command would pay it on exit.
-    const int DefaultFlushBoundMs = 3000;
+    // The exporter's own teardown runs for about three seconds whatever happens, so this bound is what
+    // every command actually pays, not just a blocked one. Measured against the live resource: a span
+    // sent with a 250 ms bound never arrived, and one sent with 700 ms or more always did. 1.5 s is the
+    // margin over the smallest value observed to work, and it is the number to revisit if the cost of
+    // a command matters more than the odd lost span.
+    const int DefaultFlushBoundMs = 1500;
 
     static TracerProvider? s_provider;
     static Activity? s_root;

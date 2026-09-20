@@ -74,6 +74,34 @@ and a refusing proxy degrades fast rather than costing the full bound (R12).
 SDK or the processor. Application Insights applies its own limit on a custom dimension value
 server-side; that is not observable from the client and is verified against the live resource in U6.
 
+**6. Three exporter defaults contradict the plan and cost a short-lived process real time.**
+`TracesPerSecond` defaults to 5, which is rate-limited sampling: spans arrived stamped
+`microsoft.sample_rate: 25`, while the plan's scope boundaries rule sampling out. `EnableLiveMetrics`,
+`EnableStandardMetrics` and `EnablePerformanceCounters` all default on and are metric signals this
+plan does not send; performance counters were observed arriving. Separately, the exporter's statsbeat
+accounted for roughly two of the four seconds a teardown took, and is disabled through
+`APPLICATIONINSIGHTS_STATSBEAT_DISABLED`, set in-process.
+
+**7. How long the bound actually has to be.** With statsbeat and the metric signals off, teardown still
+runs about three seconds regardless of the endpoint, so the bound is what every command pays, not just
+a blocked one. Measured against the live resource, sending one span per process and then exiting:
+
+| Bound | Span arrived in App Insights |
+|---|---|
+| 250 ms | no |
+| 700 ms | yes (2/2) |
+| 1000 ms | yes (2/2) |
+| 1200 ms | yes (2/2) |
+| 1500 ms | yes (2/2) |
+
+The abandoned teardown thread dies at process exit, so a bound below what the transmission needs loses
+the span silently: it is dropped in memory rather than spooled. Flowline uses 1500 ms.
+
+**8. Offline storage spools only on a transmission that fails, not on one that is abandoned.** With a
+short `Retry.NetworkTimeout` the send fails fast, lands in `StorageDirectory`, and a later run drains
+it — verified. That is the shape a "never wait, always forward later" design would need; it is not what
+a short bound gives you.
+
 ## Consequence for the plan
 
 KTD8's three call sites (after `RunAsync`, `ProcessExit`, SIGTERM) and its idempotency requirement

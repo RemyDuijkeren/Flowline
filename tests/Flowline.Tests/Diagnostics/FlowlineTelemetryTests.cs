@@ -109,9 +109,9 @@ public class FlowlineTelemetryTests : IDisposable
         Activity.Current.Should().BeNull();
     }
 
-    // R7/AE11: the guarantee that matters. The exporter's own teardown runs for about four seconds
-    // against an endpoint that never answers (see docs/solutions/azure-monitor-otlp-exporter-flush-behaviour.md),
-    // so the bound has to be enforced here rather than by the timeout the SDK takes.
+    // R7/AE11: the guarantee that matters. The exporter's own teardown runs for seconds whatever the
+    // endpoint does (see docs/solutions/azure-monitor-otlp-exporter-flush-behaviour.md), so the bound
+    // has to be enforced here rather than by the timeout the SDK takes.
     [Fact]
     public void FlushAgainstAnEndpointThatNeverAnswersReturnsWithinItsBound()
     {
