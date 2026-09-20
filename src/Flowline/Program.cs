@@ -24,7 +24,9 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Flowline.Diagnostics;
+using OpenTelemetry.Logs;
 using ILogger = Serilog.ILogger;
 using Spectre.Console.Cli.Help;
 
@@ -100,7 +102,36 @@ try
     Log.Logger = serilogLogger;
 }
 catch { } // Intentional: Serilog init failure must not block command launch.
-services.AddLogging(b => b.ClearProviders().AddSerilog(serilogLogger));
+// Consent is resolved once, here, because both pipelines need the answer and reading it twice means
+// reading pac's settings file twice.
+var telemetryEnabled = TelemetryConsent.IsEnabled();
+
+// One factory for the whole process, so the exported log records have a single owner to flush. The
+// minimum level is Debug to match what the local file holds; Serilog applies its own minimum on top,
+// so the file is unchanged.
+var loggerFactory = LoggerFactory.Create(b =>
+{
+    b.ClearProviders().SetMinimumLevel(LogLevel.Debug).AddSerilog(serilogLogger);
+
+    if (!telemetryEnabled || !FlowlineScrubber.Current.HasSalt) return;
+
+    try
+    {
+        b.AddOpenTelemetry(o => FlowlineTelemetry.ConfigureLogs(o, FlowlineScrubber.Current,
+            options => options.AddAzureMonitorLogExporter(
+                e => FlowlineTelemetry.ApplyExporterOptions(e, TelemetryConnectionString.Value))));
+    }
+    catch { } // Intentional: a log exporter that will not build leaves local logging as it was.
+});
+FlowlineTelemetry.AttachLogPipeline(loggerFactory);
+
+// The exception handler logs through this rather than through Serilog directly, so the one line that
+// explains a failure reaches both sinks. Writing to Serilog alone kept it out of the exported log
+// entirely, because that pipeline only ever sees ILogger calls.
+var programLogger = loggerFactory.CreateLogger("Flowline");
+
+services.AddSingleton<ILoggerFactory>(loggerFactory);
+services.AddLogging();
 
 runtimeOptions.ArgsRedacted = SubprocessCapture.RedactSensitiveArgs(string.Join(" ", args));
 
@@ -135,7 +166,7 @@ app.Configure(config =>
         switch (ex)
         {
             case FlowlineException fe:
-                serilogLogger?.Error("Command failed: {ExceptionDetail}", scrubbedException);
+                programLogger.LogError("Command failed: {ExceptionDetail}", scrubbedException);
                 FlowlineTelemetry.RecordFailure((int)fe.ExitCode, scrubbedException);
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(fe.Message)}");
                 WriteExceptionContext(fe, serilogLogger);
@@ -145,7 +176,7 @@ app.Configure(config =>
             // DataverseTimeout.Matches reads one of those raised without the Ctrl+C token as a timed-out
             // request. Esc would otherwise be reported as an unreachable environment.
             case PromptCancelledException:
-                serilogLogger?.Information("Cancelled at a prompt");
+                programLogger.LogInformation("Cancelled at a prompt");
                 FlowlineTelemetry.RecordExit((int)ExitCode.Cancelled);
                 AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
                 return (int)ExitCode.Cancelled;
@@ -154,14 +185,14 @@ app.Configure(config =>
             // OperationCanceledException arm: the HttpClient path throws TaskCanceledException,
             // which would otherwise be reported as a user Ctrl+C and exit 130.
             case var _ when DataverseTimeout.Matches(ex, cancellationTokenSource.IsCancellationRequested):
-                serilogLogger?.Error("Dataverse request timed out: {ExceptionDetail}", scrubbedException);
+                programLogger.LogError("Dataverse request timed out: {ExceptionDetail}", scrubbedException);
                 FlowlineTelemetry.RecordFailure((int)ExitCode.Timeout, scrubbedException);
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(DataverseTimeout.Message)}");
                 AnsiConsole.MarkupLine($"[dim]{Markup.Escape(DataverseTimeout.NextStep(args.FirstOrDefault()))}[/]");
                 AnsiConsole.MarkupLine(logLink);
                 return (int)ExitCode.Timeout;
             case OperationCanceledException:
-                serilogLogger?.Information("Command cancelled by user");
+                programLogger.LogInformation("Command cancelled by user");
                 FlowlineTelemetry.RecordExit((int)ExitCode.Cancelled);
                 return (int)ExitCode.Cancelled;
             // Covers CommandParseException (e.g. "--force" with no value swallowed the next
@@ -170,7 +201,7 @@ app.Configure(config =>
             // malformed CLI invocations, not application bugs, so they get the same clean
             // treatment as a FlowlineException rather than a raw internal stack trace.
             case CommandRuntimeException cre:
-                serilogLogger?.Error("Command failed: {ExceptionDetail}", scrubbedException);
+                programLogger.LogError("Command failed: {ExceptionDetail}", scrubbedException);
                 FlowlineTelemetry.RecordFailure((int)ExitCode.ValidationFailed, scrubbedException);
                 // "Unknown command 'dev'" is true and teaches nothing when the token is a perfectly good
                 // environment in the wrong position. Only this one shape is recognised, and it cannot
@@ -184,7 +215,7 @@ app.Configure(config =>
                 AnsiConsole.MarkupLine(logLink);
                 return (int)ExitCode.ValidationFailed;
             default:
-                serilogLogger?.Error("Unhandled exception: {ExceptionDetail}", scrubbedException);
+                programLogger.LogError("Unhandled exception: {ExceptionDetail}", scrubbedException);
                 FlowlineTelemetry.RecordFailure((int)ExitCode.GeneralError, scrubbedException);
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
                 WriteExceptionContext(ex, serilogLogger);
@@ -196,10 +227,9 @@ app.Configure(config =>
     CliConfiguration.Configure(config);
 });
 
-var hookLoggerFactory = LoggerFactory.Create(b => b.AddSerilog(serilogLogger));
 AnsiConsole.Console.Pipeline.Attach(new VerboseFilterHook(runtimeOptions));
 AnsiConsole.Console.Pipeline.Attach(new LoggingRenderHook(
-    hookLoggerFactory.CreateLogger<LoggingRenderHook>()
+    loggerFactory.CreateLogger<LoggingRenderHook>()
 ));
 
 // Tab-level state for a long run: the terminal's own progress indicator while the command works, and
@@ -238,7 +268,7 @@ catch { } // Intentional: nothing about scrubbing setup is worth failing a launc
 // rules as every tag value.
 var runName = FlowlineScrubber.Current.Scrub(args.FirstOrDefault()) ?? applicationName;
 
-if (FlowlineTelemetry.Start(runName, FlowlineScrubber.Current))
+if (FlowlineTelemetry.Start(runName, FlowlineScrubber.Current, TelemetryConnectionString.Value, telemetryEnabled))
     TelemetryDisclosure.ShowOnce();
 
 // Environment.Exit (five call sites in GitUtils/PacUtils/DotNetUtils) terminates without unwinding, so
@@ -278,7 +308,6 @@ var exitCode = await tabStatus.RunAsync(async () =>
 FlowlineTelemetry.RecordExit(exitCode);
 FlowlineTelemetry.Flush();
 Log.CloseAndFlush();
-hookLoggerFactory.Dispose();
 return exitCode;
 
 void WriteExceptionContext(Exception ex, ILogger? logger)

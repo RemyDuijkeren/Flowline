@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Flowline.Commands;
 using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Diagnostics;
 using Flowline.Diagnostics;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;

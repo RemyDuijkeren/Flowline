@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Flowline.Core.Diagnostics;
 using Flowline.Diagnostics;
 using Flowline.Logging;
 using OpenTelemetry;

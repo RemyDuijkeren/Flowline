@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Flowline.Core.Diagnostics;
 using Spectre.Console;
 
 namespace Flowline.Core.Console;
@@ -51,15 +53,69 @@ public static class SpinnerExtensions
 
 public readonly struct FlowlineStatus(Status status)
 {
-    public Task StartAsync(string statusText, Func<StatusContext, Task> action)
-        => status.StartAsync($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action);
+    public async Task StartAsync(string statusText, Func<StatusContext, Task> action)
+    {
+        using var stage = FlowlineStage.Start(statusText);
+        try { await status.StartAsync($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action); }
+        catch (Exception ex) { stage.Failed(ex); throw; }
+    }
 
-    public Task<T> StartAsync<T>(string statusText, Func<StatusContext, Task<T>> action)
-        => status.StartAsync($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action);
+    public async Task<T> StartAsync<T>(string statusText, Func<StatusContext, Task<T>> action)
+    {
+        using var stage = FlowlineStage.Start(statusText);
+        try { return await status.StartAsync($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action); }
+        catch (Exception ex) { stage.Failed(ex); throw; }
+    }
 
     public void Start(string statusText, Action<StatusContext> action)
-        => status.Start($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action);
+    {
+        using var stage = FlowlineStage.Start(statusText);
+        try { status.Start($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action); }
+        catch (Exception ex) { stage.Failed(ex); throw; }
+    }
 
     public T Start<T>(string statusText, Func<StatusContext, T> action)
-        => status.Start($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action);
+    {
+        using var stage = FlowlineStage.Start(statusText);
+        try { return status.Start($"[{SpinnerExtensions.s_spinnerColor}]{statusText}[/]", action); }
+        catch (Exception ex) { stage.Failed(ex); throw; }
+    }
+}
+
+/// <summary>
+/// A named span around one phase of a command, started from the spinner every phase already shows.
+/// </summary>
+/// <remarks>
+/// Here rather than at each call site because the spinner is the one place every phase passes
+/// through: twenty-five call sites across the commands get a stage span without any of them saying
+/// so, and a phase added later is instrumented by construction.
+/// </remarks>
+public readonly struct FlowlineStage(Activity? activity) : IDisposable
+{
+    public static FlowlineStage Start(string statusText) =>
+        new(FlowlineActivitySource.Source.StartActivity(NameFrom(statusText)));
+
+    public void Failed(Exception ex)
+    {
+        activity?.SetStatus(ActivityStatusCode.Error);
+        activity?.SetTag("stage.error", ex.GetType().Name);
+    }
+
+    public void Dispose() => activity?.Dispose();
+
+    /// <summary>
+    /// Derives a stable span name from a spinner label: the words before the first value it
+    /// interpolates, which is where every label puts the thing being acted on.
+    /// </summary>
+    /// <remarks>
+    /// "Packing [bold]AcmeBank[/]..." becomes "Packing". Taking the whole label instead would give
+    /// every run its own span name — unaggregatable — and put a solution name in a field the scrubber
+    /// does not reach, because a span's name is not one of its tags.
+    /// </remarks>
+    internal static string NameFrom(string statusText)
+    {
+        var upToFirstValue = statusText.Split('[')[0].Trim();
+        var name = (upToFirstValue.Length > 0 ? upToFirstValue : statusText).TrimEnd('.', ' ');
+        return name.Length > 0 ? name : "stage";
+    }
 }

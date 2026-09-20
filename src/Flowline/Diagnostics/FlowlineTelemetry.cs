@@ -1,7 +1,9 @@
+using Flowline.Core.Diagnostics;
 using System.Diagnostics;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Flowline.Logging;
 using OpenTelemetry;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
@@ -28,6 +30,7 @@ public static class FlowlineTelemetry
     const int DefaultFlushBoundMs = 1500;
 
     static TracerProvider? s_provider;
+    static IDisposable? s_logPipeline;
     static Activity? s_root;
     static int s_torndown;
 
@@ -48,27 +51,8 @@ public static class FlowlineTelemetry
         {
             try
             {
-                // The exporter's own statsbeat sends usage metrics about the SDK on its own schedule,
-                // and waits for them on the way out — measured at about two of the four seconds a
-                // teardown took. Not persisted anywhere, though any pac/git/dotnet subprocess started
-                // after this inherits it, which at worst disables their statsbeat too.
-                Environment.SetEnvironmentVariable("APPLICATIONINSIGHTS_STATSBEAT_DISABLED", "true");
-
                 s_provider = Configure(Sdk.CreateTracerProviderBuilder(), scrubber, builder =>
-                        builder.AddAzureMonitorTraceExporter(o =>
-                        {
-                            o.ConnectionString = connectionString;
-                            // The exporter rate-limits to five traces a second by default, which arrived
-                            // stamped as a 25% sample. Flowline's volume does not need sampling, and a
-                            // sampled dataset makes "which exit code actually fires" harder to answer.
-                            o.TracesPerSecond = null;
-                            o.SamplingRatio = 1.0F;
-                            // Traces only. These three are metric signals the plan does not send, and
-                            // each one is work a short-lived CLI process pays for on the way out.
-                            o.EnableLiveMetrics = false;
-                            o.EnableStandardMetrics = false;
-                            o.EnablePerformanceCounters = false;
-                        }))
+                        builder.AddAzureMonitorTraceExporter(o => ApplyExporterOptions(o, connectionString)))
                     .Build();
             }
             catch
@@ -110,17 +94,72 @@ public static class FlowlineTelemetry
     {
         var configured = builder
             .AddSource(FlowlineActivitySource.Source.Name)
-            // Built from empty on purpose. The default resource detectors put the machine's host name
-            // on every item, which arrives as cloud_RoleInstance — a plain machine identifier, and the
-            // one thing R13 says must only ever be the salted value.
-            .SetResourceBuilder(ResourceBuilder.CreateEmpty().AddService(
-                serviceName: "flowline",
-                serviceVersion: FlowlineActivitySource.Source.Version,
-                serviceInstanceId: scrubber.MachineId))
+            .SetResourceBuilder(BuildResource(scrubber))
             .AddProcessor(new ScrubbingProcessor(scrubber));
 
         return addExporter(configured);
     }
+
+    /// <summary>
+    /// Registers the log-scrubbing processor and then the log exporter, in that order, for the same
+    /// reason and with the same guarantee as <see cref="Configure"/>.
+    /// </summary>
+    internal static void ConfigureLogs(
+        OpenTelemetryLoggerOptions options, FlowlineScrubber scrubber, Action<OpenTelemetryLoggerOptions> addExporter)
+    {
+        // The exporter reads FormattedMessage, so the message has to be rendered before it is scrubbed
+        // — and ParseStateValues turns the structured properties into attributes the processor can
+        // rewrite one by one rather than as one opaque blob.
+        options.IncludeFormattedMessage = true;
+        options.ParseStateValues = true;
+        // Scopes would carry values nothing in this pipeline scrubs.
+        options.IncludeScopes = false;
+
+        options.SetResourceBuilder(BuildResource(scrubber));
+        options.AddProcessor(new ScrubbingLogProcessor(scrubber));
+        addExporter(options);
+    }
+
+    /// <summary>The resource every signal shares.</summary>
+    /// <remarks>
+    /// Built from empty on purpose. The default resource detectors put the machine's host name on
+    /// every item, which arrives as cloud_RoleInstance — a plain machine identifier, and the one thing
+    /// R13 says must only ever be the salted value.
+    /// </remarks>
+    internal static ResourceBuilder BuildResource(FlowlineScrubber scrubber) =>
+        ResourceBuilder.CreateEmpty().AddService(
+            serviceName: "flowline",
+            serviceVersion: FlowlineActivitySource.Source.Version,
+            serviceInstanceId: scrubber.MachineId);
+
+    /// <summary>Applies the exporter settings both signals share.</summary>
+    internal static void ApplyExporterOptions(AzureMonitorExporterOptions o, string connectionString)
+    {
+        // Before the first exporter is built, whichever signal builds first. The exporter's own
+        // statsbeat sends usage metrics about the SDK on its own schedule and waits for them on the
+        // way out — measured at about two of the four seconds a teardown took. Not persisted
+        // anywhere, though any pac/git/dotnet subprocess started after this inherits it, which at
+        // worst disables their statsbeat too.
+        Environment.SetEnvironmentVariable("APPLICATIONINSIGHTS_STATSBEAT_DISABLED", "true");
+
+        o.ConnectionString = connectionString;
+        // The exporter rate-limits to five traces a second by default, which arrived stamped as a 25%
+        // sample. Flowline's volume does not need sampling, and a sampled dataset makes "which exit
+        // code actually fires" harder to answer.
+        o.TracesPerSecond = null;
+        o.SamplingRatio = 1.0F;
+        // These three are metric signals the plan does not send, and each one is work a short-lived
+        // CLI process pays for on the way out.
+        o.EnableLiveMetrics = false;
+        o.EnableStandardMetrics = false;
+        o.EnablePerformanceCounters = false;
+    }
+
+    /// <summary>
+    /// Hands the logging pipeline's lifetime to the same bounded teardown the spans use, since the
+    /// exported log records only leave when its provider is disposed.
+    /// </summary>
+    internal static void AttachLogPipeline(IDisposable loggerFactory) => s_logPipeline = loggerFactory;
 
     public static void RecordExit(int exitCode)
     {
@@ -164,23 +203,35 @@ public static class FlowlineTelemetry
             var provider = s_provider;
             s_provider = null;
 
+            var logPipeline = s_logPipeline;
+            s_logPipeline = null;
+
             var root = s_root;
             s_root = null;
             try { root?.Dispose(); }
             catch { } // Intentional: ending the span must not cost us the export below.
 
-            if (provider is null) return;
+            if (provider is null && logPipeline is null) return;
 
             // ForceFlush returns as soon as the batch reaches the exporter, not when the transmission
             // settles — the HTTP send is what Dispose waits on, and its timeout is not ours to set. So
-            // the bound is enforced here, around both, on a thread-pool (background) thread: an
-            // overrunning send is abandoned rather than held onto, and never delays process exit.
-            var teardown = Task.Run(() =>
+            // the bound is enforced here, on thread-pool (background) threads: an overrunning send is
+            // abandoned rather than held onto, and never delays process exit.
+            //
+            // The two pipelines tear down side by side rather than one after the other. Run in
+            // sequence, the spans consume the whole bound and the log records never leave at all.
+            var teardown = new[]
             {
-                provider.ForceFlush(boundMs);
-                provider.Dispose();
-            });
-            teardown.Wait(boundMs);
+                Task.Run(() =>
+                {
+                    provider?.ForceFlush(boundMs);
+                    provider?.Dispose();
+                }),
+                // Disposing the logger factory is what flushes the exported log records; the Serilog
+                // logger behind it is not owned by that factory, so the local file is unaffected.
+                Task.Run(() => logPipeline?.Dispose()),
+            };
+            Task.WaitAll(teardown, boundMs);
         }
         catch
         {
@@ -193,6 +244,7 @@ public static class FlowlineTelemetry
     // the next one with a torn-down state.
     internal static void ResetForTests()
     {
+        s_logPipeline = null;
         s_root?.Dispose();
         s_root = null;
         s_provider = null;
