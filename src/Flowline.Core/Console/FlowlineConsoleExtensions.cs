@@ -67,4 +67,17 @@ public static class FlowlineConsoleExtensions
         beforePrompt?.Invoke();
         return await console.PromptAsync(new ConfirmationPrompt(Question(message)) { DefaultValue = defaultValue }, cancellationToken);
     }
+
+    /// <summary>
+    /// Prompts the user with a confirmation, or automatically accepts if --force &lt;specifier&gt; (or --force all) is
+    /// specified. In non-interactive mode without --force, throws instead of prompting.
+    /// </summary>
+    public static bool Confirm(this IAnsiConsole console, string prompt, bool defaultValue, FlowlineRuntimeOptions? options, string specifier) =>
+        console.ConfirmGated(prompt, defaultValue, options?.HasForce(specifier) == true,
+            $"Confirmation required but not in interactive mode. Use --force {specifier} to proceed.");
+
+    /// <inheritdoc cref="Confirm"/>
+    public static Task<bool> ConfirmAsync(this IAnsiConsole console, string prompt, bool defaultValue, FlowlineRuntimeOptions? options, string specifier, CancellationToken cancellationToken) =>
+        console.ConfirmGatedAsync(prompt, defaultValue, options?.HasForce(specifier) == true,
+            $"Confirmation required but not in interactive mode. Use --force {specifier} to proceed.", cancellationToken);
 }

@@ -1,3 +1,4 @@
+using Flowline.Core.Console;
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
