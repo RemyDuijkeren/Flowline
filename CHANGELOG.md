@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Log files hide more.** Environment URLs and email addresses were already replaced by a salted hash; filesystem paths, solution names and Git branch names now are too. A path keeps its shape, so `/home/<hash>/Projects/<hash>/Solution` still tells you what the layout was without naming you or your client.
+- **A failure's exception is written to the log file scrubbed**, including the whole inner chain. The type, the message and the stack trace are all still there; what is no longer there is the environment URL or the home path a message happened to quote.
+
 ## [0.20.0] - 2026-09-19
 
 ### Fixed

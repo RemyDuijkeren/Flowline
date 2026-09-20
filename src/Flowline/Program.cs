@@ -87,13 +87,13 @@ try
     var logPath = FlowlineStoragePaths.GetLogsPath(runTime, args.FirstOrDefault());
     try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)!); } catch { } // Intentional: log dir creation failure must not block launch.
     runtimeOptions.TelemetrySalt = new TelemetrySaltStore().LoadOrCreate();
+    FlowlineScrubber.Initialize(runtimeOptions.TelemetrySalt);
     serilogLogger = new LoggerConfiguration()
         .MinimumLevel.Debug()
         .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
         .MinimumLevel.Override("System", LogEventLevel.Warning)
         .Enrich.With(new ActivityTraceEnricher())
-        .Enrich.With(new UrlScrubEnricher(runtimeOptions.TelemetrySalt))
-        .Enrich.With(new EmailScrubEnricher(runtimeOptions.TelemetrySalt))
+        .Enrich.With(new ScrubEnricher(FlowlineScrubber.Current))
         .WriteTo.File(logPath, rollingInterval: RollingInterval.Infinite)
         .CreateLogger();
     Log.Logger = serilogLogger;
@@ -125,10 +125,16 @@ app.Configure(config =>
         var logLink = $"[dim][link={new Uri(logFilePath).AbsoluteUri}]Log: {Markup.Escape(logFilePath)}[/][/]";
         logLinkShown = true;
 
+        // KTD3/KTD4: rendered and scrubbed once here, and the same string is what both sinks get. The
+        // exception object is deliberately not handed to Serilog any more — the file sink would render
+        // it through {Exception} unscrubbed, and there is no interception point that would catch that
+        // without a second implementation of the rules. ToString() covers the inner chain in one pass.
+        var scrubbedException = FlowlineScrubber.Current.Scrub(ex.ToString());
+
         switch (ex)
         {
             case FlowlineException fe:
-                serilogLogger?.Error(ex, "Command failed");
+                serilogLogger?.Error("Command failed: {ExceptionDetail}", scrubbedException);
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(fe.Message)}");
                 WriteExceptionContext(fe, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
@@ -145,7 +151,7 @@ app.Configure(config =>
             // OperationCanceledException arm: the HttpClient path throws TaskCanceledException,
             // which would otherwise be reported as a user Ctrl+C and exit 130.
             case var _ when DataverseTimeout.Matches(ex, cancellationTokenSource.IsCancellationRequested):
-                serilogLogger?.Error(ex, "Dataverse request timed out");
+                serilogLogger?.Error("Dataverse request timed out: {ExceptionDetail}", scrubbedException);
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(DataverseTimeout.Message)}");
                 AnsiConsole.MarkupLine($"[dim]{Markup.Escape(DataverseTimeout.NextStep(args.FirstOrDefault()))}[/]");
                 AnsiConsole.MarkupLine(logLink);
@@ -159,7 +165,7 @@ app.Configure(config =>
             // malformed CLI invocations, not application bugs, so they get the same clean
             // treatment as a FlowlineException rather than a raw internal stack trace.
             case CommandRuntimeException cre:
-                serilogLogger?.Error(ex, "Command failed");
+                serilogLogger?.Error("Command failed: {ExceptionDetail}", scrubbedException);
                 // "Unknown command 'dev'" is true and teaches nothing when the token is a perfectly good
                 // environment in the wrong position. Only this one shape is recognised, and it cannot
                 // match an invocation the parser would have accepted.
@@ -172,7 +178,7 @@ app.Configure(config =>
                 AnsiConsole.MarkupLine(logLink);
                 return (int)ExitCode.ValidationFailed;
             default:
-                serilogLogger?.Error(ex, "Unhandled exception");
+                serilogLogger?.Error("Unhandled exception: {ExceptionDetail}", scrubbedException);
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
                 WriteExceptionContext(ex, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
