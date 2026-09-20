@@ -137,30 +137,25 @@ public class FlowlineCommandStandaloneTests
     {
         // SkipSetup leaves ToolVersions null, which is the case InvocationLogger returns early on. The
         // registration must not ride along with it: a command that skips the tool probes still puts the
-        // project folder name in every log line it writes.
-        var projectFolder = Path.Combine(Path.GetTempPath(), $"AcmeBankProject-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(projectFolder);
-        var previousDirectory = Directory.GetCurrentDirectory();
+        // project folder name in every log line it writes. RootFolder falls back to the working
+        // directory here, so that folder's name is the value under test — nothing changes the process
+        // working directory, which other tests in this assembly read.
         FlowlineScrubber.Initialize("test-salt"u8.ToArray());
-
         try
         {
-            Directory.SetCurrentDirectory(projectFolder);
             var command = MakeCommand();
             command.Standalone = true;
             command.SkipSetup = true;
 
             await command.RunAsync(MakeContext(), new FlowlineSettings(), CancellationToken.None);
 
-            var folderName = Path.GetFileName(projectFolder);
-            FlowlineScrubber.Current.Scrub($"root={folderName}")
-                .Should().NotContain(folderName);
+            var folderName = Path.GetFileName(
+                Directory.GetCurrentDirectory().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            FlowlineScrubber.Current.Scrub($"root={folderName}").Should().NotContain(folderName);
         }
         finally
         {
-            Directory.SetCurrentDirectory(previousDirectory);
             FlowlineScrubber.Initialize([]);
-            Directory.Delete(projectFolder, recursive: true);
         }
     }
 
