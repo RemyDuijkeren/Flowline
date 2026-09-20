@@ -5,6 +5,7 @@ using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Infrastructure;
+using Flowline.Logging;
 using Flowline.Services;
 using Flowline.Utils;
 using Flowline.Validation;
@@ -149,6 +150,16 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         Logger.LogInformation("Setup check: {Duration}", FormatDuration(sw.Elapsed));
 
         Config = ProjectConfig.Load(RootFolder) ?? new ProjectConfig();
+
+        // KTD6: the solution name, the branch name and the project folder name have no shape a regex
+        // could match, so the scrubber is told them as values. They are only knowable once config has
+        // loaded, which is why this is here and not at startup. Ahead of InvocationLogger on purpose —
+        // that method returns early when a command skipped the tool probes, and these three have to be
+        // registered whether it logs or not.
+        FlowlineScrubber.Current.AddKnownValue(Config.Solution?.UniqueName);
+        FlowlineScrubber.Current.AddKnownValue(RuntimeOptions.ToolVersions?.GitBranch);
+        FlowlineScrubber.Current.AddKnownValue(
+            Path.GetFileName(RootFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
 
         InvocationLogger.Log(Logger, RuntimeOptions, Config, RootFolder, activity);
 

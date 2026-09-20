@@ -2,6 +2,7 @@ using Flowline;
 using Flowline.Core;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
+using Flowline.Logging;
 using Flowline.Services;
 using Flowline.Validation;
 using FluentAssertions;
@@ -127,6 +128,40 @@ public class FlowlineCommandStandaloneTests
 
         await act.Should().NotThrowAsync();
         command.ResolvedRootFolder.Should().Be(Directory.GetCurrentDirectory());
+    }
+
+    // ── KTD6: the scrubber learns the run's known values whether or not the invocation is logged ──
+
+    [Fact]
+    public async Task ExecuteAsync_RegistersTheProjectFolderNameWithTheScrubber_EvenWhenNothingIsLogged()
+    {
+        // SkipSetup leaves ToolVersions null, which is the case InvocationLogger returns early on. The
+        // registration must not ride along with it: a command that skips the tool probes still puts the
+        // project folder name in every log line it writes.
+        var projectFolder = Path.Combine(Path.GetTempPath(), $"AcmeBankProject-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(projectFolder);
+        var previousDirectory = Directory.GetCurrentDirectory();
+        FlowlineScrubber.Initialize("test-salt"u8.ToArray());
+
+        try
+        {
+            Directory.SetCurrentDirectory(projectFolder);
+            var command = MakeCommand();
+            command.Standalone = true;
+            command.SkipSetup = true;
+
+            await command.RunAsync(MakeContext(), new FlowlineSettings(), CancellationToken.None);
+
+            var folderName = Path.GetFileName(projectFolder);
+            FlowlineScrubber.Current.Scrub($"root={folderName}")
+                .Should().NotContain(folderName);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousDirectory);
+            FlowlineScrubber.Initialize([]);
+            Directory.Delete(projectFolder, recursive: true);
+        }
     }
 
     // ── R11: --force validation still runs on the shared path in standalone ─────────────────────

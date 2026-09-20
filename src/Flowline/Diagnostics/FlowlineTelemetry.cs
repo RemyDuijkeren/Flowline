@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Flowline.Logging;
 using OpenTelemetry;
+using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 namespace Flowline.Diagnostics;
@@ -51,6 +52,13 @@ public static class FlowlineTelemetry
 
                 s_provider = Sdk.CreateTracerProviderBuilder()
                     .AddSource(FlowlineActivitySource.Source.Name)
+                    // Built from empty on purpose. The default resource detectors put the machine's
+                    // host name on every item, which arrives as cloud_RoleInstance — a plain machine
+                    // identifier, and the one thing R13 says must only ever be the salted value.
+                    .SetResourceBuilder(ResourceBuilder.CreateEmpty().AddService(
+                        serviceName: "flowline",
+                        serviceVersion: FlowlineActivitySource.Source.Version,
+                        serviceInstanceId: scrubber.MachineId))
                     .AddProcessor(new ScrubbingProcessor(scrubber))
                     .AddAzureMonitorTraceExporter(o =>
                     {

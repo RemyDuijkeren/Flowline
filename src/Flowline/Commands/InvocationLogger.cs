@@ -32,13 +32,6 @@ internal static class InvocationLogger
         }
 
         var solutionName = cfg.Solution?.UniqueName;
-
-        // KTD6: the solution name, the branch name and the project folder name are only known once
-        // config has loaded, so the scrubber gains them here rather than at startup. Nothing written
-        // before this point carries any of the three.
-        FlowlineScrubber.Current.AddKnownValue(solutionName);
-        FlowlineScrubber.Current.AddKnownValue(tv.GitBranch);
-        FlowlineScrubber.Current.AddKnownValue(Path.GetFileName(rootFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
         var envConfigured = string.Join(",", envTiers);
         var envHashStr = string.Join(",", envHashes);
 
