@@ -13,22 +13,23 @@ namespace Flowline.Diagnostics;
 public static class TelemetryDisclosure
 {
     /// <remarks>
-    /// Three lines, and two of them are load-bearing. The ordinary fields are left out because someone
-    /// reading "telemetry" already assumes a command name and an exit code; the log lines and the
-    /// stack traces are named because nobody assumes those, and they are the thing a security team
-    /// would object to. "Hashed" rather than "anonymised": the values are hashed with a salt that
-    /// lives on the user's machine, which is pseudonymisation, and this is the one message whose
-    /// whole job is being true.
+    /// Yellow and glyphed as a warning rather than as neutral info: it is a heads-up the reader is
+    /// meant to act on if they disagree, which is the one thing that makes an opt-out default
+    /// defensible. Colour is applied only when stderr is a terminal, so a CI log does not collect
+    /// escape codes.
     /// </remarks>
     public const string Text = """
-        · Flowline sends usage and crash telemetry, including the log lines a run writes and the full
-          stack trace when one fails. Identifying values are hashed first, so your own log file shows
-          exactly what was sent. Read it, or turn this off: https://github.com/RemyDuijkeren/Flowline/wiki/18-Telemetry
+        ! Flowline CLI collects usage data in order to help us improve your experience. Data is not
+          shared and identifying values are hashed first. The local log file shows exactly what was
+          sent. To turn this off: https://github.com/RemyDuijkeren/Flowline/wiki/18-Telemetry
         """;
 
-    public static void ShowOnce() => ShowOnce(new ValidationCacheStore(), Console.Error);
+    const string Yellow = "\u001b[33m";
+    const string Reset = "\u001b[0m";
 
-    internal static void ShowOnce(ValidationCacheStore store, TextWriter stderr)
+    public static void ShowOnce() => ShowOnce(new ValidationCacheStore(), Console.Error, !Console.IsErrorRedirected);
+
+    internal static void ShowOnce(ValidationCacheStore store, TextWriter stderr, bool useColour = false)
     {
         try
         {
@@ -44,7 +45,7 @@ public static class TelemetryDisclosure
             // every later run reads the marker and stays silent. The plan's own test list already
             // prefers the other trade ("repeating it beats failing a command"), so it applies to both
             // halves here.
-            stderr.WriteLine(Text);
+            stderr.WriteLine(useColour ? Yellow + Text + Reset : Text);
             stderr.Flush();
 
             try

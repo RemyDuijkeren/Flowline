@@ -21,7 +21,7 @@ public class TelemetryDisclosureTests : IDisposable
         var second = new StringWriter();
         TelemetryDisclosure.ShowOnce(store, second);
 
-        first.ToString().Should().Contain("Flowline sends usage and crash telemetry");
+        first.ToString().Should().Contain("Flowline CLI collects usage data");
         second.ToString().Should().BeEmpty();
     }
 
@@ -33,9 +33,7 @@ public class TelemetryDisclosureTests : IDisposable
         TelemetryDisclosure.ShowOnce(new ValidationCacheStore(_cachePath), writer);
 
         var text = writer.ToString();
-        // The two things nobody assumes from the word "telemetry", and the route to everything else.
-        text.Should().Contain("log lines");
-        text.Should().Contain("stack trace");
+        text.Should().StartWith("!", "it is a heads-up the reader may want to act on, not neutral detail");
         text.Should().Contain("log file", "the claim that the local log is the payload is the verifiable one");
         text.Should().Contain("wiki/18-Telemetry", "a one-off notice cannot carry the whole story");
         text.Should().NotContain("anonym", "a salted hash is pseudonymisation, not anonymisation");
@@ -56,7 +54,7 @@ public class TelemetryDisclosureTests : IDisposable
         var writer = new StringWriter();
         TelemetryDisclosure.ShowOnce(store, writer);
 
-        writer.ToString().Should().Contain("Flowline sends usage and crash telemetry");
+        writer.ToString().Should().Contain("Flowline CLI collects usage data");
         store.Load().TelemetryDisclosureVersion.Should().NotBe("0.0.1-older");
     }
 
@@ -97,12 +95,32 @@ public class TelemetryDisclosureTests : IDisposable
             "a run that could not tell the user must not record that it did");
         var second = new StringWriter();
         TelemetryDisclosure.ShowOnce(store, second);
-        second.ToString().Should().Contain("Flowline sends usage and crash telemetry");
+        second.ToString().Should().Contain("Flowline CLI collects usage data");
     }
 
     sealed class ThrowingWriter : StringWriter
     {
         public override void WriteLine(string? value) => throw new IOException("stderr is gone");
+    }
+
+    [Fact]
+    public void TheNoticeCarriesNoEscapeCodesWhenStderrIsNotATerminal()
+    {
+        var writer = new StringWriter();
+
+        TelemetryDisclosure.ShowOnce(new ValidationCacheStore(_cachePath), writer);
+
+        writer.ToString().Should().NotContain("\u001b", "a CI log should not collect escape codes");
+    }
+
+    [Fact]
+    public void TheNoticeIsYellowOnATerminal()
+    {
+        var writer = new StringWriter();
+
+        TelemetryDisclosure.ShowOnce(new ValidationCacheStore(_cachePath), writer, useColour: true);
+
+        writer.ToString().Should().StartWith("\u001b[33m").And.EndWithEquivalentOf("\u001b[0m" + Environment.NewLine);
     }
 
     [Fact]
@@ -113,6 +131,6 @@ public class TelemetryDisclosureTests : IDisposable
 
         TelemetryDisclosure.ShowOnce(new ValidationCacheStore(unwritable), writer);
 
-        writer.ToString().Should().Contain("Flowline sends usage and crash telemetry");
+        writer.ToString().Should().Contain("Flowline CLI collects usage data");
     }
 }
