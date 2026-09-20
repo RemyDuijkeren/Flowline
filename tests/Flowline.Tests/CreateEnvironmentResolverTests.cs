@@ -93,7 +93,7 @@ public class CreateEnvironmentResolverTests
             new() { DisplayName = "Contoso", EnvironmentUrl = DevUrl, Type = "Teams" }
         });
 
-        var act = () => resolver.ResolveSourceAsync(sourceUrl: null, new FlowlineSettings(), CancellationToken.None);
+        var act = () => resolver.ResolveSourceAsync(sourceUrl: null, new FlowlineRuntimeOptions(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Which.Message.Should().Contain("Default and Teams");
@@ -111,7 +111,7 @@ public class CreateEnvironmentResolverTests
         // or fetch environments anyway, it would throw a different failure instead of this specific
         // FlowlineException, so *this* exception is itself proof it never reached the picker path.
 
-        var act = () => resolver.ResolveCreateTargetAsync(devUrl: null, new FlowlineSettings(), CancellationToken.None);
+        var act = () => resolver.ResolveCreateTargetAsync(devUrl: null, new FlowlineRuntimeOptions(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Which.Message.Should().Contain("--env");
@@ -130,7 +130,7 @@ public class CreateEnvironmentResolverTests
         };
         var resolver = new CreateEnvironmentResolver(console, profileResolutionService, new SubprocessCapture(console));
 
-        var act = () => resolver.ResolveCreateTargetAsync(DevUrl, new FlowlineSettings(), CancellationToken.None);
+        var act = () => resolver.ResolveCreateTargetAsync(DevUrl, new FlowlineRuntimeOptions(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Which.Message.Should().Contain("pac auth create");
@@ -143,7 +143,7 @@ public class CreateEnvironmentResolverTests
     {
         var resolver = MakeResolverForUrl("Production", out _);
 
-        var act = () => resolver.ResolveCreateTargetAsync(DevUrl, new FlowlineSettings(), CancellationToken.None);
+        var act = () => resolver.ResolveCreateTargetAsync(DevUrl, new FlowlineRuntimeOptions(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Which.Message.Should().Contain("Sandbox or Developer");
@@ -156,7 +156,7 @@ public class CreateEnvironmentResolverTests
     {
         var resolver = MakeResolverForUrl("Sandbox", out _);
 
-        var result = await resolver.ResolveCreateTargetAsync(DevUrl, new FlowlineSettings(), CancellationToken.None);
+        var result = await resolver.ResolveCreateTargetAsync(DevUrl, new FlowlineRuntimeOptions(), CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.Type.Should().Be("Sandbox");
@@ -171,7 +171,7 @@ public class CreateEnvironmentResolverTests
     {
         var resolver = MakeResolverForUrl("Production", out _);
 
-        var result = await resolver.ResolveSourceAsync(DevUrl, new FlowlineSettings(), CancellationToken.None);
+        var result = await resolver.ResolveSourceAsync(DevUrl, new FlowlineRuntimeOptions(), CancellationToken.None);
 
         result.Type.Should().Be("Production");
     }
@@ -183,7 +183,7 @@ public class CreateEnvironmentResolverTests
     {
         var resolver = MakeResolver(); // non-interactive
 
-        var act = () => resolver.ResolveSourceAsync(sourceUrl: null, new FlowlineSettings(), CancellationToken.None);
+        var act = () => resolver.ResolveSourceAsync(sourceUrl: null, new FlowlineRuntimeOptions(), CancellationToken.None);
 
         await act.Should().ThrowAsync<FlowlineException>()
             .WithMessage("*--env <url>*");

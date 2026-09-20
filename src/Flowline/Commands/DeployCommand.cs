@@ -208,7 +208,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
             {
                 Console.Info(BuildFirstImportDryRunNote(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged));
             }
-            else if (!await AnsiConsole.Console.ConfirmAsync(BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged), false, settings, "first-import", cancellationToken))
+            else if (!await AnsiConsole.Console.ConfirmAsync(BuildFirstImportPrompt(sln.UniqueName, targetEnv.DisplayName!, sln.IncludeManaged), false, RuntimeOptions, "first-import", cancellationToken))
             {
                 Console.Info("Deploy cancelled. Re-run with --force first-import to skip this confirmation.");
                 return (int)ResolveFirstImportDeclinedExitCode();
@@ -310,7 +310,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
             // leaves dataverseSolutionFolder unresolved (no solution file needed there) — the provenance
             // lookup then reads every entry as Undetermined rather than guessing a path.
             var checkoutSolutionSrcRoot = dataverseSolutionFolder != null ? Path.Combine(dataverseSolutionFolder, "src") : null;
-            var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir, settings.HasForce("delete-orphans"), checkoutSolutionSrcRoot);
+            var postDeployContext = new PostDeployContext(service, solutionInfo, runMode, packagePath, tmpUnpackDir, RuntimeOptions.HasForce("delete-orphans"), checkoutSolutionSrcRoot);
 
             var activeServices = ResolveActiveServices(postDeployServices, settings);
 
@@ -420,7 +420,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         var profile = await ProfileResolutionService.ResolveAsync(targetUrl, ct);
         var targetEnv = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{targetUrl}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, profile, settings, settings.NoCache, ct));
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, profile, RuntimeOptions, settings.NoCache, ct));
 
         if (targetEnv == null)
             throw new FlowlineException(ExitCode.ConnectionFailed,
@@ -430,7 +430,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
 
         var existingSolution = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.UniqueName}[/]...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.UniqueName, includeManaged: true, settings, settings.NoCache, ct, bypassCache: true));
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.UniqueName, includeManaged: true, RuntimeOptions, settings.NoCache, ct, bypassCache: true));
 
         if (existingSolution != null)
         {
@@ -498,7 +498,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
 
         var predecessorInfo = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.UniqueName}[/] in {dtapDecision.PredecessorLabel}...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.UniqueName, includeManaged: true, settings, settings.NoCache, ct, bypassCache: true));
+            _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.UniqueName, includeManaged: true, RuntimeOptions, settings.NoCache, ct, bypassCache: true));
 
         if (predecessorInfo == null)
             throw new FlowlineException(ExitCode.ValidationFailed,
@@ -573,7 +573,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
                 ? $"Only local: {w.RelativePath}"
                 : $"Plugin size mismatch: {w.RelativePath}");
 
-        if (!settings.HasForce("drift"))
+        if (!RuntimeOptions.HasForce("drift"))
             throw new FlowlineException(ExitCode.ValidationFailed,
                 "Local changes not in Dataverse — deploy would revert them. Run 'push' then 'pull' to capture them, or use --force drift to skip.");
     }

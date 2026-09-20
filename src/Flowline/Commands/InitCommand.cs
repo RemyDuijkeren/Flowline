@@ -68,12 +68,12 @@ public class InitCommand(CommandServices services, CreateEnvironmentResolver cre
         string? devUrl = null;
         if (!string.IsNullOrWhiteSpace(settings.Env))
         {
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
-                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), RuntimeOptions,
+                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, RuntimeOptions, settings.NoCache, ct), cancellationToken);
             devUrl = target.Url;
         }
 
-        var devEnv = await createEnvironmentResolver.ResolveCreateTargetAsync(devUrl, settings, cancellationToken);
+        var devEnv = await createEnvironmentResolver.ResolveCreateTargetAsync(devUrl, RuntimeOptions, cancellationToken);
         if (devEnv is null)
             return 0; // user chose "+ Create new environment" — resolver already emitted the provision advice
 
@@ -156,13 +156,13 @@ public class InitCommand(CommandServices services, CreateEnvironmentResolver cre
 
         // R10: the DEV role is written only once create + scaffold + build all succeeded.
         // Record the created solution too, so a later push/sync can resolve it from .flowline.
-        // settings is threaded in so the config-overwrite gate these two share can actually be
+        // RuntimeOptions is threaded in so the config-overwrite gate these two share can actually be
         // approved: without it, running init over an existing .flowline that names a different DEV URL
-        // told you to pass --force config, and passing it changed nothing (HasForce is read off settings).
-        config.GetOrUpdateSolution(uniqueName, includeManaged: false, settings);
+        // told you to pass --force config, and passing it changed nothing (HasForce is read off RuntimeOptions).
+        config.GetOrUpdateSolution(uniqueName, includeManaged: false, RuntimeOptions);
         // same URL, two spellings: devUrl is the raw --env value the resolver already saved; falling
         // back to devEnv.EnvironmentUrl's canonical form would trip the ordinal-compare overwrite gate.
-        config.GetOrUpdateDevUrl(devUrl ?? devEnv.EnvironmentUrl, settings);
+        config.GetOrUpdateDevUrl(devUrl ?? devEnv.EnvironmentUrl, RuntimeOptions);
         config.Save(rootFolder);
         Console.Ok($"DEV set to [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})");
 

@@ -14,7 +14,7 @@ public class SettingsConsoleExtensionsTests
     [Fact]
     public void Confirm_NonInteractive_ForceContainsConfig_ReturnsTrueWithoutPrompting()
     {
-        var settings = new FlowlineSettings { Force = ["config"] };
+        var settings = new FlowlineRuntimeOptions { Force = ["config"] };
 
         new TestConsole().Confirm("Overwrite it?", false, settings, "config").Should().BeTrue();
     }
@@ -22,7 +22,7 @@ public class SettingsConsoleExtensionsTests
     [Fact]
     public void Confirm_NonInteractive_ForceContainsAll_ReturnsTrueWithoutPrompting()
     {
-        var settings = new FlowlineSettings { Force = ["all"] };
+        var settings = new FlowlineRuntimeOptions { Force = ["all"] };
 
         new TestConsole().Confirm("Overwrite it?", false, settings, "config").Should().BeTrue();
     }
@@ -30,7 +30,7 @@ public class SettingsConsoleExtensionsTests
     [Fact]
     public void Confirm_NonInteractive_ForceEmpty_ThrowsForceRequiredNamingConfig()
     {
-        var settings = new FlowlineSettings { Force = [] };
+        var settings = new FlowlineRuntimeOptions { Force = [] };
 
         var act = () => new TestConsole().Confirm("Overwrite it?", false, settings, "config");
 
@@ -41,7 +41,7 @@ public class SettingsConsoleExtensionsTests
     [Fact]
     public void Confirm_NonInteractive_ForceContainsMatchingSpecifier_ReturnsTrueWithoutPrompting()
     {
-        var settings = new FlowlineSettings { Force = ["first-import"] };
+        var settings = new FlowlineRuntimeOptions { Force = ["first-import"] };
 
         new TestConsole().Confirm("Continue?", false, settings, "first-import").Should().BeTrue();
     }
@@ -49,7 +49,7 @@ public class SettingsConsoleExtensionsTests
     [Fact]
     public void Confirm_NonInteractive_ForceContainsDifferentSpecifier_ThrowsNamingRequestedSpecifier()
     {
-        var settings = new FlowlineSettings { Force = ["config"] };
+        var settings = new FlowlineRuntimeOptions { Force = ["config"] };
 
         var act = () => new TestConsole().Confirm("Continue?", false, settings, "first-import");
 
@@ -62,7 +62,7 @@ public class SettingsConsoleExtensionsTests
     {
         // No input pushed — if Confirm tried to prompt, TestConsole would throw on the empty queue.
         var console = new TestConsole().Interactive();
-        var settings = new FlowlineSettings { Force = ["first-import"] };
+        var settings = new FlowlineRuntimeOptions { Force = ["first-import"] };
 
         console.Confirm("Continue?", false, settings, "first-import").Should().BeTrue();
     }

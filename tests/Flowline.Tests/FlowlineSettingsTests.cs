@@ -1,4 +1,5 @@
 using Flowline.Commands;
+using Flowline.Core;
 using FluentAssertions;
 using Spectre.Console.Cli;
 
@@ -9,17 +10,17 @@ public class FlowlineSettingsTests
     [Fact]
     public void HasForce_IsCaseInsensitive_ForSpecifierValue()
     {
-        var settings = new FlowlineSettings { Force = ["CONFIG"] };
+        var options = new FlowlineRuntimeOptions { Force = ["CONFIG"] };
 
-        settings.HasForce("config").Should().BeTrue();
+        options.HasForce("config").Should().BeTrue();
     }
 
     [Fact]
     public void HasForce_IsCaseInsensitive_ForAllValue()
     {
-        var settings = new FlowlineSettings { Force = ["ALL"] };
+        var options = new FlowlineRuntimeOptions { Force = ["ALL"] };
 
-        settings.HasForce("config").Should().BeTrue();
+        options.HasForce("config").Should().BeTrue();
     }
 
     [Fact]

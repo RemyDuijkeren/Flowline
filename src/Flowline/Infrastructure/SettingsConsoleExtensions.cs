@@ -1,3 +1,4 @@
+using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Utils;
 using Spectre.Console;
@@ -6,8 +7,8 @@ using Spectre.Console.Rendering;
 namespace Flowline.Infrastructure;
 
 /// <summary>
-/// The <see cref="FlowlineSettings"/>-aware half of Flowline's console helpers — everything that needs
-/// to read <c>--force</c> off the parsed settings.
+/// The <see cref="FlowlineRuntimeOptions"/>-aware half of Flowline's console helpers — everything that
+/// needs to read <c>--force</c> off the resolved runtime options.
 /// </summary>
 /// <remarks>
 /// Separate from <see cref="FlowlineConsoleExtensions"/> by necessity, not style: that one lives in
@@ -34,12 +35,12 @@ public static class SettingsConsoleExtensions
     /// Prompts the user with a confirmation, or automatically accepts if --force &lt;specifier&gt; (or --force all) is
     /// specified. In non-interactive mode without --force, throws instead of prompting.
     /// </summary>
-    public static bool Confirm(this IAnsiConsole console, string prompt, bool defaultValue, FlowlineSettings? settings, string specifier) =>
-        console.ConfirmGated(prompt, defaultValue, settings?.HasForce(specifier) == true,
+    public static bool Confirm(this IAnsiConsole console, string prompt, bool defaultValue, FlowlineRuntimeOptions? options, string specifier) =>
+        console.ConfirmGated(prompt, defaultValue, options?.HasForce(specifier) == true,
             $"Confirmation required but not in interactive mode. Use --force {specifier} to proceed.");
 
     /// <inheritdoc cref="Confirm"/>
-    public static Task<bool> ConfirmAsync(this IAnsiConsole console, string prompt, bool defaultValue, FlowlineSettings? settings, string specifier, CancellationToken cancellationToken) =>
-        console.ConfirmGatedAsync(prompt, defaultValue, settings?.HasForce(specifier) == true,
+    public static Task<bool> ConfirmAsync(this IAnsiConsole console, string prompt, bool defaultValue, FlowlineRuntimeOptions? options, string specifier, CancellationToken cancellationToken) =>
+        console.ConfirmGatedAsync(prompt, defaultValue, options?.HasForce(specifier) == true,
             $"Confirmation required but not in interactive mode. Use --force {specifier} to proceed.", cancellationToken);
 }

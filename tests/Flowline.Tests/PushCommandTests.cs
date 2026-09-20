@@ -900,32 +900,35 @@ public class PushCommandTests : IDisposable
     public void HasForce_DeleteOrphansOnly_DoesNotApproveRecreateAssembly()
     {
         var settings = new PushCommand.Settings { Force = ["delete-orphans"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
 
-        settings.HasForce("delete-orphans").Should().BeTrue();
-        settings.HasForce("recreate-assembly").Should().BeFalse();
-        settings.HasForce("delete-form-handlers").Should().BeFalse();
+        options.HasForce("delete-orphans").Should().BeTrue();
+        options.HasForce("recreate-assembly").Should().BeFalse();
+        options.HasForce("delete-form-handlers").Should().BeFalse();
     }
 
     [Fact]
     public void HasForce_All_ApprovesEveryPushHazard()
     {
         var settings = new PushCommand.Settings { Force = ["all"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
 
-        settings.HasForce("delete-orphans").Should().BeTrue();
-        settings.HasForce("recreate-assembly").Should().BeTrue();
-        settings.HasForce("delete-form-handlers").Should().BeTrue();
-        settings.HasForce("config").Should().BeTrue();
+        options.HasForce("delete-orphans").Should().BeTrue();
+        options.HasForce("recreate-assembly").Should().BeTrue();
+        options.HasForce("delete-form-handlers").Should().BeTrue();
+        options.HasForce("config").Should().BeTrue();
     }
 
     [Fact]
     public void HasForce_RepeatedFlag_ApprovesExactlyThoseTwo()
     {
         var settings = new PushCommand.Settings { Force = ["delete-orphans", "config"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
 
-        settings.HasForce("delete-orphans").Should().BeTrue();
-        settings.HasForce("config").Should().BeTrue();
-        settings.HasForce("recreate-assembly").Should().BeFalse();
-        settings.HasForce("delete-form-handlers").Should().BeFalse();
+        options.HasForce("delete-orphans").Should().BeTrue();
+        options.HasForce("config").Should().BeTrue();
+        options.HasForce("recreate-assembly").Should().BeFalse();
+        options.HasForce("delete-form-handlers").Should().BeFalse();
     }
 
     // -- CommandApp parse seam (R1/R2/R3, AE1) — exit-code-only per KTD3's test-seam split;

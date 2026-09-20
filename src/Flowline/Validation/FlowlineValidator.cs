@@ -26,49 +26,49 @@ public sealed class FlowlineValidator
         _probes = probes;
     }
 
-    public async Task<ToolCheckResult> EnsureDotNetAsync(FlowlineSettings settings, bool noCache, CancellationToken cancellationToken)
+    public async Task<ToolCheckResult> EnsureDotNetAsync(FlowlineRuntimeOptions options, bool noCache, CancellationToken cancellationToken)
     {
         return await GetOrRunToolCheckAsync(
             "dotnet",
             ToolTtl,
-            settings,
+            options,
             noCache,
             cancellationToken,
-            async () => new ToolCheckResult { Version = await _probes.CheckDotNetAsync(settings.Verbose, cancellationToken) });
+            async () => new ToolCheckResult { Version = await _probes.CheckDotNetAsync(options.IsVerbose, cancellationToken) });
     }
 
-    public async Task<ToolCheckResult> EnsurePacCliAsync(FlowlineSettings settings, bool noCache, CancellationToken cancellationToken)
+    public async Task<ToolCheckResult> EnsurePacCliAsync(FlowlineRuntimeOptions options, bool noCache, CancellationToken cancellationToken)
     {
         return await GetOrRunToolCheckAsync(
             "pac",
             ToolTtl,
-            settings,
+            options,
             noCache,
             cancellationToken,
             async () =>
             {
-                var (version, installType) = await _probes.CheckPacAsync(settings.Verbose, cancellationToken);
+                var (version, installType) = await _probes.CheckPacAsync(options.IsVerbose, cancellationToken);
                 if (IsSlowDnxInstall(installType))
                     AnsiConsole.Console.Warning("PAC CLI is running via dnx — every command pays a slower cold start. Install it as a dotnet tool instead: [bold]dotnet tool install -g Microsoft.PowerApps.CLI.Tool[/]");
                 return new ToolCheckResult { Version = version, InstallType = installType };
             });
     }
 
-    public async Task<ToolCheckResult> EnsureGitAsync(FlowlineSettings settings, bool noCache, CancellationToken cancellationToken)
+    public async Task<ToolCheckResult> EnsureGitAsync(FlowlineRuntimeOptions options, bool noCache, CancellationToken cancellationToken)
     {
         return await GetOrRunToolCheckAsync(
             "git",
             ToolTtl,
-            settings,
+            options,
             noCache,
             cancellationToken,
             async () => new ToolCheckResult
             {
-                Version = await _probes.CheckGitAsync(settings.Verbose, cancellationToken)
+                Version = await _probes.CheckGitAsync(options.IsVerbose, cancellationToken)
             });
     }
 
-    public async Task EnsureGitRepoAsync(string rootFolder, FlowlineSettings settings, bool noCache, CancellationToken cancellationToken)
+    public async Task EnsureGitRepoAsync(string rootFolder, FlowlineRuntimeOptions options, bool noCache, CancellationToken cancellationToken)
     {
         var key = NormalizePath(rootFolder);
         var cache = _store.Load();
@@ -77,11 +77,11 @@ public sealed class FlowlineValidator
             cache.GitRepos.TryGetValue(key, out var cached) &&
             IsFresh(cached.CheckedAtUtc, GitRepoTtl))
         {
-            if (settings.Verbose) AnsiConsole.MarkupLine("[dim]Using cached Git repo check[/]");
+            if (options.IsVerbose) AnsiConsole.MarkupLine("[dim]Using cached Git repo check[/]");
             return;
         }
 
-        await _probes.CheckGitRepoAsync(rootFolder, settings.Verbose, cancellationToken);
+        await _probes.CheckGitRepoAsync(rootFolder, options.IsVerbose, cancellationToken);
         cache = _store.Load();
         cache.GitRepos[key] = NewEntry(new GitRepoCheckResult { RootFolder = key });
         cache.FlowlineVersion = GetFlowlineVersion();
@@ -90,10 +90,10 @@ public sealed class FlowlineValidator
 
     public Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(
         string environmentUrl,
-        FlowlineSettings settings,
+        FlowlineRuntimeOptions options,
         bool noCache,
         CancellationToken cancellationToken) =>
-        GetEnvironmentInfoCoreAsync(environmentUrl, settings, noCache, cancellationToken,
+        GetEnvironmentInfoCoreAsync(environmentUrl, options, noCache, cancellationToken,
             () => _probes.GetEnvironmentAsync(environmentUrl, cancellationToken));
 
     // Profile-scoped overload — used wherever a PAC auth profile has already been resolved for the target
@@ -102,15 +102,15 @@ public sealed class FlowlineValidator
     public Task<EnvironmentInfo?> GetEnvironmentInfoByUrlAsync(
         string environmentUrl,
         PacProfile profile,
-        FlowlineSettings settings,
+        FlowlineRuntimeOptions options,
         bool noCache,
         CancellationToken cancellationToken) =>
-        GetEnvironmentInfoCoreAsync(environmentUrl, settings, noCache, cancellationToken,
+        GetEnvironmentInfoCoreAsync(environmentUrl, options, noCache, cancellationToken,
             () => _probes.GetEnvironmentByProfileAsync(profile, environmentUrl, cancellationToken));
 
     async Task<EnvironmentInfo?> GetEnvironmentInfoCoreAsync(
         string environmentUrl,
-        FlowlineSettings settings,
+        FlowlineRuntimeOptions options,
         bool noCache,
         CancellationToken cancellationToken,
         Func<Task<EnvironmentInfo?>> probe)
@@ -122,7 +122,7 @@ public sealed class FlowlineValidator
             cache.Environments.TryGetValue(key, out var cached) &&
             IsFresh(cached.CheckedAtUtc, EnvironmentTtl))
         {
-            if (settings.Verbose) AnsiConsole.MarkupLine("[dim]Using cached environment check[/]");
+            if (options.IsVerbose) AnsiConsole.MarkupLine("[dim]Using cached environment check[/]");
             return cached.Value;
         }
 
@@ -142,7 +142,7 @@ public sealed class FlowlineValidator
         string environmentUrl,
         string solutionName,
         bool includeManaged,
-        FlowlineSettings settings,
+        FlowlineRuntimeOptions options,
         bool noCache,
         CancellationToken cancellationToken,
         bool bypassCache = false)
@@ -154,7 +154,7 @@ public sealed class FlowlineValidator
             cache.Solutions.TryGetValue(key, out var cached) &&
             IsFresh(cached.CheckedAtUtc, SolutionTtl))
         {
-            if (settings.Verbose) AnsiConsole.MarkupLine("[dim]Using cached solution check[/]");
+            if (options.IsVerbose) AnsiConsole.MarkupLine("[dim]Using cached solution check[/]");
             return cached.Value;
         }
 
@@ -214,7 +214,7 @@ public sealed class FlowlineValidator
     async Task<ToolCheckResult> GetOrRunToolCheckAsync(
         string key,
         TimeSpan ttl,
-        FlowlineSettings settings,
+        FlowlineRuntimeOptions options,
         bool noCache,
         CancellationToken cancellationToken,
         Func<Task<ToolCheckResult>> checkAsync)
@@ -224,7 +224,7 @@ public sealed class FlowlineValidator
             cache.ToolChecks.TryGetValue(key, out var cached) &&
             IsFresh(cached.CheckedAtUtc, ttl))
         {
-            if (settings.Verbose) AnsiConsole.MarkupLine($"[dim]Using cached {key} check[/]");
+            if (options.IsVerbose) AnsiConsole.MarkupLine($"[dim]Using cached {key} check[/]");
             return cached.Value;
         }
 

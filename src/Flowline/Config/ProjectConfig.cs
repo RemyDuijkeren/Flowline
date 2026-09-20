@@ -20,17 +20,17 @@ public class ProjectConfig
     public string? DevUrl { get; set; }
     public ProjectSolution? Solution { get; set; }
 
-    public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(EnvironmentRole.Uat, inputUatUrl, settings);
+    public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineRuntimeOptions? options = null) =>
+        GetOrUpdateUrl(EnvironmentRole.Uat, inputUatUrl, options);
 
-    public string? GetOrUpdateTestUrl(string? inputTestUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(EnvironmentRole.Test, inputTestUrl, settings);
+    public string? GetOrUpdateTestUrl(string? inputTestUrl, FlowlineRuntimeOptions? options = null) =>
+        GetOrUpdateUrl(EnvironmentRole.Test, inputTestUrl, options);
 
-    public string? GetOrUpdateDevUrl(string? inputDevUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(EnvironmentRole.Dev, inputDevUrl, settings);
+    public string? GetOrUpdateDevUrl(string? inputDevUrl, FlowlineRuntimeOptions? options = null) =>
+        GetOrUpdateUrl(EnvironmentRole.Dev, inputDevUrl, options);
 
-    public string? GetOrUpdateProdUrl(string? inputProdUrl, FlowlineSettings? settings = null) =>
-        GetOrUpdateUrl(EnvironmentRole.Prod, inputProdUrl, settings);
+    public string? GetOrUpdateProdUrl(string? inputProdUrl, FlowlineRuntimeOptions? options = null) =>
+        GetOrUpdateUrl(EnvironmentRole.Prod, inputProdUrl, options);
 
     // Read-only role-keyed accessor — lets a caller (EnvironmentTargetResolver) look up or compare
     // against a role's URL without switching on EnvironmentRole itself.
@@ -44,12 +44,12 @@ public class ProjectConfig
     };
 
     // The one place a role picks its .flowline slot; the four named wrappers above delegate here.
-    public string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl, FlowlineSettings? settings = null, string? saveReason = null) => role switch
+    public string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl, FlowlineRuntimeOptions? options = null, string? saveReason = null) => role switch
     {
-        EnvironmentRole.Prod => GetOrUpdateValue(inputUrl, () => ProdUrl, v => ProdUrl = v, "Prod", "ProdUrl", settings, saveReason),
-        EnvironmentRole.Uat  => GetOrUpdateValue(inputUrl, () => UatUrl, v => UatUrl = v, "UAT", "UatUrl", settings, saveReason),
-        EnvironmentRole.Test => GetOrUpdateValue(inputUrl, () => TestUrl, v => TestUrl = v, "Test", "TestUrl", settings, saveReason),
-        EnvironmentRole.Dev  => GetOrUpdateValue(inputUrl, () => DevUrl, v => DevUrl = v, "Dev", "DevUrl", settings, saveReason),
+        EnvironmentRole.Prod => GetOrUpdateValue(inputUrl, () => ProdUrl, v => ProdUrl = v, "Prod", "ProdUrl", options, saveReason),
+        EnvironmentRole.Uat  => GetOrUpdateValue(inputUrl, () => UatUrl, v => UatUrl = v, "UAT", "UatUrl", options, saveReason),
+        EnvironmentRole.Test => GetOrUpdateValue(inputUrl, () => TestUrl, v => TestUrl = v, "Test", "TestUrl", options, saveReason),
+        EnvironmentRole.Dev  => GetOrUpdateValue(inputUrl, () => DevUrl, v => DevUrl = v, "Dev", "DevUrl", options, saveReason),
         _ => throw new ArgumentOutOfRangeException(nameof(role))
     };
 
@@ -68,7 +68,7 @@ public class ProjectConfig
         Action<string?> set,
         string label,
         string key,
-        FlowlineSettings? settings,
+        FlowlineRuntimeOptions? options,
         string? saveReason = null)
     {
         input = input?.Trim();
@@ -86,7 +86,7 @@ public class ProjectConfig
 
         if (string.IsNullOrWhiteSpace(input))
         {
-            if (settings is { Verbose: true })
+            if (options is { IsVerbose: true })
             {
                 // Verbose(string) escapes its message — markup here would print as literal [bold] tags.
                 AnsiConsole.Console.Verbose($"{label}: {get()}");
@@ -98,7 +98,7 @@ public class ProjectConfig
         if (get() != input)
         {
             AnsiConsole.Console.Warning($"{label} is already set: [bold]{Markup.Escape(get()!)}[/]");
-            if (!AnsiConsole.Console.Confirm("Overwrite it?", false, settings, "config"))
+            if (!AnsiConsole.Console.Confirm("Overwrite it?", false, options, "config"))
             {
                 AnsiConsole.MarkupLine($"[dim]Keeping {label} as-is: {Markup.Escape(get()!)}[/]");
                 return get();
@@ -144,7 +144,7 @@ public class ProjectConfig
         });
     }
 
-    public ProjectSolution? GetOrUpdateSolution(string? uniqueName, bool? includeManaged = null, FlowlineSettings? settings = null)
+    public ProjectSolution? GetOrUpdateSolution(string? uniqueName, bool? includeManaged = null, FlowlineRuntimeOptions? options = null)
     {
         uniqueName = uniqueName?.Trim();
         if (string.IsNullOrWhiteSpace(uniqueName))
@@ -155,7 +155,7 @@ public class ProjectConfig
             }
 
             uniqueName = Solution.UniqueName;
-            if (settings is { Verbose: true })
+            if (options is { IsVerbose: true })
             {
                 AnsiConsole.Console.Verbose($"Solution: {uniqueName}");
             }
@@ -188,7 +188,7 @@ public class ProjectConfig
                     Generate = Solution.Generate,
                     PluginPackageMode = Solution.PluginPackageMode,
                 }),
-                "Managed", "Solution.IncludeManaged", settings);
+                "Managed", "Solution.IncludeManaged", options);
         }
 
         return Solution;

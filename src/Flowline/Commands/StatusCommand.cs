@@ -147,15 +147,19 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
         try
         {
+            // status isn't a FlowlineCommand, so there's no shared RuntimeOptions singleton to read —
+            // build the one value the validator needs (Verbose) straight off the parsed settings.
+            var runtimeOptions = new FlowlineRuntimeOptions { IsVerbose = settings.Verbose };
+
             // Probes run fresh (noCache: true): status reports what's installed now, not what a
             // 7-day TTL remembers. The re-probe also rewrites the cache other commands read.
-            var dotNet = await FlowlineValidator.Default.EnsureDotNetAsync(settings, true, cancellationToken);
+            var dotNet = await FlowlineValidator.Default.EnsureDotNetAsync(runtimeOptions, true, cancellationToken);
             Console.MarkupLine($"[bold].NET SDK[/] version: [green]{dotNet.Version}[/]");
 
-            var pac = await FlowlineValidator.Default.EnsurePacCliAsync(settings, true, cancellationToken);
+            var pac = await FlowlineValidator.Default.EnsurePacCliAsync(runtimeOptions, true, cancellationToken);
             Console.MarkupLine($"[bold]Power Platform CLI[/] version: [green]{pac.Version}[/] ({pac.InstallType})");
 
-            var git = await FlowlineValidator.Default.EnsureGitAsync(settings, true, cancellationToken);
+            var git = await FlowlineValidator.Default.EnsureGitAsync(runtimeOptions, true, cancellationToken);
             Console.MarkupLine($"[bold]Git[/] version: [green]{git.Version}[/]");
         }
         catch

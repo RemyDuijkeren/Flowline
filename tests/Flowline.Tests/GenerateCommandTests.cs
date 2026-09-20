@@ -540,7 +540,7 @@ public class GeneratePersistedSettingsApplicationTests
 
         var output = ProjectConfigTests.WithSwappedConsole(console =>
         {
-            GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+            GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, new FlowlineRuntimeOptions(), RootFolder);
             return console.Output;
         });
 
@@ -556,7 +556,7 @@ public class GeneratePersistedSettingsApplicationTests
 
         var output = ProjectConfigTests.WithSwappedConsole(console =>
         {
-            GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+            GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, new FlowlineRuntimeOptions(), RootFolder);
             return console.Output;
         });
 
@@ -570,7 +570,7 @@ public class GeneratePersistedSettingsApplicationTests
         var sln = NewSolution(new GenerateConfig { ExtraTables = ["account", "contact"] });
         var settings = new GenerateCommand.Settings { ExtraTables = "contact" };
 
-        var act = () => GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+        var act = () => GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, new FlowlineRuntimeOptions(), RootFolder);
 
         act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ForceRequired
             && e.Message.Contains("--force config"));
@@ -581,9 +581,10 @@ public class GeneratePersistedSettingsApplicationTests
     public void ExtraTables_DifferentValue_ForceConfig_ReplacesList()
     {
         var sln = NewSolution(new GenerateConfig { ExtraTables = ["account", "contact"] });
-        var settings = new GenerateCommand.Settings { ExtraTables = "contact", Force = ["config"] };
+        var settings = new GenerateCommand.Settings { ExtraTables = "contact" };
+        var options = new FlowlineRuntimeOptions { Force = ["config"] };
 
-        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, options, RootFolder);
 
         sln.Generate!.ExtraTables.Should().BeEquivalentTo(["contact"]);
     }
@@ -596,7 +597,7 @@ public class GeneratePersistedSettingsApplicationTests
 
         var output = ProjectConfigTests.WithSwappedConsole(console =>
         {
-            GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+            GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, new FlowlineRuntimeOptions(), RootFolder);
             return console.Output;
         });
 
@@ -610,7 +611,7 @@ public class GeneratePersistedSettingsApplicationTests
         var sln = NewSolution();
         var settings = new GenerateCommand.Settings { Generator = GeneratorType.XrmContext3 };
 
-        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, new FlowlineRuntimeOptions(), RootFolder);
 
         sln.Generate!.Generator.Should().Be(GeneratorType.XrmContext3);
     }
@@ -621,7 +622,7 @@ public class GeneratePersistedSettingsApplicationTests
         var sln = NewSolution();
         var settings = new GenerateCommand.Settings { Output = Path.Combine(RootFolder, "src", "Models") };
 
-        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, new FlowlineRuntimeOptions(), RootFolder);
 
         sln.Generate!.OutputPath.Should().Be(Path.Combine("src", "Models"));
     }
@@ -632,7 +633,7 @@ public class GeneratePersistedSettingsApplicationTests
         var sln = NewSolution(new GenerateConfig { Namespace = "Existing.Models", Generator = GeneratorType.XrmContext });
         var settings = new GenerateCommand.Settings();
 
-        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, RootFolder);
+        GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, new FlowlineRuntimeOptions(), RootFolder);
 
         sln.Generate!.Namespace.Should().Be("Existing.Models");
         sln.Generate!.Generator.Should().Be(GeneratorType.XrmContext);

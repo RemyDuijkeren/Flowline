@@ -24,7 +24,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         ProjectConfig config,
         EnvironmentRole? onlyRole,
         bool isInteractive,
-        FlowlineSettings settings,
+        FlowlineRuntimeOptions options,
         Func<string, CancellationToken, Task<EnvironmentInfo?>> getEnvironmentInfoByUrl,
         CancellationToken cancellationToken)
     {
@@ -89,12 +89,12 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
             throw RoleOnlyRefusal($"'{value}' looks like a {ToEnvironmentRole(inferredRole).UpperLabel()} environment ({inference.Source})", gateRole);
 
         return isInteractive
-            ? await ResolveNewUrlInteractivelyAsync(value, inference, onlyRole, config, settings, cancellationToken)
-            : ResolveNewUrlNonInteractively(value, inference, onlyRole, config, settings);
+            ? await ResolveNewUrlInteractivelyAsync(value, inference, onlyRole, config, options, cancellationToken)
+            : ResolveNewUrlNonInteractively(value, inference, onlyRole, config, options);
     }
 
     // R7: non-interactive save, or R8's failure when nothing could be inferred.
-    EnvironmentTargetResult ResolveNewUrlNonInteractively(string url, RoleInferenceResult inference, EnvironmentRole? onlyRole, ProjectConfig config, FlowlineSettings settings)
+    EnvironmentTargetResult ResolveNewUrlNonInteractively(string url, RoleInferenceResult inference, EnvironmentRole? onlyRole, ProjectConfig config, FlowlineRuntimeOptions options)
     {
         if (inference.Role is not { } inferred)
         {
@@ -104,7 +104,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
             throw new FlowlineException(ExitCode.ValidationFailed, $"Can't tell which role '{url}' belongs to — {hint}");
         }
 
-        return SaveRole(ToEnvironmentRole(inferred), url, inference.Source, config, settings);
+        return SaveRole(ToEnvironmentRole(inferred), url, inference.Source, config, options);
     }
 
     // R6: interactive save — role picker pre-selected on the inferred role (listed first, so a bare
@@ -115,7 +115,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
     // unrestricted when it's the inferred role — mirrors CloneCommand.ResolveRoleAsync, which never
     // lets a Sandbox/unknown-typed env land on Prod.
     async Task<EnvironmentTargetResult> ResolveNewUrlInteractivelyAsync(
-        string url, RoleInferenceResult inference, EnvironmentRole? onlyRole, ProjectConfig config, FlowlineSettings settings, CancellationToken cancellationToken)
+        string url, RoleInferenceResult inference, EnvironmentRole? onlyRole, ProjectConfig config, FlowlineRuntimeOptions options, CancellationToken cancellationToken)
     {
         var inferredRole = inference.Role is { } r ? ToEnvironmentRole(r) : (EnvironmentRole?)null;
 
@@ -148,13 +148,13 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         // Only the accepted inferred role carries the "(inferred from ...)" reason — a role the user
         // picked themselves wasn't inferred, even if it happens to match.
         var saveReason = role == inferredRole ? inference.Source : null;
-        return SaveRole(role, url, saveReason, config, settings);
+        return SaveRole(role, url, saveReason, config, options);
     }
 
-    EnvironmentTargetResult SaveRole(EnvironmentRole role, string url, string? saveReason, ProjectConfig config, FlowlineSettings settings)
+    EnvironmentTargetResult SaveRole(EnvironmentRole role, string url, string? saveReason, ProjectConfig config, FlowlineRuntimeOptions options)
     {
         var before = config.GetUrl(role);
-        var after = config.GetOrUpdateUrl(role, url, settings, saveReason)!;
+        var after = config.GetOrUpdateUrl(role, url, options, saveReason)!;
 
         // The overwrite prompt was declined: the stored URL stays, but the user named this one, so this
         // run targets it once rather than silently retargeting onto the environment they just refused to

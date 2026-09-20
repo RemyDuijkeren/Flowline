@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Flowline.Core;
 using Flowline.Core.Models;
 using Flowline.Validation;
 
@@ -40,7 +41,7 @@ public class FlowlineValidatorTests
         };
         var validator = MakeValidator(out _, probes);
 
-        var result = await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, profile, new FlowlineSettings(), noCache: false, CancellationToken.None);
+        var result = await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, profile, new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
 
         result.Should().NotBeNull();
         capturedProfile.Should().BeSameAs(profile);
@@ -60,9 +61,9 @@ public class FlowlineValidatorTests
         var validator = MakeValidator(out _, probes);
 
         // First call populates the cache via the profiled probe.
-        await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, profile, new FlowlineSettings(), noCache: false, CancellationToken.None);
+        await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, profile, new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
         // Second call, same URL, within TTL — should hit cache, not invoke either probe again.
-        await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, profile, new FlowlineSettings(), noCache: false, CancellationToken.None);
+        await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, profile, new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
 
         profiledCalls.Should().Be(1);
         unprofiledCalls.Should().Be(0);
@@ -93,7 +94,7 @@ public class FlowlineValidatorTests
         };
         store.Save(cache);
 
-        await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, newProfile, new FlowlineSettings(), noCache: false, CancellationToken.None);
+        await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, newProfile, new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
 
         capturedProfile.Should().BeSameAs(newProfile);
     }
@@ -110,7 +111,7 @@ public class FlowlineValidatorTests
         };
         var validator = MakeValidator(out _, probes);
 
-        var result = await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, new FlowlineSettings(), noCache: false, CancellationToken.None);
+        var result = await validator.GetEnvironmentInfoByUrlAsync(EnvironmentUrl, new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
 
         result.Should().NotBeNull();
         unprofiledCalls.Should().Be(1);

@@ -43,17 +43,19 @@ public class DeployCommandForceTests
     public void HasForce_All_ApprovesDriftAndFirstImportTogether()
     {
         var settings = new DeployCommand.Settings { Force = ["all"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
 
-        settings.HasForce("drift").Should().BeTrue();
-        settings.HasForce("first-import").Should().BeTrue();
+        options.HasForce("drift").Should().BeTrue();
+        options.HasForce("first-import").Should().BeTrue();
     }
 
     [Fact]
     public void HasForce_DriftOnly_DoesNotApproveFirstImport()
     {
         var settings = new DeployCommand.Settings { Force = ["drift"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
 
-        settings.HasForce("drift").Should().BeTrue();
-        settings.HasForce("first-import").Should().BeFalse();
+        options.HasForce("drift").Should().BeTrue();
+        options.HasForce("first-import").Should().BeFalse();
     }
 }

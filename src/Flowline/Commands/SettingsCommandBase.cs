@@ -92,7 +92,7 @@ public abstract class SettingsCommandBase<TSettings>(
         var profile = await ProfileResolutionService.ResolveAsync(target, ct);
         var env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{Markup.Escape(target)}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, profile, settings, settings.NoCache, ct));
+            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, profile, RuntimeOptions, settings.NoCache, ct));
 
         if (env is null)
             throw new FlowlineException(ExitCode.ConnectionFailed,

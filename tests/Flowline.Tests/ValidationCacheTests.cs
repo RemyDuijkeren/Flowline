@@ -1,3 +1,4 @@
+using Flowline.Core;
 using Flowline.Core.Models;
 using Flowline.Validation;
 using FluentAssertions;
@@ -34,8 +35,8 @@ public class ValidationCacheTests : IDisposable
             }
         });
 
-        await validator.EnsureDotNetAsync(new FlowlineSettings(), noCache: false, CancellationToken.None);
-        var result = await validator.EnsureDotNetAsync(new FlowlineSettings(), noCache: false, CancellationToken.None);
+        await validator.EnsureDotNetAsync(new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
+        var result = await validator.EnsureDotNetAsync(new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
 
         callCount.Should().Be(1);
         result.Version.Should().Be("9.0.100");
@@ -54,8 +55,8 @@ public class ValidationCacheTests : IDisposable
             }
         });
 
-        await validator.EnsureDotNetAsync(new FlowlineSettings(), noCache: false, CancellationToken.None);
-        var result = await validator.EnsureDotNetAsync(new FlowlineSettings(), noCache: true, CancellationToken.None);
+        await validator.EnsureDotNetAsync(new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
+        var result = await validator.EnsureDotNetAsync(new FlowlineRuntimeOptions(), noCache: true, CancellationToken.None);
 
         callCount.Should().Be(2);
         result.Version.Should().Be("9.0.2");
@@ -87,7 +88,7 @@ public class ValidationCacheTests : IDisposable
             }
         });
 
-        var result = await validator.EnsureDotNetAsync(new FlowlineSettings(), noCache: false, CancellationToken.None);
+        var result = await validator.EnsureDotNetAsync(new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
 
         callCount.Should().Be(1);
         result.Version.Should().Be("new");
@@ -101,7 +102,7 @@ public class ValidationCacheTests : IDisposable
             CheckDotNetAsync = (_, _) => throw new InvalidOperationException("missing")
         });
 
-        Func<Task> act = () => validator.EnsureDotNetAsync(new FlowlineSettings(), noCache: false, CancellationToken.None);
+        Func<Task> act = () => validator.EnsureDotNetAsync(new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         new ValidationCacheStore(_cachePath).Load().ToolChecks.Should().NotContainKey("dotnet");
@@ -134,10 +135,10 @@ public class ValidationCacheTests : IDisposable
             }
         });
 
-        await validator.GetEnvironmentInfoByUrlAsync("HTTPS://CONTOSO.CRM4.DYNAMICS.COM/", new FlowlineSettings(), noCache: false, CancellationToken.None);
-        await validator.GetEnvironmentInfoByUrlAsync("https://contoso.crm4.dynamics.com", new FlowlineSettings(), noCache: false, CancellationToken.None);
-        await validator.GetSolutionInfoAsync("HTTPS://CONTOSO.CRM4.DYNAMICS.COM/", "CONTOSOCORE", false, new FlowlineSettings(), noCache: false, CancellationToken.None);
-        await validator.GetSolutionInfoAsync("https://contoso.crm4.dynamics.com", "contosocore", false, new FlowlineSettings(), noCache: false, CancellationToken.None);
+        await validator.GetEnvironmentInfoByUrlAsync("HTTPS://CONTOSO.CRM4.DYNAMICS.COM/", new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
+        await validator.GetEnvironmentInfoByUrlAsync("https://contoso.crm4.dynamics.com", new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
+        await validator.GetSolutionInfoAsync("HTTPS://CONTOSO.CRM4.DYNAMICS.COM/", "CONTOSOCORE", false, new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
+        await validator.GetSolutionInfoAsync("https://contoso.crm4.dynamics.com", "contosocore", false, new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
 
         envCalls.Should().Be(1);
         solutionCalls.Should().Be(1);
@@ -159,8 +160,8 @@ public class ValidationCacheTests : IDisposable
             }
         });
 
-        await validator.GetSolutionInfoAsync("https://contoso.crm4.dynamics.com/", "ContosoCore", false, new FlowlineSettings(), noCache: false, CancellationToken.None);
-        var result = await validator.GetSolutionInfoAsync("https://contoso.crm4.dynamics.com/", "ContosoCore", false, new FlowlineSettings(), noCache: false, CancellationToken.None, bypassCache: true);
+        await validator.GetSolutionInfoAsync("https://contoso.crm4.dynamics.com/", "ContosoCore", false, new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None);
+        var result = await validator.GetSolutionInfoAsync("https://contoso.crm4.dynamics.com/", "ContosoCore", false, new FlowlineRuntimeOptions(), noCache: false, CancellationToken.None, bypassCache: true);
 
         solutionCalls.Should().Be(2);
         result!.VersionNumber.Should().Be("1.0.2.0");

@@ -52,8 +52,8 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
         // role above. Resolved through the shared seam (KTD1) so a bare --env dev or a non-Production URL
         // is refused before any PAC profile is resolved or .flowline is touched; the resolver already
         // saves a first-seen URL to .flowline in memory, so this doesn't route back through GetOrUpdateUrl.
-        var source = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Prod, IsInteractive(), settings,
-            (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+        var source = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Prod, IsInteractive(), RuntimeOptions,
+            (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, RuntimeOptions, settings.NoCache, ct), cancellationToken);
         var (prodEnv, _) = await GetAndCheckEnvironmentAsync(source.Url, EnvironmentRole.Prod, settings, cancellationToken);
 
         // Prepare the target environment name and url
@@ -89,7 +89,7 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
         }
 
         // Validate target environment
-        var targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, settings.NoCache, cancellationToken);
+        var targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, RuntimeOptions, settings.NoCache, cancellationToken);
         var targetExisted = targetEnv != null;
         if (targetEnv == null)
         {
@@ -113,7 +113,7 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
             if (!createResult.IsSuccess)
                 throw new FlowlineException(ExitCode.GeneralError, "Environment creation failed — check the environment and your PAC login. Use --verbose for more details.");
 
-            targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, settings, settings.NoCache, cancellationToken);
+            targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, RuntimeOptions, settings.NoCache, cancellationToken);
             if (targetEnv == null)
             {
                 Console.Error("Environment created but not found — check the Power Platform admin center");
@@ -133,7 +133,7 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
         }
 
         // R16: only an existing target has something to lose — one Flowline just created is empty.
-        if (targetExisted && !await AnsiConsole.Console.ConfirmAsync(BuildOverwritePrompt(targetEnv.DisplayName!), false, settings, "overwrite", cancellationToken))
+        if (targetExisted && !await AnsiConsole.Console.ConfirmAsync(BuildOverwritePrompt(targetEnv.DisplayName!), false, RuntimeOptions, "overwrite", cancellationToken))
         {
             Console.Info("Provision cancelled. Re-run with --force overwrite to overwrite the environment.");
             return (int)ExitCode.ForceRequired;

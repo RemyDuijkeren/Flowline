@@ -70,11 +70,8 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         RuntimeOptions.IsVerbose = settings.Verbose;
         RuntimeOptions.Force = settings.Force;
         RuntimeOptions.AutoSwitchProfile = (settings as DataverseSettings)?.AutoSwitchProfile ?? false;
+        RuntimeOptions.NoCache = (settings as DataverseSettings)?.NoCache ?? false;
     }
-
-    // NoCache lives on DataverseSettings, not the shared base — diff, scaffold and sln add stay on
-    // FlowlineSettings and never see the flag, so it defaults to false for them here.
-    static bool NoCacheOf(TSettings settings) => (settings as DataverseSettings)?.NoCache ?? false;
 
     // Empty by default — commands with a force-gated hazard override this with their own vocabulary.
     protected virtual string[] ValidForceSpecifiers => [];
@@ -125,7 +122,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         // failing git/pac probe, never checked and never cached — leaving the notice unreachable in exactly
         // the folders a new user starts in.
         UpdateNoticeChecker.PrintNotice(Console,
-            await UpdateNoticeChecker.CheckAsync(Console, Validator, services.NuGetVersionClient, NoCacheOf(settings), cancellationToken));
+            await UpdateNoticeChecker.CheckAsync(Console, Validator, services.NuGetVersionClient, RuntimeOptions.NoCache, cancellationToken));
 
         // The project wins when there is one, standalone only fills the gap when there isn't. A .flowline
         // governs its whole subtree (see FindFlowlineProjectRoot), so a command run anywhere beneath
@@ -144,7 +141,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         using var activity = FlowlineActivitySource.Source.StartActivity(context.Name);
         Logger.LogInformation("Command: {Command} {Args}", context.Name, argsOnly);
 
-        if (ShowWelcome && Console.Profile.Capabilities.Interactive && Validator.ShouldShowWelcomeScreen(NoCacheOf(settings)))
+        if (ShowWelcome && Console.Profile.Capabilities.Interactive && Validator.ShouldShowWelcomeScreen(RuntimeOptions.NoCache))
             Console.WriteWelcomeScreen();
 
         await CheckSetupAsync(settings, cancellationToken);
@@ -203,7 +200,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
 
     protected virtual async Task CheckSetupAsync(TSettings settings, CancellationToken cancellationToken)
     {
-        var noCache = NoCacheOf(settings);
+        var noCache = RuntimeOptions.NoCache;
 
         if (IsStandalone(settings))
         {
@@ -212,7 +209,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
             ToolCheckResult? standalonePac = null;
             await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
             {
-                standalonePac = await Validator.EnsurePacCliAsync(settings, noCache, cancellationToken);
+                standalonePac = await Validator.EnsurePacCliAsync(RuntimeOptions, noCache, cancellationToken);
             });
 
             ApplyStandaloneToolVersions(standalonePac!);
@@ -225,16 +222,16 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         string? gitBranch = null;
         await Console.Status().FlowlineSpinner().StartAsync("Checking your setup...", async ctx =>
         {
-            git = await Validator.EnsureGitAsync(settings, noCache, cancellationToken);
-            await Validator.EnsureGitRepoAsync(RootFolder, settings, noCache, cancellationToken);
+            git = await Validator.EnsureGitAsync(RuntimeOptions, noCache, cancellationToken);
+            await Validator.EnsureGitRepoAsync(RootFolder, RuntimeOptions, noCache, cancellationToken);
             // Fetched fresh (not cached) — branch changes too frequently for 7-day TTL
             // Deliberately uncaptured. SubprocessCapture tees a probe's output into the log file, and
             // this one's output is the branch name itself — written before the scrubber can be told
             // what it is. Nothing is lost: the branch reaches the log through the git.branch tag,
             // scrubbed.
             gitBranch = await GitUtils.GetCurrentBranchAsync(null, cancellationToken);
-            dotnet = await Validator.EnsureDotNetAsync(settings, noCache, cancellationToken);
-            pac = await Validator.EnsurePacCliAsync(settings, noCache, cancellationToken);
+            dotnet = await Validator.EnsureDotNetAsync(RuntimeOptions, noCache, cancellationToken);
+            pac = await Validator.EnsurePacCliAsync(RuntimeOptions, noCache, cancellationToken);
         });
 
         RuntimeOptions.ToolVersions = new FlowlineToolVersions(
@@ -268,10 +265,10 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     // this rather than duplicating its own switch.
     protected string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl, TSettings settings) => role switch
     {
-        EnvironmentRole.Prod => Config.GetOrUpdateProdUrl(inputUrl, settings),
-        EnvironmentRole.Uat  => Config.GetOrUpdateUatUrl(inputUrl, settings),
-        EnvironmentRole.Test => Config.GetOrUpdateTestUrl(inputUrl, settings),
-        EnvironmentRole.Dev  => Config.GetOrUpdateDevUrl(inputUrl, settings),
+        EnvironmentRole.Prod => Config.GetOrUpdateProdUrl(inputUrl, RuntimeOptions),
+        EnvironmentRole.Uat  => Config.GetOrUpdateUatUrl(inputUrl, RuntimeOptions),
+        EnvironmentRole.Test => Config.GetOrUpdateTestUrl(inputUrl, RuntimeOptions),
+        EnvironmentRole.Dev  => Config.GetOrUpdateDevUrl(inputUrl, RuntimeOptions),
         _ => throw new ArgumentOutOfRangeException(nameof(role))
     };
 
@@ -313,7 +310,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(url, cancellationToken);
         EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking {label.ToLower()} [bold]{url}[/]...",
-            ctx => Validator.GetEnvironmentInfoByUrlAsync(url, profile, settings, NoCacheOf(settings), cancellationToken));
+            ctx => Validator.GetEnvironmentInfoByUrlAsync(url, profile, RuntimeOptions, RuntimeOptions.NoCache, cancellationToken));
 
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
@@ -355,13 +352,13 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         CancellationToken cancellationToken = default,
         bool bypassCache = false)
     {
-        var projectSln = Config.GetOrUpdateSolution(inputName, includeManaged, settings);
+        var projectSln = Config.GetOrUpdateSolution(inputName, includeManaged, RuntimeOptions);
         if (projectSln == null)
             throw new FlowlineException(ExitCode.ConfigInvalid, "No solution is configured for this project yet — run 'flowline clone <solution>' first.");
 
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up solution [bold]{projectSln.UniqueName}[/]...",
-            ctx => Validator.GetSolutionInfoAsync(environmentUrl, projectSln.UniqueName, includeManaged ?? false, settings, NoCacheOf(settings), cancellationToken, bypassCache));
+            ctx => Validator.GetSolutionInfoAsync(environmentUrl, projectSln.UniqueName, includeManaged ?? false, RuntimeOptions, RuntimeOptions.NoCache, cancellationToken, bypassCache));
         if (remoteSln == null)
             throw new FlowlineException(ExitCode.NotFound, $"Solution '{projectSln.UniqueName}' not found in that environment.");
 
@@ -379,7 +376,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
         EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking dev [bold]{environmentUrl}[/]...",
-            _ => Validator.GetEnvironmentInfoByUrlAsync(environmentUrl, profile, settings, NoCacheOf(settings), cancellationToken));
+            _ => Validator.GetEnvironmentInfoByUrlAsync(environmentUrl, profile, RuntimeOptions, RuntimeOptions.NoCache, cancellationToken));
 
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, "Dev environment not found — check the URL or your PAC login.");
@@ -398,7 +395,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     {
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up [bold]{solutionName}[/]...",
-            _ => Validator.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, settings, NoCacheOf(settings), cancellationToken, bypassCache));
+            _ => Validator.GetSolutionInfoAsync(environmentUrl, solutionName, includeManaged: false, RuntimeOptions, RuntimeOptions.NoCache, cancellationToken, bypassCache));
         if (remoteSln == null)
             throw new FlowlineException(ExitCode.NotFound, $"Solution '{solutionName}' not found in that environment.");
 

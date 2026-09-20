@@ -42,8 +42,8 @@ public class PullCommand(CommandServices services, EnvironmentTargetResolver env
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // R3: DEV-only — refused before any PAC profile resolve, connect, or .flowline write.
-        var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
-            (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+        var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), RuntimeOptions,
+            (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, RuntimeOptions, settings.NoCache, ct), cancellationToken);
         var (devEnv, _) = await GetAndCheckEnvironmentAsync(target.Url, target.Role, settings, cancellationToken, devOnly: true);
 
         // Solution is the single one configured in .flowline — sync is project-mode only
@@ -84,7 +84,7 @@ public class PullCommand(CommandServices services, EnvironmentTargetResolver env
         Logger.LogInformation("Diff: {TotalFiles} files changed", preSyncSummary.TotalFiles);
         if (preSyncSummary.TotalFiles > 0)
         {
-            if (settings.HasForce("dirty"))
+            if (RuntimeOptions.HasForce("dirty"))
             {
                 Console.Warning($"Uncommitted changes in '{srcDisplay}' — overwriting.");
                 preSyncSummary.WriteFlat(Console, RuntimeOptions, "[dim]  ");

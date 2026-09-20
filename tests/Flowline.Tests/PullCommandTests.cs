@@ -74,18 +74,20 @@ public class PullCommandTests
     public void HasForce_All_ApprovesDirtyAndConfigTogether()
     {
         var settings = new PullCommand.Settings { Force = ["all"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
 
-        settings.HasForce("dirty").Should().BeTrue();
-        settings.HasForce("config").Should().BeTrue();
+        options.HasForce("dirty").Should().BeTrue();
+        options.HasForce("config").Should().BeTrue();
     }
 
     [Fact]
     public void HasForce_ConfigOnly_DoesNotApproveDirty()
     {
         var settings = new PullCommand.Settings { Force = ["config"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
 
-        settings.HasForce("config").Should().BeTrue();
-        settings.HasForce("dirty").Should().BeFalse();
+        options.HasForce("config").Should().BeTrue();
+        options.HasForce("dirty").Should().BeFalse();
     }
 
     [Fact]

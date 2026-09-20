@@ -83,9 +83,9 @@ public class ProjectConfigTests : IDisposable
     {
         var config = new ProjectConfig();
         config.AddOrUpdateSolution("OnlySolution", includeManaged: true);
-        var settings = new FlowlineSettings { Force = ["config"] };
+        var options = new FlowlineRuntimeOptions { Force = ["config"] };
 
-        var sln = config.GetOrUpdateSolution(null, includeManaged: false, settings);
+        var sln = config.GetOrUpdateSolution(null, includeManaged: false, options);
 
         sln!.IncludeManaged.Should().BeFalse();
         config.Solution!.IncludeManaged.Should().BeFalse();
@@ -97,7 +97,7 @@ public class ProjectConfigTests : IDisposable
         var config = new ProjectConfig();
         config.AddOrUpdateSolution("OnlySolution", includeManaged: true);
 
-        var act = () => config.GetOrUpdateSolution(null, includeManaged: false, new FlowlineSettings());
+        var act = () => config.GetOrUpdateSolution(null, includeManaged: false, new FlowlineRuntimeOptions());
 
         act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ForceRequired);
         config.Solution!.IncludeManaged.Should().BeTrue();
@@ -109,7 +109,7 @@ public class ProjectConfigTests : IDisposable
         var config = new ProjectConfig();
         config.AddOrUpdateSolution("OnlySolution", includeManaged: false);
 
-        var sln = config.GetOrUpdateSolution(null, includeManaged: false, new FlowlineSettings());
+        var sln = config.GetOrUpdateSolution(null, includeManaged: false, new FlowlineRuntimeOptions());
 
         sln!.IncludeManaged.Should().BeFalse();
     }
@@ -292,7 +292,7 @@ public class ProjectConfigTests : IDisposable
     {
         var config = new ProjectConfig { DevUrl = "https://contoso-dev.crm4.dynamics.com/" };
 
-        var act = () => config.GetOrUpdateDevUrl("https://contoso-dev2.crm4.dynamics.com/", new FlowlineSettings());
+        var act = () => config.GetOrUpdateDevUrl("https://contoso-dev2.crm4.dynamics.com/", new FlowlineRuntimeOptions());
 
         act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ForceRequired);
         config.DevUrl.Should().Be("https://contoso-dev.crm4.dynamics.com/");

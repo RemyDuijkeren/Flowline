@@ -1,4 +1,3 @@
-using Flowline;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
@@ -42,16 +41,16 @@ public class CreateEnvironmentResolver(
     internal Func<CancellationToken, Task<List<EnvironmentInfo>>>? GetEnvironmentsOverride { get; set; }
 
     /// <summary>Seam for testing — overrides FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync.</summary>
-    internal Func<string, PacProfile, FlowlineSettings, CancellationToken, Task<EnvironmentInfo?>>? GetEnvironmentInfoByUrlOverride { get; set; }
+    internal Func<string, PacProfile, FlowlineRuntimeOptions, CancellationToken, Task<EnvironmentInfo?>>? GetEnvironmentInfoByUrlOverride { get; set; }
 
     // INIT (greenfield create): resolve the DEV target. The picker is filtered to create-eligible types
     // (Sandbox/Developer, KTD4) — Spectre has no non-selectable item, so filter rather than gray-out —
     // plus a "+ Create new environment" escape hatch. Returns null when the user picks that hatch: advice
     // is already emitted and the caller should exit 0 (env creation stays with `provision`, not here).
-    public async Task<EnvironmentInfo?> ResolveCreateTargetAsync(string? devUrl, FlowlineSettings settings, CancellationToken cancellationToken = default)
+    public async Task<EnvironmentInfo?> ResolveCreateTargetAsync(string? devUrl, FlowlineRuntimeOptions options, CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrWhiteSpace(devUrl))
-            return await ResolveGivenUrlAsync(devUrl, settings, requireEligible: true, "Dev", cancellationToken);
+            return await ResolveGivenUrlAsync(devUrl, options, requireEligible: true, "Dev", cancellationToken);
 
         // R13: no flag, no TTY — error naming the flag, never prompt or hang.
         if (!IsInteractive())
@@ -64,10 +63,10 @@ public class CreateEnvironmentResolver(
     // CLONE (adopt existing): resolve the environment to clone from — the source of truth, usually PROD
     // (see AGENTS.md). No type guard: clone-existing writes nothing to Dataverse, so any environment is a
     // valid source. The caller assigns the .flowline role from the chosen environment's type.
-    public async Task<EnvironmentInfo> ResolveSourceAsync(string? sourceUrl, FlowlineSettings settings, CancellationToken cancellationToken = default)
+    public async Task<EnvironmentInfo> ResolveSourceAsync(string? sourceUrl, FlowlineRuntimeOptions options, CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrWhiteSpace(sourceUrl))
-            return await ResolveGivenUrlAsync(sourceUrl, settings, requireEligible: false, "Cloning from", cancellationToken);
+            return await ResolveGivenUrlAsync(sourceUrl, options, requireEligible: false, "Cloning from", cancellationToken);
 
         if (!IsInteractive())
             throw new FlowlineException(ExitCode.ValidationFailed,
@@ -76,20 +75,17 @@ public class CreateEnvironmentResolver(
         return await PickSourceAsync(cancellationToken);
     }
 
-    async Task<EnvironmentInfo> ResolveGivenUrlAsync(string url, FlowlineSettings settings, bool requireEligible, string confirmLabel, CancellationToken cancellationToken)
+    async Task<EnvironmentInfo> ResolveGivenUrlAsync(string url, FlowlineRuntimeOptions options, bool requireEligible, string confirmLabel, CancellationToken cancellationToken)
     {
         // KTD5: switch-only — ProfileResolutionService errors naming `pac auth create` when no
         // profile matches, and never creates a profile or launches a login (R9/R13).
         var profile = await profileResolutionService.ResolveAsync(url, cancellationToken);
 
-        // NoCache lives on DataverseSettings, not the shared base — this class serves both init and
-        // clone, so it isn't known statically which settings type it got.
-        var noCache = (settings as DataverseSettings)?.NoCache ?? false;
         var getEnvironmentInfo = GetEnvironmentInfoByUrlOverride
-            ?? ((u, p, s, ct) => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(u, p, s, noCache, ct));
+            ?? ((u, p, o, ct) => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(u, p, o, options.NoCache, ct));
         var env = await console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{url}[/]...",
-            _ => getEnvironmentInfo(url, profile, settings, cancellationToken));
+            _ => getEnvironmentInfo(url, profile, options, cancellationToken));
 
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, "Environment not found — check the URL or your PAC login.");

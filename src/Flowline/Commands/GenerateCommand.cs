@@ -119,7 +119,7 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
             if (Config.Solution != null)
                 ValidateSolutionMatchesConfig(settings.Solution, Config.Solution.UniqueName);
 
-            projectSln = Config.GetOrUpdateSolution(settings.Solution, settings: settings);
+            projectSln = Config.GetOrUpdateSolution(settings.Solution, options: RuntimeOptions);
             if (projectSln == null)
                 throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as an argument or configure a single solution in .flowline.");
 
@@ -128,8 +128,8 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
             // in Config in-memory here; the existing end-of-run Config.Save(RootFolder) (ShouldPersistSettings,
             // below) is what actually flushes it once generation succeeds — matching how projectSln's own
             // mutations above are already deferred to that one save.
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: null, IsInteractive(), settings,
-                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: null, IsInteractive(), RuntimeOptions,
+                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, RuntimeOptions, settings.NoCache, ct), cancellationToken);
             devUrl = target.Url;
             resolvedRole = target.Role;
 
@@ -138,7 +138,7 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
             // Apply --namespace, --extra-tables, --generator, --output, --service-context-name (R7, R8,
             // R11): each one write-on-first-use, ask-on-change against .flowline, via the same core the
             // environment URLs use.
-            ApplyPersistedGenerateSettings(projectSln, settings, RootFolder);
+            ApplyPersistedGenerateSettings(projectSln, settings, RuntimeOptions, RootFolder);
 
             var slnFolder = RootFolder;
 
@@ -316,11 +316,11 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
     /// read on any of those would silently let a declined flag win anyway.
     /// </para>
     /// </remarks>
-    internal static void ApplyPersistedGenerateSettings(ProjectSolution projectSln, Settings settings, string rootFolder)
+    internal static void ApplyPersistedGenerateSettings(ProjectSolution projectSln, Settings settings, FlowlineRuntimeOptions options, string rootFolder)
     {
         if (!string.IsNullOrWhiteSpace(settings.Namespace))
             SetGenerate(projectSln, settings.Namespace.Trim(), g => g.Namespace, (g, v) => g.Namespace = v,
-                "Namespace", "Solution.Generate.Namespace", settings);
+                "Namespace", "Solution.Generate.Namespace", options);
 
         if (settings.ExtraTables != null)
         {
@@ -329,29 +329,29 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
             SetGenerate(projectSln, joined,
                 g => g.ExtraTables is { Length: > 0 } et ? string.Join(',', et) : null,
                 (g, v) => g.ExtraTables = string.IsNullOrWhiteSpace(v) ? null : v.Split(','),
-                "Extra tables", "Solution.Generate.ExtraTables", settings);
+                "Extra tables", "Solution.Generate.ExtraTables", options);
         }
 
         if (settings.Generator.HasValue)
             SetGenerate(projectSln, settings.Generator.Value.ToString(), g => g.Generator?.ToString(),
                 (g, v) => g.Generator = Enum.Parse<GeneratorType>(v!),
-                "Generator", "Solution.Generate.Generator", settings);
+                "Generator", "Solution.Generate.Generator", options);
 
         if (!string.IsNullOrWhiteSpace(settings.ServiceContextName))
             SetGenerate(projectSln, settings.ServiceContextName.Trim(), g => g.ServiceContextName, (g, v) => g.ServiceContextName = v,
-                "Service context name", "Solution.Generate.ServiceContextName", settings);
+                "Service context name", "Solution.Generate.ServiceContextName", options);
 
         if (!string.IsNullOrWhiteSpace(settings.Output))
             SetGenerate(projectSln, Path.GetRelativePath(rootFolder, Path.GetFullPath(settings.Output)), g => g.OutputPath, (g, v) => g.OutputPath = v,
-                "Output path", "Solution.Generate.OutputPath", settings);
+                "Output path", "Solution.Generate.OutputPath", options);
     }
 
     static void SetGenerate(ProjectSolution projectSln, string? input, Func<GenerateConfig, string?> get, Action<GenerateConfig, string?> set,
-        string label, string key, FlowlineSettings settings)
+        string label, string key, FlowlineRuntimeOptions options)
     {
         projectSln.Generate ??= new GenerateConfig();
         var generate = projectSln.Generate;
-        ProjectConfig.GetOrUpdateValue(input, () => get(generate), v => set(generate, v), label, key, settings);
+        ProjectConfig.GetOrUpdateValue(input, () => get(generate), v => set(generate, v), label, key, options);
     }
 
     async Task<(XrmContextAuth? XrmContextAuth, string? ResolvedSecret)> ResolveXrmContextAuthAsync(

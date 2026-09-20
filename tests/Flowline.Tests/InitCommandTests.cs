@@ -171,7 +171,8 @@ public class InitCommandTests
 
     // Interactivity comes from the injected console's capabilities — most tests want a TTY, so this
     // defaults to interactive and the no-TTY tests opt out.
-    static (InitCommand Command, TestConsole Console, IOrganizationServiceAsync2 OrgService) MakeInitCommand(bool interactive = true)
+    static (InitCommand Command, TestConsole Console, IOrganizationServiceAsync2 OrgService) MakeInitCommand(
+        bool interactive = true, FlowlineRuntimeOptions? runtimeOptions = null)
     {
         var console = new TestConsole();
         console.Profile.Capabilities.Interactive = interactive;
@@ -197,7 +198,7 @@ public class InitCommandTests
         var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, capture);
 
         var command = new InitCommand(
-            new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService,
+            new CommandServices(console, runtimeOptions ?? new FlowlineRuntimeOptions(), profileResolutionService,
                 NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient())),
             createEnvironmentResolver, connector, new SolutionCreateService(), projectScaffolder,
             new EnvironmentTargetResolver(console))
@@ -376,7 +377,9 @@ public class InitCommandTests
     [Fact]
     public async Task CreateSolution_ExistingDifferentDevUrl_WithForceConfig_OverwritesIt()
     {
-        var (command, _, orgService) = MakeInitCommand();
+        // Mirrors what ExecuteAsync's InitializeRuntimeOptions would have copied off settings.Force
+        // before ExecuteFlowlineAsync ever reaches CreateSolutionAsync — this test calls it directly.
+        var (command, _, orgService) = MakeInitCommand(runtimeOptions: new FlowlineRuntimeOptions { Force = ["config"] });
         StubCreate(orgService, Guid.NewGuid(), Guid.NewGuid());
 
         var root = CreateTempRoot();

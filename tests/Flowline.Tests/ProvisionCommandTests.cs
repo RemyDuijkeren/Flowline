@@ -163,17 +163,19 @@ public class ProvisionCommandTests
     public void HasForce_Overwrite_ApprovesOverwriteSpecifierOnly()
     {
         var settings = new ProvisionCommand.Settings { Force = ["overwrite"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
 
-        settings.HasForce("overwrite").Should().BeTrue();
-        settings.HasForce("config").Should().BeFalse();
+        options.HasForce("overwrite").Should().BeTrue();
+        options.HasForce("config").Should().BeFalse();
     }
 
     [Fact]
     public void HasForce_All_ApprovesOverwrite()
     {
         var settings = new ProvisionCommand.Settings { Force = ["all"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
 
-        settings.HasForce("overwrite").Should().BeTrue();
+        options.HasForce("overwrite").Should().BeTrue();
     }
 
     [Fact]
@@ -204,9 +206,10 @@ public class ProvisionCommandTests
     public async Task OverwriteGate_NonInteractive_NoForce_ThrowsForceRequiredNamingForceOverwrite()
     {
         var settings = new ProvisionCommand.Settings { Force = [] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
         var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
 
-        var act = () => new TestConsole().ConfirmAsync(prompt, false, settings, "overwrite", CancellationToken.None);
+        var act = () => new TestConsole().ConfirmAsync(prompt, false, options, "overwrite", CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force overwrite"));
@@ -216,9 +219,10 @@ public class ProvisionCommandTests
     public async Task OverwriteGate_NonInteractive_ForceAll_ProceedsWithoutPrompting()
     {
         var settings = new ProvisionCommand.Settings { Force = ["all"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
         var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
 
-        var result = await new TestConsole().ConfirmAsync(prompt, false, settings, "overwrite", CancellationToken.None);
+        var result = await new TestConsole().ConfirmAsync(prompt, false, options, "overwrite", CancellationToken.None);
 
         result.Should().BeTrue();
     }
@@ -227,9 +231,10 @@ public class ProvisionCommandTests
     public async Task OverwriteGate_NonInteractive_ForceOverwrite_ProceedsWithoutPrompting()
     {
         var settings = new ProvisionCommand.Settings { Force = ["overwrite"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
         var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
 
-        var result = await new TestConsole().ConfirmAsync(prompt, false, settings, "overwrite", CancellationToken.None);
+        var result = await new TestConsole().ConfirmAsync(prompt, false, options, "overwrite", CancellationToken.None);
 
         result.Should().BeTrue();
     }
@@ -238,11 +243,12 @@ public class ProvisionCommandTests
     public async Task OverwriteGate_Interactive_Decline_ReturnsFalse()
     {
         var settings = new ProvisionCommand.Settings { Force = [] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
         var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
         var console = new TestConsole().Interactive();
         console.Input.PushTextWithEnter("n");
 
-        var result = await console.ConfirmAsync(prompt, false, settings, "overwrite", CancellationToken.None);
+        var result = await console.ConfirmAsync(prompt, false, options, "overwrite", CancellationToken.None);
 
         result.Should().BeFalse();
     }
@@ -251,11 +257,12 @@ public class ProvisionCommandTests
     public async Task OverwriteGate_Interactive_Accept_ReturnsTrue()
     {
         var settings = new ProvisionCommand.Settings { Force = [] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
         var prompt = ProvisionCommand.BuildOverwritePrompt("ContosoSales Dev");
         var console = new TestConsole().Interactive();
         console.Input.PushTextWithEnter("y");
 
-        var result = await console.ConfirmAsync(prompt, false, settings, "overwrite", CancellationToken.None);
+        var result = await console.ConfirmAsync(prompt, false, options, "overwrite", CancellationToken.None);
 
         result.Should().BeTrue();
     }

@@ -124,8 +124,8 @@ public class CloneCommand(CommandServices services,
     {
         if (!string.IsNullOrWhiteSpace(settings.Env))
         {
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, config, onlyRole: null, IsInteractive(), settings,
-                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, config, onlyRole: null, IsInteractive(), RuntimeOptions,
+                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, RuntimeOptions, settings.NoCache, ct), cancellationToken);
             return (target.Url, target.Role);
         }
 
@@ -198,7 +198,7 @@ public class CloneCommand(CommandServices services,
         List<SolutionInfo> unmanaged;
         while (true)
         {
-            devEnv = await createEnvironmentResolver.ResolveSourceAsync(seedSourceUrl, settings, cancellationToken);
+            devEnv = await createEnvironmentResolver.ResolveSourceAsync(seedSourceUrl, RuntimeOptions, cancellationToken);
 
             var getSolutions = GetSolutionsOverride ?? ((url, ct) => PacUtils.GetSolutionsAsync(url, _capture, ct));
             var allSolutions = await Console.Status().FlowlineSpinner().StartAsync(
@@ -241,11 +241,11 @@ public class CloneCommand(CommandServices services,
         // source-of-truth model means a Production source is the Prod role; the gate above only reaches
         // here when no role is configured yet.
         var role = await ResolveRoleAsync(devEnv, cancellationToken);
-        config.GetOrUpdateUrl(role, devEnv.EnvironmentUrl, settings);
+        config.GetOrUpdateUrl(role, devEnv.EnvironmentUrl, RuntimeOptions);
         Console.Ok($"{role.UpperLabel()} set to [bold]{devEnv.DisplayName}[/] ({devEnv.EnvironmentUrl})");
 
         var projectSln = config.GetOrUpdateSolution(selected.SolutionUniqueName,
-            settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings)!;
+            settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, RuntimeOptions)!;
 
         return (null, devEnv, projectSln, selected);
     }

@@ -108,8 +108,8 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
         }
         else
         {
-            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), settings,
-                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, settings, settings.NoCache, ct), cancellationToken);
+            var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), RuntimeOptions,
+                (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, RuntimeOptions, settings.NoCache, ct), cancellationToken);
             environmentUrl = target.Url;
             resolvedRole = target.Role;
             configSaved = target.Saved;
@@ -171,9 +171,9 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
                         ? await pluginService.SyncSolutionFromPackageAsync(conn, target.ReflectedAssemblies,
                             await File.ReadAllBytesAsync(target.PushPath, cancellationToken).ConfigureAwait(false),
                             target.PushPath, target.AssemblyName, solutionName, runMode,
-                            settings.HasForce("delete-orphans"), cancellationToken, pushedAssemblyNames).ConfigureAwait(false)
+                            RuntimeOptions.HasForce("delete-orphans"), cancellationToken, pushedAssemblyNames).ConfigureAwait(false)
                         : await pluginService.SyncSolutionFromPackageAsync(conn, target.PushPath, target.AssemblyName, solutionName, runMode,
-                            settings.HasForce("delete-orphans"), cancellationToken, pushedAssemblyNames).ConfigureAwait(false);
+                            RuntimeOptions.HasForce("delete-orphans"), cancellationToken, pushedAssemblyNames).ConfigureAwait(false);
                 }
                 else if (pushAssemblyOnly)
                 {
@@ -184,7 +184,7 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
                 {
                     Logger.LogInformation("Pushing plugins: {Dll}", target.PushPath);
                     pushedChanges |= await pluginService.SyncSolutionAsync(conn, target.PushPath, solutionName, runMode,
-                        settings.HasForce("delete-orphans"), settings.HasForce("recreate-assembly"), cancellationToken,
+                        RuntimeOptions.HasForce("delete-orphans"), RuntimeOptions.HasForce("recreate-assembly"), cancellationToken,
                         pushedAssemblyNames).ConfigureAwait(false);
                 }
             }
@@ -218,7 +218,7 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
             // KTD12: cleanup runs before web resources are created/updated/deleted — removes stale/orphaned
             // form event handlers (R14) so a pending web-resource delete never trips Dataverse's
             // "referenced by N other components" dependency fault.
-            var cleanupResult = await formEventService.CleanupOrphanedAsync(conn, webResourcesSyncFolder, solutionName, settings.HasForce("delete-form-handlers"), dryRun, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false);
+            var cleanupResult = await formEventService.CleanupOrphanedAsync(conn, webResourcesSyncFolder, solutionName, RuntimeOptions.HasForce("delete-form-handlers"), dryRun, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false);
             pushedChanges |= cleanupResult.Changed;
 
             Logger.LogInformation("Pushing web resources: {Folder}", webResourcesSyncFolder);
@@ -233,7 +233,7 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
 
             // R10a: registration runs strictly after web resources are pushed — new/updated handlers can
             // only reference libraries that already exist in Dataverse.
-            pushedChanges |= await formEventService.RegisterAsync(conn, webResourcesSyncFolder, solutionName, settings.HasForce("delete-form-handlers"), dryRun, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false);
+            pushedChanges |= await formEventService.RegisterAsync(conn, webResourcesSyncFolder, solutionName, RuntimeOptions.HasForce("delete-form-handlers"), dryRun, publishAfterSync, formEventCachePath, cancellationToken).ConfigureAwait(false);
         }
 
         Console.Done(runMode == RunMode.DryRun

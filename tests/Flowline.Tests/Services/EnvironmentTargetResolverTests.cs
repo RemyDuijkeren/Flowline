@@ -58,7 +58,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig();
 
         var act = () => resolver.ResolveAsync("test", config, onlyRole: null, isInteractive: false,
-            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Where(e => e.ExitCode == ExitCode.ConfigInvalid)
@@ -72,7 +72,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig { DevUrl = DevUrl };
 
         var result = await resolver.ResolveAsync("dev", config, onlyRole: null, isInteractive: false,
-            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         result.Url.Should().Be(DevUrl);
         result.Role.Should().Be(EnvironmentRole.Dev);
@@ -86,7 +86,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig { DevUrl = DevUrl };
 
         var result = await resolver.ResolveAsync(null, config, onlyRole: null, isInteractive: false,
-            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         result.Role.Should().Be(EnvironmentRole.Dev);
     }
@@ -100,7 +100,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig { DevUrl = "https://contoso-dev.crm4.dynamics.com/" };
 
         var result = await resolver.ResolveAsync("HTTPS://CONTOSO-DEV.crm4.dynamics.com", config, onlyRole: null,
-            isInteractive: false, new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            isInteractive: false, new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         result.Role.Should().Be(EnvironmentRole.Dev);
         result.Saved.Should().BeFalse();
@@ -117,7 +117,7 @@ public class EnvironmentTargetResolverTests
 
         var (result, output) = await RunWithSwappedConsoleAsync(() =>
             resolver.ResolveAsync(DevUrl, config, onlyRole: null, isInteractive: false,
-                new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None));
+                new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None));
 
         result.Saved.Should().BeTrue();
         result.Role.Should().Be(EnvironmentRole.Dev);
@@ -132,10 +132,10 @@ public class EnvironmentTargetResolverTests
         var (resolver, _) = MakeResolver();
         var config = new ProjectConfig();
         await resolver.ResolveAsync(DevUrl, config, onlyRole: null, isInteractive: false,
-            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
 
         var result = await resolver.ResolveAsync(null, config, onlyRole: null, isInteractive: false,
-            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         result.Url.Should().Be(DevUrl);
         result.Saved.Should().BeFalse();
@@ -151,7 +151,7 @@ public class EnvironmentTargetResolverTests
         const string url = "https://contoso.crm4.dynamics.com/";
 
         var act = () => resolver.ResolveAsync(url, config, onlyRole: EnvironmentRole.Dev, isInteractive: false,
-            new FlowlineSettings(), EnvInfo("Production"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Production"), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
         config.DevUrl.Should().BeNull();
@@ -167,7 +167,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig { DevUrl = "https://contoso-dev-old.crm4.dynamics.com/" };
 
         var act = () => resolver.ResolveAsync(DevUrl, config, onlyRole: null, isInteractive: false,
-            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Where(e => e.ExitCode == ExitCode.ForceRequired)
@@ -185,7 +185,7 @@ public class EnvironmentTargetResolverTests
         const string url = "https://contoso.crm4.dynamics.com/";
 
         var act = () => resolver.ResolveAsync(url, config, onlyRole: null, isInteractive: false,
-            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Where(e => e.ExitCode == ExitCode.ValidationFailed)
@@ -205,7 +205,7 @@ public class EnvironmentTargetResolverTests
         console.Input.PushKey(ConsoleKey.Enter); // role picker: inferred role (Dev) listed first
 
         var result = await resolver.ResolveAsync(DevUrl, config, onlyRole: null, isInteractive: true,
-            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
 
         result.Role.Should().Be(EnvironmentRole.Dev);
         result.Saved.Should().BeTrue();
@@ -225,7 +225,7 @@ public class EnvironmentTargetResolverTests
         console.Input.PushKey(ConsoleKey.Enter);
 
         var result = await resolver.ResolveAsync(DevUrl, config, onlyRole: null, isInteractive: true,
-            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
 
         result.Role.Should().BeNull();
         result.Saved.Should().BeFalse();
@@ -243,7 +243,7 @@ public class EnvironmentTargetResolverTests
         console.Input.PushKey(ConsoleKey.Enter); // Dev is the only role choice, listed first
 
         var result = await resolver.ResolveAsync(DevUrl, config, onlyRole: EnvironmentRole.Dev, isInteractive: true,
-            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
 
         result.Role.Should().Be(EnvironmentRole.Dev);
         console.Output.Should().Contain("DEV").And.NotContain("TEST").And.NotContain("UAT").And.NotContain("PROD");
@@ -258,7 +258,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig();
 
         var act = () => resolver.ResolveAsync("staging", config, onlyRole: null, isInteractive: false,
-            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
     }
@@ -272,7 +272,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig { ProdUrl = "https://contoso.crm4.dynamics.com/" };
 
         var act = () => resolver.ResolveAsync("prod", config, onlyRole: EnvironmentRole.Dev, isInteractive: false,
-            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
     }
@@ -284,7 +284,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig { TestUrl = TestUrl };
 
         var act = () => resolver.ResolveAsync(TestUrl, config, onlyRole: EnvironmentRole.Dev, isInteractive: false,
-            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
     }
@@ -297,7 +297,7 @@ public class EnvironmentTargetResolverTests
         const string url = "https://contoso.crm4.dynamics.com/";
 
         var act = () => resolver.ResolveAsync(url, config, onlyRole: EnvironmentRole.Dev, isInteractive: false,
-            new FlowlineSettings(), EnvInfo("Production"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Production"), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
     }
@@ -311,7 +311,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig();
 
         var act = () => resolver.ResolveAsync(url, config, onlyRole: EnvironmentRole.Dev, isInteractive: false,
-            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Where(e => e.ExitCode == ExitCode.ValidationFailed)
@@ -328,7 +328,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig();
 
         var act = () => resolver.ResolveAsync(TestUrl, config, onlyRole: EnvironmentRole.Dev, isInteractive: true,
-            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
         console.Output.Should().NotContain("Save");
@@ -353,7 +353,7 @@ public class EnvironmentTargetResolverTests
         try
         {
             result = await resolver.ResolveAsync(newUrl, config, onlyRole: EnvironmentRole.Dev, isInteractive: true,
-                new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+                new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
         }
         finally
         {
@@ -373,7 +373,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig();
 
         var result = await resolver.ResolveAsync(DevUrl, config, onlyRole: EnvironmentRole.Dev, isInteractive: false,
-            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
 
         result.Role.Should().Be(EnvironmentRole.Dev);
         result.Saved.Should().BeTrue();
@@ -388,7 +388,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig { DevUrl = DevUrl };
 
         var act = () => resolver.ResolveAsync("dev", config, onlyRole: EnvironmentRole.Prod, isInteractive: false,
-            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Where(e => e.ExitCode == ExitCode.ValidationFailed)
@@ -402,7 +402,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig { DevUrl = DevUrl };
 
         var act = () => resolver.ResolveAsync(DevUrl, config, onlyRole: EnvironmentRole.Prod, isInteractive: false,
-            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
     }
@@ -414,7 +414,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig();
 
         var act = () => resolver.ResolveAsync(ProdUrl, config, onlyRole: EnvironmentRole.Prod, isInteractive: false,
-            new FlowlineSettings(), EnvInfo("Sandbox"), CancellationToken.None);
+            new FlowlineRuntimeOptions(), EnvInfo("Sandbox"), CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
             .Where(e => e.ExitCode == ExitCode.ValidationFailed)
@@ -430,7 +430,7 @@ public class EnvironmentTargetResolverTests
 
         var (result, output) = await RunWithSwappedConsoleAsync(() =>
             resolver.ResolveAsync(ProdUrl, config, onlyRole: EnvironmentRole.Prod, isInteractive: false,
-                new FlowlineSettings(), EnvInfo("Production"), CancellationToken.None));
+                new FlowlineRuntimeOptions(), EnvInfo("Production"), CancellationToken.None));
 
         result.Saved.Should().BeTrue();
         result.Role.Should().Be(EnvironmentRole.Prod);
@@ -446,7 +446,7 @@ public class EnvironmentTargetResolverTests
         var config = new ProjectConfig { ProdUrl = ProdUrl };
 
         var result = await resolver.ResolveAsync(null, config, onlyRole: EnvironmentRole.Prod, isInteractive: false,
-            new FlowlineSettings(), NotCalled(), CancellationToken.None);
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
         result.Role.Should().Be(EnvironmentRole.Prod);
         result.Url.Should().Be(ProdUrl);

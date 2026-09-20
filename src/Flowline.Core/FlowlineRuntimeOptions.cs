@@ -22,4 +22,8 @@ public sealed class FlowlineRuntimeOptions
     public FlowlineToolVersions? ToolVersions { get; set; }
     public byte[]? TelemetrySalt { get; set; }
     public bool AutoSwitchProfile { get; set; }
+    public bool NoCache { get; set; }
+
+    public bool HasForce(string specifier) =>
+        Force.Contains(specifier, StringComparer.OrdinalIgnoreCase) || Force.Contains("all", StringComparer.OrdinalIgnoreCase);
 }

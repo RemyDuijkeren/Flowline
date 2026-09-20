@@ -780,8 +780,9 @@ public class CloneCommandTests
     public void HasForce_All_ApprovesConfig()
     {
         var settings = new CloneCommand.Settings { Force = ["all"] };
+        var options = new FlowlineRuntimeOptions { Force = settings.Force };
 
-        settings.HasForce("config").Should().BeTrue();
+        options.HasForce("config").Should().BeTrue();
     }
 
     // ── Scaffolded AGENTS.md (U5) ───────────────────────────────────────────

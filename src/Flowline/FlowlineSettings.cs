@@ -14,9 +14,6 @@ public class FlowlineSettings : CommandSettings
     [Description("Approve a specific hazard by name for this command; repeatable. Pass 'all' for everything this command gates. An invalid value lists the valid ones.")]
     public string[] Force { get; set; } = [];
 
-    public bool HasForce(string specifier) =>
-        Force.Contains(specifier, StringComparer.OrdinalIgnoreCase) || Force.Contains("all", StringComparer.OrdinalIgnoreCase);
-
     // Shared by clone/configure/drift/generate/init — their only force-gated hazard is the cross-cutting
     // config-overwrite check (SettingsConsoleExtensions.Confirm), so their vocabulary is identical.
     internal static readonly string[] ConfigOnlyValidSpecifiers = ["config", "all"];
