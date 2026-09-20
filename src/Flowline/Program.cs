@@ -135,6 +135,7 @@ app.Configure(config =>
         {
             case FlowlineException fe:
                 serilogLogger?.Error("Command failed: {ExceptionDetail}", scrubbedException);
+                FlowlineTelemetry.RecordFailure((int)fe.ExitCode, scrubbedException);
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(fe.Message)}");
                 WriteExceptionContext(fe, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
@@ -144,6 +145,7 @@ app.Configure(config =>
             // request. Esc would otherwise be reported as an unreachable environment.
             case PromptCancelledException:
                 serilogLogger?.Information("Cancelled at a prompt");
+                FlowlineTelemetry.RecordExit((int)ExitCode.Cancelled);
                 AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
                 return (int)ExitCode.Cancelled;
             // A Dataverse request timeout is an environment condition, not a Flowline bug, so it
@@ -152,12 +154,14 @@ app.Configure(config =>
             // which would otherwise be reported as a user Ctrl+C and exit 130.
             case var _ when DataverseTimeout.Matches(ex, cancellationTokenSource.IsCancellationRequested):
                 serilogLogger?.Error("Dataverse request timed out: {ExceptionDetail}", scrubbedException);
+                FlowlineTelemetry.RecordFailure((int)ExitCode.Timeout, scrubbedException);
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(DataverseTimeout.Message)}");
                 AnsiConsole.MarkupLine($"[dim]{Markup.Escape(DataverseTimeout.NextStep(args.FirstOrDefault()))}[/]");
                 AnsiConsole.MarkupLine(logLink);
                 return (int)ExitCode.Timeout;
             case OperationCanceledException:
                 serilogLogger?.Information("Command cancelled by user");
+                FlowlineTelemetry.RecordExit((int)ExitCode.Cancelled);
                 return (int)ExitCode.Cancelled;
             // Covers CommandParseException (e.g. "--force" with no value swallowed the next
             // token) and other CommandRuntimeException shapes (e.g. a required positional like
@@ -166,6 +170,7 @@ app.Configure(config =>
             // treatment as a FlowlineException rather than a raw internal stack trace.
             case CommandRuntimeException cre:
                 serilogLogger?.Error("Command failed: {ExceptionDetail}", scrubbedException);
+                FlowlineTelemetry.RecordFailure((int)ExitCode.ValidationFailed, scrubbedException);
                 // "Unknown command 'dev'" is true and teaches nothing when the token is a perfectly good
                 // environment in the wrong position. Only this one shape is recognised, and it cannot
                 // match an invocation the parser would have accepted.
@@ -179,6 +184,7 @@ app.Configure(config =>
                 return (int)ExitCode.ValidationFailed;
             default:
                 serilogLogger?.Error("Unhandled exception: {ExceptionDetail}", scrubbedException);
+                FlowlineTelemetry.RecordFailure(1, scrubbedException);
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
                 WriteExceptionContext(ex, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
@@ -203,15 +209,29 @@ AnsiConsole.Console.Pipeline.Attach(new LoggingRenderHook(
 // reports it after the CancelKeyPress handler above has had its say.
 var tabStatus = TerminalTabStatus.Start(AnsiConsole.Console, TerminalTabStatus.LabelFor(args, applicationName));
 
+// The run's root span, and the exporter behind it when consent allows one. Above RunAsync because the
+// exception handler runs *inside* CommandApp, and the span it tags has to still be current there — the
+// command's own span is already disposed by the time the exception reaches the handler.
+FlowlineTelemetry.Start(args.FirstOrDefault() ?? applicationName, FlowlineScrubber.Current);
+
 // Environment.Exit (five call sites in GitUtils/PacUtils/DotNetUtils) terminates without unwinding, so
 // the wrapper's finally never runs and the indicator would be left spinning for the rest of the
-// session. Finish is idempotent, so this is a no-op after a normal exit.
-AppDomain.CurrentDomain.ProcessExit += (_, _) => tabStatus.Finish((int)ExitCode.GeneralError);
+// session. Finish is idempotent, so this is a no-op after a normal exit. Telemetry rides the same
+// hook for the same reason, and its flush is idempotent too.
+AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+{
+    tabStatus.Finish((int)ExitCode.GeneralError);
+    FlowlineTelemetry.Flush();
+};
 
 // ProcessExit does not fire for a bare console app on SIGTERM — a timeout wrapper or a job
 // cancellation would otherwise leave the indicator running. Ctrl+C is not handled here; it already
 // unwinds through CancelKeyPress and the wrapper below.
-using var sigTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, _ => tabStatus.Finish((int)ExitCode.Cancelled));
+using var sigTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, _ =>
+{
+    tabStatus.Finish((int)ExitCode.Cancelled);
+    FlowlineTelemetry.Flush();
+});
 
 var exitCode = await tabStatus.RunAsync(async () =>
 {
@@ -228,6 +248,8 @@ var exitCode = await tabStatus.RunAsync(async () =>
     return code;
 });
 
+FlowlineTelemetry.RecordExit(exitCode);
+FlowlineTelemetry.Flush();
 Log.CloseAndFlush();
 hookLoggerFactory.Dispose();
 return exitCode;
