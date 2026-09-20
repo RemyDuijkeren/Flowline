@@ -41,10 +41,28 @@ public static class FlowlineTelemetry
         {
             try
             {
+                // The exporter's own statsbeat sends usage metrics about the SDK on its own schedule,
+                // and waits for them on the way out — measured at about two of the four seconds a
+                // teardown took. Set in-process only; it does not touch the user's environment.
+                Environment.SetEnvironmentVariable("APPLICATIONINSIGHTS_STATSBEAT_DISABLED", "true");
+
                 s_provider = Sdk.CreateTracerProviderBuilder()
                     .AddSource(FlowlineActivitySource.Source.Name)
                     .AddProcessor(new ScrubbingProcessor(scrubber))
-                    .AddAzureMonitorTraceExporter(o => o.ConnectionString = connectionString)
+                    .AddAzureMonitorTraceExporter(o =>
+                    {
+                        o.ConnectionString = connectionString;
+                        // The exporter rate-limits to five traces a second by default, which arrived
+                        // stamped as a 25% sample. Flowline's volume does not need sampling, and a
+                        // sampled dataset makes "which exit code actually fires" harder to answer.
+                        o.TracesPerSecond = null;
+                        o.SamplingRatio = 1.0F;
+                        // Traces only. These three are metric signals the plan does not send, and each
+                        // one is work a short-lived CLI process pays for on the way out.
+                        o.EnableLiveMetrics = false;
+                        o.EnableStandardMetrics = false;
+                        o.EnablePerformanceCounters = false;
+                    })
                     .Build();
             }
             catch
