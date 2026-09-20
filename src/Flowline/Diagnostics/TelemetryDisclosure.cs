@@ -11,12 +11,24 @@ namespace Flowline.Diagnostics;
 /// </remarks>
 public static class TelemetryDisclosure
 {
+    /// <summary>
+    /// Bumped by hand when what Flowline collects changes, which re-shows the notice.
+    /// </summary>
+    /// <remarks>
+    /// The dotnet CLI keys its own notice to the SDK version, so an update re-shows it. Keying to the
+    /// collection instead of the release says the same thing without nagging: someone who agreed to a
+    /// command name and an exit code has not agreed to their log lines, and that is the change worth
+    /// interrupting them for. A release that collects nothing new leaves them alone.
+    /// </remarks>
+    public const int Version = 2;
+
     public const string Text = """
-        · Flowline sends usage and crash telemetry: the command you ran, its exit code and duration,
-          your OS and tool versions, and the full exception when something fails. URLs, email
-          addresses, paths, solution names and branch names are hashed before anything leaves — your
-          log file shows exactly what was sent.
-          Turn it off with FLOWLINE_TELEMETRY_OPTOUT=1. You'll only see this once.
+        · Flowline sends usage and crash telemetry: the command you ran, its exit code, how long each
+          step took, your OS and tool versions, and the log lines this run wrote. A failure also sends
+          the exception and its stack trace. URLs, email addresses, paths, solution names and branch
+          names are hashed first, so your own log file shows exactly what was sent.
+          Turn it off with FLOWLINE_TELEMETRY_OPTOUT=1
+          More: https://github.com/RemyDuijkeren/Flowline/wiki/18-Telemetry
         """;
 
     public static void ShowOnce() => ShowOnce(new ValidationCacheStore(), Console.Error);
@@ -26,7 +38,7 @@ public static class TelemetryDisclosure
         try
         {
             var cache = store.Load();
-            if (cache.TelemetryDisclosureShownAtUtc is not null) return;
+            if (cache.TelemetryDisclosureVersion >= Version) return;
 
             // Written first, then recorded as written. The plan had this the other way round, to stop a
             // failure mid-write producing the notice twice; but marking first means a stderr that
@@ -40,6 +52,7 @@ public static class TelemetryDisclosure
             try
             {
                 cache.TelemetryDisclosureShownAtUtc = DateTimeOffset.UtcNow;
+                cache.TelemetryDisclosureVersion = Version;
                 store.Save(cache);
             }
             catch
