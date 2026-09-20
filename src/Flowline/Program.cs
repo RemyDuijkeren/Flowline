@@ -185,7 +185,7 @@ app.Configure(config =>
                 return (int)ExitCode.ValidationFailed;
             default:
                 serilogLogger?.Error("Unhandled exception: {ExceptionDetail}", scrubbedException);
-                FlowlineTelemetry.RecordFailure(1, scrubbedException);
+                FlowlineTelemetry.RecordFailure((int)ExitCode.GeneralError, scrubbedException);
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
                 WriteExceptionContext(ex, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
@@ -233,7 +233,13 @@ catch { } // Intentional: nothing about scrubbing setup is worth failing a launc
 
 // Fires only when a provider was actually built, so an opted-out run, or a build with no connection
 // string, writes nothing (R2, R10).
-if (FlowlineTelemetry.Start(args.FirstOrDefault() ?? applicationName, FlowlineScrubber.Current))
+// Scrubbed, because the first argument is not always a command name: it is whatever was typed, and
+// the CommandRuntimeException arm above exists precisely because an environment URL lands there when
+// it is passed in the wrong position. The span's name is exported as-is, so it goes through the same
+// rules as every tag value.
+var runName = FlowlineScrubber.Current.Scrub(args.FirstOrDefault()) ?? applicationName;
+
+if (FlowlineTelemetry.Start(runName, FlowlineScrubber.Current))
     TelemetryDisclosure.ShowOnce();
 
 // Environment.Exit (five call sites in GitUtils/PacUtils/DotNetUtils) terminates without unwinding, so

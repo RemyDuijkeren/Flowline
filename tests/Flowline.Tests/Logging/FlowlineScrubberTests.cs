@@ -135,6 +135,38 @@ public class FlowlineScrubberTests
     }
 
     [Fact]
+    public void Scrub_WhenOneKnownValueIsAPrefixOfAnother_LeavesNoRemainderInPlaintext()
+    {
+        // Registration order is solution, branch, folder, and a solution name really can be a prefix of
+        // the folder holding it. Replacing the shorter one first would destroy the match the longer one
+        // needed and leave "Customizations" readable.
+        var scrubber = NewScrubber();
+        scrubber.AddKnownValue("AcmeBank");
+        scrubber.AddKnownValue("AcmeBankCustomizations");
+
+        var scrubbed = scrubber.Scrub("solution=AcmeBankCustomizations root=/x/AcmeBank done")!;
+
+        scrubbed.Should().NotContain("AcmeBank").And.NotContain("Customizations");
+        scrubbed.Should().Contain(FlowlineScrubber.Hash("AcmeBankCustomizations", TestSalt));
+        scrubbed.Should().Contain(FlowlineScrubber.Hash("AcmeBank", TestSalt));
+        scrubbed.Should().EndWith(" done");
+    }
+
+    [Fact]
+    public void Scrub_HandlesTheRenderedExceptionChainItIsActuallyFed()
+    {
+        // Scrub is handed ex.ToString() for the whole inner chain, so it has to cope with a long value
+        // without hanging. The rules carry a match timeout; a value that trips it is replaced wholesale
+        // rather than escaping unscrubbed.
+        var scrubber = NewScrubber();
+        var long_ = string.Concat(Enumerable.Repeat("at Flowline.Some.Frame() in /home/remy/x.cs:line 9\n", 5_000));
+
+        var scrubbed = scrubber.Scrub(long_)!;
+
+        scrubbed.Should().NotContain("/home/remy/");
+    }
+
+    [Fact]
     public void AddKnownValue_IgnoresValuesTooShortToIdentifyAnyone()
     {
         var scrubber = NewScrubber();

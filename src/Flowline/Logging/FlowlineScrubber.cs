@@ -19,22 +19,29 @@ namespace Flowline.Logging;
 /// </remarks>
 public sealed class FlowlineScrubber(byte[] salt)
 {
+    // Scrub is handed whole rendered exception chains, so a pathological input is not far-fetched.
+    // Without this the email rule could backtrack for a long time on one; with it, that input reaches
+    // the catch below and is replaced wholesale instead of hanging a command.
+    static readonly TimeSpan s_matchTimeout = TimeSpan.FromMilliseconds(250);
+
     static readonly Regex s_url =
-        new(@"https?://[^\s""'\]\)\(,;]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        new(@"https?://[^\s""'\]\)\(,;]+", RegexOptions.Compiled | RegexOptions.IgnoreCase, s_matchTimeout);
 
     static readonly Regex s_email =
-        new(@"([\w.+-]+)@([\w-]+(?:\.[\w-]+)+)", RegexOptions.Compiled);
+        new(@"([\w.+-]+)@([\w-]+(?:\.[\w-]+)+)", RegexOptions.Compiled, s_matchTimeout);
 
     // Only the segment that names the user, so the layout around it survives (KTD5): a value reading
     // /home/<hash>/Projects/<hash>/Solution still says what shape the install was, and a wholly
     // hashed path says nothing.
     static readonly Regex s_homeUser =
         new(@"(?<prefix>/home/|/Users/|[A-Za-z]:\\Users\\)(?<user>[^/\\\s""':;,)\]]+)",
-            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            RegexOptions.Compiled | RegexOptions.IgnoreCase, s_matchTimeout);
 
     // Replaced by value rather than by pattern (KTD6): a solution name, a branch name and a project
     // folder name have no distinguishing shape, so a regex would either miss them or hit unrelated
-    // text. Copy-on-write because the enrichers read this while the command adds to it mid-run.
+    // text. Copy-on-write so a reader always sees a complete array while the command adds to it
+    // mid-run. Single-writer: every registration happens on the main thread before or during command
+    // setup. Two concurrent writers would silently lose one registration, so keep it that way.
     volatile string[] _knownValues = [];
 
     // Below this, a known value is more likely to collide with ordinary text than to identify anyone
@@ -67,7 +74,11 @@ public sealed class FlowlineScrubber(byte[] salt)
             result = s_email.Replace(result, m => $"usr_{Hash(m.Groups[1].Value, salt)}.tnt_{Hash(m.Groups[2].Value, salt)}");
             result = s_homeUser.Replace(result, m => m.Groups["prefix"].Value + Hash(m.Groups["user"].Value, salt));
 
-            foreach (var known in _knownValues)
+            // Longest first. Registration order is solution, branch, folder, and one of those can be a
+            // prefix of another — a solution named AcmeBank inside a folder named AcmeBankCustomizations.
+            // Replacing the short one first destroys the match the long one needed, and the remainder
+            // ("Customizations") survives in plaintext.
+            foreach (var known in _knownValues.OrderByDescending(v => v.Length))
                 result = result.Replace(known, Hash(known, salt), StringComparison.OrdinalIgnoreCase);
 
             return result;

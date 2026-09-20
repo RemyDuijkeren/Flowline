@@ -47,7 +47,8 @@ public static class FlowlineTelemetry
             {
                 // The exporter's own statsbeat sends usage metrics about the SDK on its own schedule,
                 // and waits for them on the way out — measured at about two of the four seconds a
-                // teardown took. Set in-process only; it does not touch the user's environment.
+                // teardown took. Not persisted anywhere, though any pac/git/dotnet subprocess started
+                // after this inherits it, which at worst disables their statsbeat too.
                 Environment.SetEnvironmentVariable("APPLICATIONINSIGHTS_STATSBEAT_DISABLED", "true");
 
                 s_provider = Sdk.CreateTracerProviderBuilder()
@@ -91,17 +92,29 @@ public static class FlowlineTelemetry
         return s_provider is not null;
     }
 
-    public static void RecordExit(int exitCode) => s_root?.SetTag("exit.code", exitCode);
+    public static void RecordExit(int exitCode)
+    {
+        try { s_root?.SetTag("exit.code", exitCode); }
+        catch { } // Intentional: recording an outcome must not become the command's outcome (D4).
+    }
 
     /// <summary>Records the failure on the run's root span, from the one place that already rendered and scrubbed it.</summary>
     public static void RecordFailure(int exitCode, string? scrubbedException)
     {
-        if (s_root is null) return;
+        // Captured once. This runs on the main thread from the exception handler while Flush can null
+        // the field from the SIGTERM handler on a thread-pool callback, and re-reading it would put a
+        // NullReferenceException into the CLI's own error-handling path.
+        var root = s_root;
+        if (root is null) return;
 
-        s_root.SetTag("exit.code", exitCode);
-        s_root.SetStatus(ActivityStatusCode.Error);
-        if (!string.IsNullOrEmpty(scrubbedException))
-            s_root.SetTag("exception.detail", scrubbedException);
+        try
+        {
+            root.SetTag("exit.code", exitCode);
+            root.SetStatus(ActivityStatusCode.Error);
+            if (!string.IsNullOrEmpty(scrubbedException))
+                root.SetTag("exception.detail", scrubbedException);
+        }
+        catch { } // Intentional: as above.
     }
 
     /// <summary>
