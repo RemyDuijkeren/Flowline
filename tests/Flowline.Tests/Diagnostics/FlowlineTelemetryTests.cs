@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using Flowline.Diagnostics;
 using Flowline.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Trace;
 using FluentAssertions;
 using Xunit;
 
@@ -77,6 +79,49 @@ public class FlowlineTelemetryTests : IDisposable
         root.GetTagItem("exit.code").Should().Be(17);
         root.GetTagItem("exception.detail").Should().Be("InvalidOperationException: import failed");
         root.Status.Should().Be(ActivityStatusCode.Error);
+    }
+
+    // The guarantee the whole feature rests on, and the one nothing else would catch: processors run
+    // in registration order, so an exporter added ahead of the scrubbing processor would send every
+    // tag as written, at runtime, silently. The test exporter goes in the same slot the Azure one
+    // occupies, so swapping those two lines in Start fails this.
+    [Fact]
+    public void TheProviderScrubsBeforeItExports()
+    {
+        var snapshots = new List<Dictionary<string, string?>>();
+        var scrubber = new FlowlineScrubber("test-salt"u8.ToArray());
+        scrubber.AddKnownValue("AcmeBankCustomizations");
+
+        using var provider = FlowlineTelemetry
+            .Configure(Sdk.CreateTracerProviderBuilder(), scrubber,
+                b => b.AddProcessor(new SimpleActivityExportProcessor(new SnapshotExporter(snapshots))))
+            .Build();
+
+        using (var activity = FlowlineActivitySource.Source.StartActivity("deploy"))
+        {
+            activity?.SetTag("env.url", "https://acmebank.crm4.dynamics.com");
+            activity?.SetTag("project.solutions", "AcmeBankCustomizations");
+        }
+
+        provider!.ForceFlush();
+
+        var span = snapshots.Should().ContainSingle().Subject;
+        span["env.url"].Should().NotContain("acmebank");
+        span["project.solutions"].Should().Be(FlowlineScrubber.Hash("AcmeBankCustomizations", "test-salt"u8.ToArray()));
+        span["machine.id"].Should().Be(scrubber.MachineId);
+    }
+
+    // Copies the tag values at the moment of export. An exporter that stored the Activity itself would
+    // show the scrubbed values whatever the processor order was, because the processor mutates that
+    // same object — which is exactly how this test could pass while the guarantee was broken.
+    sealed class SnapshotExporter(List<Dictionary<string, string?>> snapshots) : BaseExporter<Activity>
+    {
+        public override ExportResult Export(in Batch<Activity> batch)
+        {
+            foreach (var activity in batch)
+                snapshots.Add(activity.TagObjects.ToDictionary(t => t.Key, t => t.Value as string));
+            return ExportResult.Success;
+        }
     }
 
     [Fact]

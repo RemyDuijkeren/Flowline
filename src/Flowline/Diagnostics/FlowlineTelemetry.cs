@@ -38,11 +38,11 @@ public static class FlowlineTelemetry
 
     internal static bool Start(string activityName, FlowlineScrubber scrubber, string? connectionString, bool consented)
     {
-        // The provider registers its own ActivityListener when it is built, and a listener only sees
-        // activities started after it. So the provider goes up first, or the run's own root span is
-        // the one span that never gets exported.
-        // No salt, no export. Everything that leaves is supposed to be hashed, and a scrubber without a
-        // salt cannot hash — it would send a precomputable digest while the disclosure promises
+        // The provider goes up before the root span: it registers its own ActivityListener when built,
+        // and a listener only ever sees activities started after it.
+        //
+        // No salt, no export. Everything that leaves is supposed to be hashed, and a scrubber without
+        // a salt cannot hash — it would send a precomputable digest while the disclosure promises
         // otherwise. Local logging still runs; it just carries the unsalted token instead.
         if (consented && !string.IsNullOrWhiteSpace(connectionString) && scrubber.HasSalt)
         {
@@ -54,30 +54,21 @@ public static class FlowlineTelemetry
                 // after this inherits it, which at worst disables their statsbeat too.
                 Environment.SetEnvironmentVariable("APPLICATIONINSIGHTS_STATSBEAT_DISABLED", "true");
 
-                s_provider = Sdk.CreateTracerProviderBuilder()
-                    .AddSource(FlowlineActivitySource.Source.Name)
-                    // Built from empty on purpose. The default resource detectors put the machine's
-                    // host name on every item, which arrives as cloud_RoleInstance — a plain machine
-                    // identifier, and the one thing R13 says must only ever be the salted value.
-                    .SetResourceBuilder(ResourceBuilder.CreateEmpty().AddService(
-                        serviceName: "flowline",
-                        serviceVersion: FlowlineActivitySource.Source.Version,
-                        serviceInstanceId: scrubber.MachineId))
-                    .AddProcessor(new ScrubbingProcessor(scrubber))
-                    .AddAzureMonitorTraceExporter(o =>
-                    {
-                        o.ConnectionString = connectionString;
-                        // The exporter rate-limits to five traces a second by default, which arrived
-                        // stamped as a 25% sample. Flowline's volume does not need sampling, and a
-                        // sampled dataset makes "which exit code actually fires" harder to answer.
-                        o.TracesPerSecond = null;
-                        o.SamplingRatio = 1.0F;
-                        // Traces only. These three are metric signals the plan does not send, and each
-                        // one is work a short-lived CLI process pays for on the way out.
-                        o.EnableLiveMetrics = false;
-                        o.EnableStandardMetrics = false;
-                        o.EnablePerformanceCounters = false;
-                    })
+                s_provider = Configure(Sdk.CreateTracerProviderBuilder(), scrubber, builder =>
+                        builder.AddAzureMonitorTraceExporter(o =>
+                        {
+                            o.ConnectionString = connectionString;
+                            // The exporter rate-limits to five traces a second by default, which arrived
+                            // stamped as a 25% sample. Flowline's volume does not need sampling, and a
+                            // sampled dataset makes "which exit code actually fires" harder to answer.
+                            o.TracesPerSecond = null;
+                            o.SamplingRatio = 1.0F;
+                            // Traces only. These three are metric signals the plan does not send, and
+                            // each one is work a short-lived CLI process pays for on the way out.
+                            o.EnableLiveMetrics = false;
+                            o.EnableStandardMetrics = false;
+                            o.EnablePerformanceCounters = false;
+                        }))
                     .Build();
             }
             catch
@@ -102,6 +93,33 @@ public static class FlowlineTelemetry
         }
 
         return s_provider is not null;
+    }
+
+    /// <summary>
+    /// Registers the scrubbing processor and then the exporter, in that order, for both the real
+    /// provider and the test that proves the order.
+    /// </summary>
+    /// <remarks>
+    /// The order is the whole guarantee: processors run in registration order, so an exporter added
+    /// ahead of the scrubbing processor would send every tag as written. Nothing about that failure is
+    /// visible at runtime, which is why the exporter is supplied by the caller rather than named here
+    /// — it puts the test's exporter in exactly the slot the real one occupies.
+    /// </remarks>
+    internal static TracerProviderBuilder Configure(
+        TracerProviderBuilder builder, FlowlineScrubber scrubber, Func<TracerProviderBuilder, TracerProviderBuilder> addExporter)
+    {
+        var configured = builder
+            .AddSource(FlowlineActivitySource.Source.Name)
+            // Built from empty on purpose. The default resource detectors put the machine's host name
+            // on every item, which arrives as cloud_RoleInstance — a plain machine identifier, and the
+            // one thing R13 says must only ever be the salted value.
+            .SetResourceBuilder(ResourceBuilder.CreateEmpty().AddService(
+                serviceName: "flowline",
+                serviceVersion: FlowlineActivitySource.Source.Version,
+                serviceInstanceId: scrubber.MachineId))
+            .AddProcessor(new ScrubbingProcessor(scrubber));
+
+        return addExporter(configured);
     }
 
     public static void RecordExit(int exitCode)

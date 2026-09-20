@@ -391,6 +391,55 @@ public class FlowlineScrubberTests
     }
 
     [Fact]
+    public void ScrubEnricher_ScrubsAValueThatIsNotAString()
+    {
+        // WriteExceptionContext logs ex.Data values as objects, so this path is real.
+        var captured = new List<LogEvent>();
+        var logger = new LoggerConfiguration()
+            .Enrich.With(new ScrubEnricher(NewScrubber()))
+            .WriteTo.Sink(new CapturingSink(captured))
+            .CreateLogger();
+
+        logger.Information("Context: {Key} = {Value}", "EnvironmentUrl",
+            new Uri("https://contoso.crm4.dynamics.com/api"));
+
+        var value = captured.Single().Properties["Value"].ToString();
+        value.Should().NotContain("contoso");
+    }
+
+    [Fact]
+    public void ScrubEnricher_ScrubsAStructuredValueButOnlyCollapsesItWhenSomethingChanged()
+    {
+        var captured = new List<LogEvent>();
+        var logger = new LoggerConfiguration()
+            .Enrich.With(new ScrubEnricher(NewScrubber()))
+            .WriteTo.Sink(new CapturingSink(captured))
+            .CreateLogger();
+
+        logger.Information("env={@Env} counts={@Counts}",
+            new { Url = "https://contoso.crm4.dynamics.com" }, new { Added = 3, Removed = 1 });
+
+        var props = captured.Single().Properties;
+        props["Env"].ToString().Should().NotContain("contoso");
+        props["Counts"].Should().BeOfType<StructureValue>("an ordinary structured value keeps its shape");
+    }
+
+    [Fact]
+    public void ScrubEnricher_LeavesANumberAlone()
+    {
+        var captured = new List<LogEvent>();
+        var logger = new LoggerConfiguration()
+            .Enrich.With(new ScrubEnricher(NewScrubber()))
+            .WriteTo.Sink(new CapturingSink(captured))
+            .CreateLogger();
+
+        logger.Information("count={Count}", 14);
+
+        captured.Single().Properties["Count"].Should().BeOfType<ScalarValue>()
+            .Which.Value.Should().Be(14);
+    }
+
+    [Fact]
     public void ScrubEnricher_LeavesAPropertyWithNothingToHideAlone()
     {
         var captured = new List<LogEvent>();
