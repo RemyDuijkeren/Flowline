@@ -34,6 +34,7 @@ public class TelemetryDisclosureTests : IDisposable
 
         var text = writer.ToString();
         text.Should().Contain("FLOWLINE_TELEMETRY_OPTOUT");
+        text.Should().Contain("for good", "an environment variable only lasts for the shell that set it");
         text.Should().Contain("log file");
         text.Should().Contain("exception");
         text.Should().Contain("wiki/18-Telemetry", "a one-off notice cannot carry the whole story");
@@ -41,27 +42,26 @@ public class TelemetryDisclosureTests : IDisposable
     }
 
     [Fact]
-    public void TheNoticeShowsAgainWhenWhatIsCollectedChanges()
+    public void TheNoticeShowsAgainAfterAnUpdate()
     {
-        // The dotnet CLI re-shows its own notice on every SDK version. Keying to the collection rather
-        // than the release means a user who agreed to a command name and an exit code is asked again
-        // before their log lines start being sent, and left alone by a release that collects nothing
-        // new.
+        // An update is the moment collection can widen without the user noticing, so it is the moment
+        // to say so again. The dotnet CLI keys its own first-use sentinel to the SDK version the same
+        // way.
         var store = new ValidationCacheStore(_cachePath);
-        store.Save(new ValidationCache { TelemetryDisclosureVersion = TelemetryDisclosure.Version - 1 });
+        store.Save(new ValidationCache { TelemetryDisclosureVersion = "0.0.1-older" });
 
         var writer = new StringWriter();
         TelemetryDisclosure.ShowOnce(store, writer);
 
         writer.ToString().Should().Contain("Flowline sends usage and crash telemetry");
-        store.Load().TelemetryDisclosureVersion.Should().Be(TelemetryDisclosure.Version);
+        store.Load().TelemetryDisclosureVersion.Should().NotBe("0.0.1-older");
     }
 
     [Fact]
-    public void TheNoticeStaysQuietForAReleaseThatCollectsNothingNew()
+    public void TheNoticeStaysQuietOnTheSameVersion()
     {
         var store = new ValidationCacheStore(_cachePath);
-        store.Save(new ValidationCache { TelemetryDisclosureVersion = TelemetryDisclosure.Version });
+        TelemetryDisclosure.ShowOnce(store, new StringWriter());
 
         var writer = new StringWriter();
         TelemetryDisclosure.ShowOnce(store, writer);
@@ -79,7 +79,7 @@ public class TelemetryDisclosureTests : IDisposable
 
         var cache = store.Load();
         cache.TelemetryDisclosureShownAtUtc.Should().NotBeNull();
-        cache.TelemetryDisclosureVersion.Should().Be(TelemetryDisclosure.Version);
+        cache.TelemetryDisclosureVersion.Should().NotBeNullOrWhiteSpace();
         cache.WelcomeShownAtUtc.Should().Be(DateTimeOffset.UnixEpoch);
     }
 
@@ -90,7 +90,7 @@ public class TelemetryDisclosureTests : IDisposable
 
         TelemetryDisclosure.ShowOnce(store, new ThrowingWriter());
 
-        store.Load().TelemetryDisclosureVersion.Should().Be(0,
+        store.Load().TelemetryDisclosureVersion.Should().BeNull(
             "a run that could not tell the user must not record that it did");
         var second = new StringWriter();
         TelemetryDisclosure.ShowOnce(store, second);
