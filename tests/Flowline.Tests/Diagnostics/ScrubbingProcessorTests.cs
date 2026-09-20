@@ -35,14 +35,20 @@ public class ScrubbingProcessorTests
     }
 
     [Fact]
-    public void AnAbsoluteProjectPathTagExportsWithTheUserSegmentHashed()
+    public void AnAbsoluteProjectPathTagExportsWithEveryIdentifyingSegmentHashed()
     {
-        var exported = Export(new FlowlineScrubber(TestSalt),
-            a => a?.SetTag("project.root", "/home/remy/Projects/AcmeBank"));
+        // The command registers the project root before anything exports, which is what turns the
+        // client's name into a hash. Without that this tag carries it verbatim, and the pattern rule
+        // alone would only have covered the user segment under /home.
+        var scrubber = new FlowlineScrubber(TestSalt);
+        scrubber.AddKnownPath("/mnt/clients/AcmeBankNV/repos/invoice-sync");
+
+        var exported = Export(scrubber,
+            a => a?.SetTag("project.root", "/mnt/clients/AcmeBankNV/repos/invoice-sync"));
 
         var value = (string?)exported.Single().GetTagItem("project.root");
-        value.Should().NotContain("remy");
-        value.Should().StartWith("/home/").And.EndWith("/Projects/AcmeBank");
+        value.Should().NotContain("AcmeBankNV").And.NotContain("invoice-sync");
+        value.Should().StartWith("/mnt/clients/").And.Contain("/repos/");
     }
 
     [Fact]

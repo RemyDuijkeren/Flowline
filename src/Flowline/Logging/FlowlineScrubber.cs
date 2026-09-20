@@ -34,7 +34,7 @@ public sealed class FlowlineScrubber(byte[] salt)
     // exception text: pac writes them into its stderr, and that stderr is interpolated into the
     // messages this scrubber is handed.
     static readonly Regex s_dataverseHost =
-        new(@"\b[\w-]+\.(?:crm[0-9]*|dynamics)\.[\w.-]+\b",
+        new(@"\b(?:[\w-]+\.)+(?:crm[0-9]*|dynamics)\.[\w.-]+\b",
             RegexOptions.Compiled | RegexOptions.IgnoreCase, s_matchTimeout);
 
     // Only the segment that names the user, so the layout around it survives (KTD5): a value reading
@@ -49,20 +49,24 @@ public sealed class FlowlineScrubber(byte[] salt)
     // text. Copy-on-write so a reader always sees a complete array while the command adds to it
     // mid-run. Single-writer: every registration happens on the main thread before or during command
     // setup. Two concurrent writers would silently lose one registration, so keep it that way.
-    volatile string[] _knownValues = [];
+    volatile KeyValuePair<Regex, string>[] _knownValues = [];
 
     // Below this, a known value is more likely to collide with ordinary text than to identify anyone
     // — a project folder called "app" would otherwise hash every "app" substring in the log.
     const int MinKnownValueLength = 4;
 
-    // Names that identify nobody and appear inside ordinary words. Registering "main" would rewrite
-    // every "domain" and "remaining" in the log as "do<hash>" and "re<hash>ing", which corrupts the
-    // one artefact a user reads to understand a failure. A word-boundary match is not the answer:
-    // a solution name is legitimately glued to digits and underscores in artefact filenames
-    // (AcmeBank_1_0_0_0.zip), where a boundary never fires.
+    // Names that identify nobody. The letter-boundary rule above already stops a known value matching
+    // inside a longer word, so this list is about values that are genuinely the whole word: a log line
+    // saying "main" or "clients" should stay readable rather than become a hash.
     static readonly HashSet<string> s_neverIdentifying = new(StringComparer.OrdinalIgnoreCase)
     {
-        "main", "master", "develop", "development", "trunk", "release", "feature", "hotfix",
+        // Shared branch names, which name a team's convention rather than a person.
+        "main", "master", "develop", "development", "trunk", "release",
+        // Structural path segments. Keeping these readable is what lets a scrubbed root still show
+        // the shape of the layout, which is the point of hashing segments rather than whole paths.
+        "home", "users", "user", "projects", "project", "repos", "repositories", "clients",
+        "work", "code", "src", "git", "dev", "mnt", "opt", "srv", "var", "data", "workspace",
+        // Flowline's own fixed folder names.
         "solution", "plugins", "webresources", "source", "test", "tests", "docs", "temp",
     };
 
@@ -83,10 +87,17 @@ public sealed class FlowlineScrubber(byte[] salt)
 
         var trimmed = value.Trim();
         if (s_neverIdentifying.Contains(trimmed)) return;
-        var current = _knownValues;
-        if (current.Contains(trimmed, StringComparer.OrdinalIgnoreCase)) return;
 
-        _knownValues = [.. current, trimmed];
+        var current = _knownValues;
+        if (current.Any(p => string.Equals(p.Value, trimmed, StringComparison.OrdinalIgnoreCase))) return;
+
+        // Bounded by letters, not by \b. A known value has to match where it is glued to digits and
+        // punctuation — AcmeBank_1_0_0_0.zip is one artefact name — but not where it is a fragment of
+        // an ordinary word, or a project folder called "proj" rewrites every "project" in the log.
+        var rule = new Regex($"(?<![A-Za-z]){Regex.Escape(trimmed)}(?![A-Za-z])",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase, s_matchTimeout);
+
+        _knownValues = [.. current, new KeyValuePair<Regex, string>(rule, trimmed)];
     }
 
     public string? Scrub(string? value)
@@ -112,8 +123,8 @@ public sealed class FlowlineScrubber(byte[] salt)
             // prefix of another — a solution named AcmeBank inside a folder named AcmeBankCustomizations.
             // Replacing the short one first destroys the match the long one needed, and the remainder
             // ("Customizations") survives in plaintext.
-            foreach (var known in _knownValues.OrderByDescending(v => v.Length))
-                result = result.Replace(known, Hash(known, salt), StringComparison.OrdinalIgnoreCase);
+            foreach (var (rule, known) in _knownValues.OrderByDescending(p => p.Value.Length))
+                result = rule.Replace(result, Hash(known, salt));
 
             return result;
         }
@@ -137,6 +148,23 @@ public sealed class FlowlineScrubber(byte[] salt)
 
     // Case-sensitive, unlike Hash: a URL's path can be, and two URLs differing only in case are two
     // URLs.
+    /// <summary>
+    /// Registers every segment of a path that could name a user or a client, keeping the structural
+    /// ones readable.
+    /// </summary>
+    /// <remarks>
+    /// The leaf is not the only segment that identifies anyone: a consultant's checkout is as likely
+    /// to be <c>/mnt/clients/AcmeBankNV/repos/proj</c>, where the client's name sits three levels up
+    /// and no pattern rule can see it.
+    /// </remarks>
+    public void AddKnownPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        foreach (var segment in path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries))
+            AddKnownValue(segment.TrimEnd(':'));
+    }
+
     /// <summary>Hashes one URL with this scrubber's salt, for a caller that already knows it has one.</summary>
     public string ScrubUrl(string url) => HashUrl(url, salt);
 

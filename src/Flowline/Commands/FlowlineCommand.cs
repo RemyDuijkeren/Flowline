@@ -164,8 +164,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             if (Uri.TryCreate(url, UriKind.Absolute, out var parsed))
                 FlowlineScrubber.Current.AddKnownValue(parsed.Host);
         FlowlineScrubber.Current.AddKnownValue(RuntimeOptions.ToolVersions?.GitBranch);
-        FlowlineScrubber.Current.AddKnownValue(
-            Path.GetFileName(RootFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+        FlowlineScrubber.Current.AddKnownPath(RootFolder);
 
         InvocationLogger.Log(Logger, RuntimeOptions, Config, RootFolder, activity);
 

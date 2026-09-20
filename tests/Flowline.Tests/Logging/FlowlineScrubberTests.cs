@@ -234,6 +234,32 @@ public class FlowlineScrubberTests
     }
 
     [Fact]
+    public void AddKnownValue_DoesNotMatchInsideALongerWord()
+    {
+        // A project folder called "proj" must not rewrite every "project" in the log, and a solution
+        // called "Core" must not rewrite "CoreServices".
+        var scrubber = NewScrubber();
+        scrubber.AddKnownValue("proj");
+        scrubber.AddKnownValue("Core");
+
+        scrubber.Scrub("project CoreServices recorded")
+            .Should().Be("project CoreServices recorded");
+    }
+
+    [Fact]
+    public void AddKnownValue_StillMatchesWhereAValueIsGluedToDigitsAndPunctuation()
+    {
+        // The artefact name a solution really appears in.
+        var scrubber = NewScrubber();
+        scrubber.AddKnownValue("AcmeBank");
+
+        var scrubbed = scrubber.Scrub("packed AcmeBank_1_0_0_0.zip from AcmeBank/src")!;
+
+        scrubbed.Should().NotContain("AcmeBank");
+        scrubbed.Should().Contain("_1_0_0_0.zip").And.EndWith("/src");
+    }
+
+    [Fact]
     public void AddKnownValue_StillHashesARealBranchName()
     {
         var scrubber = NewScrubber();
@@ -260,13 +286,39 @@ public class FlowlineScrubberTests
 
     // A Dataverse host with no scheme, which the URL rule cannot see
 
-    [Fact]
-    public void Scrub_HashesASchemelessDataverseHost()
+    [Theory]
+    [InlineData("acmebank.crm4.dynamics.com")]
+    [InlineData("acmebank.api.crm4.dynamics.com")]
+    [InlineData("acmebank.crm.dynamics.com")]
+    public void Scrub_HashesASchemelessDataverseHost_IncludingItsOrgLabel(string host)
     {
-        var scrubbed = NewScrubber().Scrub("pac auth select failed for acmebank.crm4.dynamics.com: no profile")!;
+        var scrubbed = NewScrubber().Scrub($"pac auth select failed for {host}: no profile")!;
 
         scrubbed.Should().NotContain("acmebank").And.NotContain("dynamics.com");
         scrubbed.Should().StartWith("pac auth select failed for ").And.EndWith(": no profile");
+    }
+
+    // A client's name is as likely to sit above the leaf as to be it.
+
+    [Fact]
+    public void AddKnownPath_HashesEveryIdentifyingSegment_AndKeepsTheStructuralOnes()
+    {
+        var scrubber = NewScrubber();
+        scrubber.AddKnownPath("/mnt/clients/AcmeBankNV/repos/invoice-sync");
+
+        var scrubbed = scrubber.Scrub("root=/mnt/clients/AcmeBankNV/repos/invoice-sync")!;
+
+        scrubbed.Should().NotContain("AcmeBankNV").And.NotContain("invoice-sync");
+        scrubbed.Should().Contain("/mnt/clients/").And.Contain("/repos/");
+    }
+
+    [Fact]
+    public void AddKnownPath_HandlesAWindowsRootWithoutRegisteringTheDriveLetter()
+    {
+        var scrubber = NewScrubber();
+        scrubber.AddKnownPath(@"C:\Clients\AcmeBankNV\repo");
+
+        scrubber.Scrub(@"root=C:\Clients\AcmeBankNV\repo").Should().NotContain("AcmeBankNV");
     }
 
     // Values with nothing to hide, and values that cannot be handled

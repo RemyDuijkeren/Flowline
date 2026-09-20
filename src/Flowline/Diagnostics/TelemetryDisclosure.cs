@@ -28,8 +28,15 @@ public static class TelemetryDisclosure
             var cache = store.Load();
             if (cache.TelemetryDisclosureShownAtUtc is not null) return;
 
-            // Marked before it is written, so a failure mid-write cannot produce it twice. A cache that
-            // cannot be saved still gets the notice: repeating it beats failing a command over it.
+            // Written first, then recorded as written. The plan had this the other way round, to stop a
+            // failure mid-write producing the notice twice; but marking first means a stderr that
+            // throws leaves the run consenting on the user's behalf having told them nothing, and
+            // every later run reads the marker and stays silent. The plan's own test list already
+            // prefers the other trade ("repeating it beats failing a command"), so it applies to both
+            // halves here.
+            stderr.WriteLine(Text);
+            stderr.Flush();
+
             try
             {
                 cache.TelemetryDisclosureShownAtUtc = DateTimeOffset.UtcNow;
@@ -37,10 +44,8 @@ public static class TelemetryDisclosure
             }
             catch
             {
-                // Unwritable cache — show the notice anyway.
+                // Unwritable cache — the user has been told, and a repeat beats a failure.
             }
-
-            stderr.WriteLine(Text);
         }
         catch
         {

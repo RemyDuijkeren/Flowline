@@ -225,8 +225,7 @@ try
     if (scrubRoot is not null)
     {
         FlowlineScrubber.Current.AddKnownValue(ProjectConfig.Load(scrubRoot)?.Solution?.UniqueName);
-        FlowlineScrubber.Current.AddKnownValue(
-            Path.GetFileName(scrubRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+        FlowlineScrubber.Current.AddKnownPath(scrubRoot);
     }
 }
 catch { } // Intentional: nothing about scrubbing setup is worth failing a launch for.

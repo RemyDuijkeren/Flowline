@@ -52,6 +52,25 @@ public class TelemetryDisclosureTests : IDisposable
     }
 
     [Fact]
+    public void AStderrThatThrowsLeavesTheNoticeUnshown_SoTheNextRunStillTellsTheUser()
+    {
+        var store = new ValidationCacheStore(_cachePath);
+
+        TelemetryDisclosure.ShowOnce(store, new ThrowingWriter());
+
+        store.Load().TelemetryDisclosureShownAtUtc.Should().BeNull(
+            "a run that could not tell the user must not record that it did");
+        var second = new StringWriter();
+        TelemetryDisclosure.ShowOnce(store, second);
+        second.ToString().Should().Contain("Flowline sends usage and crash telemetry");
+    }
+
+    sealed class ThrowingWriter : StringWriter
+    {
+        public override void WriteLine(string? value) => throw new IOException("stderr is gone");
+    }
+
+    [Fact]
     public void ACacheThatCannotBeWrittenStillGetsTheNoticeAndDoesNotThrow()
     {
         var unwritable = Path.Combine(Path.GetTempPath(), $"flowline-disclosure-{Guid.NewGuid():N}", "\0bad", "cache.json");
