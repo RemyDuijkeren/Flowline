@@ -306,6 +306,14 @@ var exitCode = await tabStatus.RunAsync(async () =>
 });
 
 FlowlineTelemetry.RecordExit(exitCode);
+FlowlineTelemetry.RecordInvocation(runtimeOptions.ArgsRedacted);
+
+// Late on purpose, not at startup: by now the scrubber has been told the solution and branch names,
+// so this line hashes the same way the exported copy does. Written at all only when the command
+// pipeline did not already log it — it never runs for --help, --version or a parse failure, which are
+// the invocations that otherwise leave nothing behind but a render-hook line.
+if (runtimeOptions.CommandName is null)
+    programLogger.LogInformation("Command: {Args}", runtimeOptions.ArgsRedacted);
 
 // After the command has had its say, so the notice reads as a footnote rather than as a banner above
 // the logo, and still before the flush below, which is what actually sends. Only on a run that built

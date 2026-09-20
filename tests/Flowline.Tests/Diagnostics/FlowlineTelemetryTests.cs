@@ -138,6 +138,36 @@ public class FlowlineTelemetryTests : IDisposable
     }
 
     [Fact]
+    public void RecordInvocation_PutsWhatWasTypedOnTheRootSpan()
+    {
+        using var listener = RecordingListener();
+        FlowlineTelemetry.Start("init", Scrubber, NoConnectionString, consented: false);
+
+        FlowlineTelemetry.RecordInvocation("init --help");
+
+        Activity.Current!.GetTagItem("args").Should().Be("init --help",
+            "a help invocation is otherwise indistinguishable from the real command");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void RecordInvocation_IgnoresAnEmptyCommandLine(string? args)
+    {
+        using var listener = RecordingListener();
+        FlowlineTelemetry.Start("flowline", Scrubber, NoConnectionString, consented: false);
+
+        FlowlineTelemetry.RecordInvocation(args);
+
+        Activity.Current!.GetTagItem("args").Should().BeNull();
+    }
+
+    [Fact]
+    public void RecordingAnInvocationWithNoRunStartedDoesNotThrow() =>
+        FlowlineTelemetry.RecordInvocation("init --help");
+
+    [Fact]
     public void RecordingAFailureWithNoRunStartedDoesNotThrow()
     {
         FlowlineTelemetry.RecordFailure(1, "boom");

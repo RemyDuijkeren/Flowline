@@ -188,6 +188,21 @@ public static class FlowlineTelemetry
         catch { } // Intentional: recording an outcome must not become the command's outcome (D4).
     }
 
+    /// <summary>Records what was actually typed, so a run is identifiable by more than its command name.</summary>
+    /// <remarks>
+    /// <c>flowline init --help</c> and a real <c>flowline init</c> produce the same span name, and the
+    /// command pipeline that would otherwise log the arguments never runs for a help invocation. The
+    /// value is already redacted for secrets; the tag is scrubbed on export like every other, which is
+    /// what lets it be set before the solution and branch names are even known.
+    /// </remarks>
+    public static void RecordInvocation(string? argsRedacted)
+    {
+        if (string.IsNullOrWhiteSpace(argsRedacted)) return;
+
+        try { s_root?.SetTag("args", argsRedacted); }
+        catch { } // Intentional: recording an invocation must not become its outcome (D4).
+    }
+
     /// <summary>Records the failure on the run's root span, from the one place that already rendered and scrubbed it.</summary>
     public static void RecordFailure(int exitCode, string? scrubbedException)
     {
