@@ -104,6 +104,16 @@ already accepted it was retried from the offline store on a later run and arrive
 3000 ms for that reason. Sequencing the two teardowns instead of running them side by side is worse
 still: the spans consume the whole bound and no log record leaves at all.
 
+**8b. A send abandoned at the bound is spooled after all, and forwarded by a later run.** Measured
+across six identical runs at both 1500 ms and 3000 ms: five delivered immediately and the sixth was
+written to the exporter's offline store and re-sent later. So the bound decides how much arrives
+*promptly*, not how much arrives. Two consequences follow. A blob whose send was accepted by the
+server but abandoned before the response was read is retried, so a line can arrive twice — observed
+as 30 duplicated lines in one batch. And the store is shared per instrumentation key under the
+system temp directory by default, so a backlog that can never succeed (for example blobs written by
+a spike using a bogus key) is retried by every later run and competes with that run's own export.
+Flowline sets `StorageDirectory` under its own storage root for that reason.
+
 **8. Offline storage spools only on a transmission that fails, not on one that is abandoned.** With a
 short `Retry.NetworkTimeout` the send fails fast, lands in `StorageDirectory`, and a later run drains
 it — verified. That is the shape a "never wait, always forward later" design would need; it is not what

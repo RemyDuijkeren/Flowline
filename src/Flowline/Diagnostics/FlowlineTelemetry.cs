@@ -2,6 +2,7 @@ using Flowline.Core.Diagnostics;
 using System.Diagnostics;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Flowline.Logging;
+using Flowline.Utils;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Resources;
@@ -157,6 +158,14 @@ public static class FlowlineTelemetry
         o.EnableLiveMetrics = false;
         o.EnableStandardMetrics = false;
         o.EnablePerformanceCounters = false;
+
+        // A send the process abandoned on its way out is written here and forwarded by a later run,
+        // which is what stops a run that overran its bound losing its telemetry outright. The default
+        // location is a shared one under the system temp directory; keeping it beside the logs and the
+        // salt means it belongs to this user, is discoverable, and goes away with the rest of
+        // Flowline's state. A CI agent's ephemeral disk discards it, which is the right outcome there.
+        try { o.StorageDirectory = Path.Combine(FlowlineStoragePaths.GetStorageRoot(), "telemetry-spool"); }
+        catch { } // Intentional: an unresolvable storage root leaves the exporter's own default in place.
     }
 
     /// <summary>
