@@ -30,6 +30,13 @@ public sealed class FlowlineScrubber(byte[] salt)
     static readonly Regex s_email =
         new(@"([\w.+-]+)@([\w-]+(?:\.[\w-]+)+)", RegexOptions.Compiled, s_matchTimeout);
 
+    // A Dataverse host without a scheme, which the URL rule above cannot see. These arrive inside
+    // exception text: pac writes them into its stderr, and that stderr is interpolated into the
+    // messages this scrubber is handed.
+    static readonly Regex s_dataverseHost =
+        new(@"\b[\w-]+\.(?:crm[0-9]*|dynamics)\.[\w.-]+\b",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase, s_matchTimeout);
+
     // Only the segment that names the user, so the layout around it survives (KTD5): a value reading
     // /home/<hash>/Projects/<hash>/Solution still says what shape the install was, and a wholly
     // hashed path says nothing.
@@ -48,7 +55,24 @@ public sealed class FlowlineScrubber(byte[] salt)
     // — a project folder called "app" would otherwise hash every "app" substring in the log.
     const int MinKnownValueLength = 4;
 
+    // Names that identify nobody and appear inside ordinary words. Registering "main" would rewrite
+    // every "domain" and "remaining" in the log as "do<hash>" and "re<hash>ing", which corrupts the
+    // one artefact a user reads to understand a failure. A word-boundary match is not the answer:
+    // a solution name is legitimately glued to digits and underscores in artefact filenames
+    // (AcmeBank_1_0_0_0.zip), where a boundary never fires.
+    static readonly HashSet<string> s_neverIdentifying = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "main", "master", "develop", "development", "trunk", "release", "feature", "hotfix",
+        "solution", "plugins", "webresources", "source", "test", "tests", "docs", "temp",
+    };
+
     public static FlowlineScrubber Current { get; private set; } = new([]);
+
+    /// <summary>
+    /// Whether this scrubber can hash at all. An HMAC under an empty key is a public function, so a
+    /// run whose salt could not be loaded must not pretend its values are protected.
+    /// </summary>
+    public bool HasSalt => salt.Length > 0;
 
     public static void Initialize(byte[] salt) => Current = new FlowlineScrubber(salt);
 
@@ -58,6 +82,7 @@ public sealed class FlowlineScrubber(byte[] salt)
         if (string.IsNullOrWhiteSpace(value) || value.Length < MinKnownValueLength) return;
 
         var trimmed = value.Trim();
+        if (s_neverIdentifying.Contains(trimmed)) return;
         var current = _knownValues;
         if (current.Contains(trimmed, StringComparer.OrdinalIgnoreCase)) return;
 
@@ -72,7 +97,16 @@ public sealed class FlowlineScrubber(byte[] salt)
         {
             var result = s_url.Replace(value, m => HashUrl(m.Value, salt));
             result = s_email.Replace(result, m => $"usr_{Hash(m.Groups[1].Value, salt)}.tnt_{Hash(m.Groups[2].Value, salt)}");
-            result = s_homeUser.Replace(result, m => m.Groups["prefix"].Value + Hash(m.Groups["user"].Value, salt));
+            result = s_dataverseHost.Replace(result, m => Hash(m.Value, salt));
+            // Idempotent: the prefix is re-emitted, so /home/<hash> matches this rule again on a second
+            // pass. A rendered exception really is scrubbed twice — once in the handler, once more by
+            // the enricher and the processor — and without this an already-hashed segment would hash
+            // again and stop matching the same value scrubbed once somewhere else.
+            result = s_homeUser.Replace(result, m =>
+            {
+                var user = m.Groups["user"].Value;
+                return m.Groups["prefix"].Value + (IsAlreadyHashed(user) ? user : Hash(user, salt));
+            });
 
             // Longest first. Registration order is solution, branch, folder, and one of those can be a
             // prefix of another — a solution named AcmeBank inside a folder named AcmeBankCustomizations.
@@ -103,12 +137,25 @@ public sealed class FlowlineScrubber(byte[] salt)
 
     // Case-sensitive, unlike Hash: a URL's path can be, and two URLs differing only in case are two
     // URLs.
+    /// <summary>Hashes one URL with this scrubber's salt, for a caller that already knows it has one.</summary>
+    public string ScrubUrl(string url) => HashUrl(url, salt);
+
     internal static string HashUrl(string url, byte[] salt) =>
         HashHex(salt, Encoding.UTF8.GetBytes(url), 8);
 
     internal static string Hash(string value, byte[] salt) =>
         HashHex(salt, Encoding.UTF8.GetBytes(value.ToLowerInvariant()), 8);
 
+    // Without a salt there is nothing to hash with: HMAC under an empty key is precomputable, and the
+    // space of Dataverse hostnames is small enough to enumerate. A fixed token loses the value rather
+    // than handing out a reversible one. FlowlineTelemetry refuses to export at all in that state.
+    const string Unsalted = "<unsalted>";
+
     static string HashHex(byte[] salt, byte[] data, int length) =>
-        Convert.ToHexString(HMACSHA256.HashData(salt, data))[..length].ToLowerInvariant();
+        salt.Length == 0
+            ? Unsalted
+            : Convert.ToHexString(HMACSHA256.HashData(salt, data))[..length].ToLowerInvariant();
+
+    static bool IsAlreadyHashed(string value) =>
+        (value.Length == 8 && value.All(Uri.IsHexDigit)) || value == Unsalted;
 }

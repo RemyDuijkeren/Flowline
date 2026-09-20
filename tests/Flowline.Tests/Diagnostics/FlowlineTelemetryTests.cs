@@ -53,6 +53,19 @@ public class FlowlineTelemetryTests : IDisposable
     }
 
     [Fact]
+    public void WithNoSalt_NoProviderIsBuilt_BecauseNothingCouldBeHashedBeforeItLeft()
+    {
+        using var listener = RecordingListener();
+
+        var built = FlowlineTelemetry.Start("deploy", new FlowlineScrubber([]),
+            "InstrumentationKey=00000000-0000-0000-0000-000000000001;IngestionEndpoint=https://203.0.113.1/",
+            consented: true);
+
+        built.Should().BeFalse();
+        Activity.Current.Should().NotBeNull("the local log still wants its TraceId");
+    }
+
+    [Fact]
     public void RecordFailure_PutsTheExitCodeAndTheScrubbedExceptionOnTheRootSpan()
     {
         using var listener = RecordingListener();

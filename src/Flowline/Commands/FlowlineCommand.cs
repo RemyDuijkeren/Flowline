@@ -157,6 +157,12 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         // that method returns early when a command skipped the tool probes, and these three have to be
         // registered whether it logs or not.
         FlowlineScrubber.Current.AddKnownValue(Config.Solution?.UniqueName);
+        // The configured environments by name as well as by pattern: pac writes an environment or
+        // organization name into its stderr, and that stderr ends up inside exception text, where no
+        // URL-shaped rule can see it.
+        foreach (var url in new[] { Config.ProdUrl, Config.UatUrl, Config.TestUrl, Config.DevUrl })
+            if (Uri.TryCreate(url, UriKind.Absolute, out var parsed))
+                FlowlineScrubber.Current.AddKnownValue(parsed.Host);
         FlowlineScrubber.Current.AddKnownValue(RuntimeOptions.ToolVersions?.GitBranch);
         FlowlineScrubber.Current.AddKnownValue(
             Path.GetFileName(RootFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
@@ -222,7 +228,11 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
             git = await Validator.EnsureGitAsync(settings, noCache, cancellationToken);
             await Validator.EnsureGitRepoAsync(RootFolder, settings, noCache, cancellationToken);
             // Fetched fresh (not cached) — branch changes too frequently for 7-day TTL
-            gitBranch = await GitUtils.GetCurrentBranchAsync(_capture, cancellationToken);
+            // Deliberately uncaptured. SubprocessCapture tees a probe's output into the log file, and
+            // this one's output is the branch name itself — written before the scrubber can be told
+            // what it is. Nothing is lost: the branch reaches the log through the git.branch tag,
+            // scrubbed.
+            gitBranch = await GitUtils.GetCurrentBranchAsync(null, cancellationToken);
             dotnet = await Validator.EnsureDotNetAsync(settings, noCache, cancellationToken);
             pac = await Validator.EnsurePacCliAsync(settings, noCache, cancellationToken);
         });

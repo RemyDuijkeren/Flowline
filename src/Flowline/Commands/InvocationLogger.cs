@@ -27,7 +27,7 @@ internal static class InvocationLogger
             if (!string.IsNullOrWhiteSpace(url))
             {
                 envTiers.Add(tier);
-                envHashes.Add($"{tier}={FlowlineScrubber.HashUrl(url, runtimeOptions.TelemetrySalt ?? [])}");
+                envHashes.Add($"{tier}={FlowlineScrubber.Current.ScrubUrl(url)}");
             }
         }
 

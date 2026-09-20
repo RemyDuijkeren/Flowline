@@ -41,7 +41,10 @@ public static class FlowlineTelemetry
         // The provider registers its own ActivityListener when it is built, and a listener only sees
         // activities started after it. So the provider goes up first, or the run's own root span is
         // the one span that never gets exported.
-        if (consented && !string.IsNullOrWhiteSpace(connectionString))
+        // No salt, no export. Everything that leaves is supposed to be hashed, and a scrubber without a
+        // salt cannot hash — it would send a precomputable digest while the disclosure promises
+        // otherwise. Local logging still runs; it just carries the unsalted token instead.
+        if (consented && !string.IsNullOrWhiteSpace(connectionString) && scrubber.HasSalt)
         {
             try
             {
@@ -87,7 +90,16 @@ public static class FlowlineTelemetry
         // Started either way, and deliberately outside the consent check (D5/KTD7): the root span is
         // what gives the local log file its TraceId, so opting out must not cost a user correlation in
         // their own logs. The ActivityListener in Program.cs is what records it when no provider exists.
-        s_root = FlowlineActivitySource.Source.StartActivity(activityName);
+        try
+        {
+            s_root = FlowlineActivitySource.Source.StartActivity(activityName);
+        }
+        catch
+        {
+            // Guarded like everything else here: this runs before any command does, so an exception
+            // escaping it would fail the launch outright rather than lose a span (D4).
+            s_root = null;
+        }
 
         return s_provider is not null;
     }
@@ -127,11 +139,18 @@ public static class FlowlineTelemetry
 
         try
         {
-            s_root?.Dispose();
-            s_root = null;
-
+            // Captured and cleared before the root span is ended: a throw out of Dispose would
+            // otherwise skip every statement below it, and because the latch above has already
+            // flipped, no other exit hook would retry — the provider and its buffered spans would be
+            // dropped silently.
             var provider = s_provider;
             s_provider = null;
+
+            var root = s_root;
+            s_root = null;
+            try { root?.Dispose(); }
+            catch { } // Intentional: ending the span must not cost us the export below.
+
             if (provider is null) return;
 
             // ForceFlush returns as soon as the batch reaches the exporter, not when the transmission

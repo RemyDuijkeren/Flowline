@@ -201,6 +201,74 @@ public class FlowlineScrubberTests
         scrubbed.Should().Contain("AcmeBankCustomizations");
     }
 
+    // Failing closed when there is no salt
+
+    [Fact]
+    public void WithNoSalt_NothingIsHashed_BecauseAnEmptyKeyIsAPublicFunction()
+    {
+        var unsalted = new FlowlineScrubber([]);
+
+        unsalted.HasSalt.Should().BeFalse();
+        unsalted.Scrub("https://contoso.crm4.dynamics.com").Should().NotContain("contoso");
+        unsalted.Scrub("https://contoso.crm4.dynamics.com").Should().Be("<unsalted>");
+        unsalted.MachineId.Should().Be("<unsalted>");
+    }
+
+    [Fact]
+    public void WithASalt_TheScrubberReportsItHasOne() => NewScrubber().HasSalt.Should().BeTrue();
+
+    // Known values that identify nobody
+
+    [Theory]
+    [InlineData("main")]
+    [InlineData("master")]
+    [InlineData("develop")]
+    [InlineData("Solution")]
+    public void AddKnownValue_RefusesNamesThatIdentifyNobodyAndAppearInsideOrdinaryWords(string name)
+    {
+        var scrubber = NewScrubber();
+        scrubber.AddKnownValue(name);
+
+        scrubber.Scrub("at System.AppDomain.Main() in Solution/src, remaining work")
+            .Should().Be("at System.AppDomain.Main() in Solution/src, remaining work");
+    }
+
+    [Fact]
+    public void AddKnownValue_StillHashesARealBranchName()
+    {
+        var scrubber = NewScrubber();
+        scrubber.AddKnownValue("feature/acme-invoice-sync");
+
+        scrubber.Scrub("branch=feature/acme-invoice-sync").Should().NotContain("acme");
+    }
+
+    // Scrubbing twice must land where scrubbing once did (a rendered exception really is scrubbed
+    // twice: once in the handler, then again by the enricher and the processor).
+
+    [Theory]
+    [InlineData("/home/remy/Projects/AcmeBank/Solution")]
+    [InlineData("reached https://contoso.crm4.dynamics.com from /Users/remy/x")]
+    [InlineData("mailed remy@contoso.com about contoso.crm4.dynamics.com")]
+    public void Scrub_IsIdempotent(string value)
+    {
+        var scrubber = NewScrubber();
+
+        var once = scrubber.Scrub(value);
+
+        scrubber.Scrub(once).Should().Be(once);
+    }
+
+    // A Dataverse host with no scheme, which the URL rule cannot see
+
+    [Fact]
+    public void Scrub_HashesASchemelessDataverseHost()
+    {
+        var scrubbed = NewScrubber().Scrub("pac auth select failed for acmebank.crm4.dynamics.com: no profile")!;
+
+        scrubbed.Should().NotContain("acmebank").And.NotContain("dynamics.com");
+        scrubbed.Should().StartWith("pac auth select failed for ").And.EndWith(": no profile");
+    }
+
     // Values with nothing to hide, and values that cannot be handled
 
     [Fact]
