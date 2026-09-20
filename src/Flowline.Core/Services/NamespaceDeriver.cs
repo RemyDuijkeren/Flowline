@@ -1,7 +1,6 @@
 using System.Xml.Linq;
-using Flowline.Core.Services;
 
-namespace Flowline.Utils;
+namespace Flowline.Core.Services;
 
 public static class NamespaceDeriver
 {

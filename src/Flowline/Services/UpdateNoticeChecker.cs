@@ -1,6 +1,6 @@
 using Flowline.Core.Console;
+using Flowline.Core.Diagnostics;
 using Flowline.Core.Services;
-using Flowline.Utils;
 using Flowline.Validation;
 using Spectre.Console;
 

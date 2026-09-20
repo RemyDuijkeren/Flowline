@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace Flowline.Utils;
+namespace Flowline.Core.Diagnostics;
 
 /// <summary>
 /// The version string shown to the user (<c>flowline --version</c>, welcome screen).
@@ -13,7 +13,7 @@ namespace Flowline.Utils;
 /// metadata suffix (<c>+&lt;sha&gt;</c>) is trimmed so this matches what <c>dotnet tool list -g</c>
 /// prints and what <c>dotnet tool install --version</c> takes.
 /// </remarks>
-internal static class FlowlineVersion
+public static class FlowlineVersion
 {
     public static string Display { get; } = Resolve();
 

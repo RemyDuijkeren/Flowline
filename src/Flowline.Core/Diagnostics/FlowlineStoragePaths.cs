@@ -1,6 +1,6 @@
-namespace Flowline.Utils;
+namespace Flowline.Core.Diagnostics;
 
-static class FlowlineStoragePaths
+public static class FlowlineStoragePaths
 {
     public static string GetStorageRoot()
     {

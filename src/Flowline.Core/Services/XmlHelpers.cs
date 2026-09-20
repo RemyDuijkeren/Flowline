@@ -1,6 +1,6 @@
 using System.Xml.Linq;
 
-namespace Flowline.Utils;
+namespace Flowline.Core.Services;
 
 // Centralizes XML-parsing quirks shared by DataverseContextGenerator and SolutionChangeSummary — both
 // read PAC-unpacked or `git show`-sourced XML, which can surface a leading UTF-8 BOM char that

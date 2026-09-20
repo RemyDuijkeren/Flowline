@@ -1,8 +1,8 @@
 using System.Net;
 using Flowline.Core.Console;
+using Flowline.Core.Diagnostics;
 using Flowline.Core.Services;
 using Flowline.Services;
-using Flowline.Utils;
 using Flowline.Validation;
 using FluentAssertions;
 using NuGet.Versioning;

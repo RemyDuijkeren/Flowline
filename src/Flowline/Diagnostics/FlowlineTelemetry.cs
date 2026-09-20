@@ -2,7 +2,6 @@ using Flowline.Core.Diagnostics;
 using System.Diagnostics;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Flowline.Logging;
-using Flowline.Utils;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Resources;

@@ -3,6 +3,7 @@ using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Models;
 using Flowline.Core.Console;
+using Flowline.Core.Diagnostics;
 using Flowline.Core.Services;
 using Flowline.Core.FormEvents;
 using Flowline.Core.Plugins;

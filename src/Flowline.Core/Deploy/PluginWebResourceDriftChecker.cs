@@ -3,7 +3,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Flowline.Core.Services;
 
-namespace Flowline.Utils;
+namespace Flowline.Core.Deploy;
 
 public record DriftWarning(DriftCategory Category, string RelativePath);
 

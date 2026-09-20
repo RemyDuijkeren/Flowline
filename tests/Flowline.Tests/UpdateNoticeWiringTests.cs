@@ -1,10 +1,10 @@
 using System.Net;
 using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Core.Diagnostics;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
-using Flowline.Utils;
 using Flowline.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;

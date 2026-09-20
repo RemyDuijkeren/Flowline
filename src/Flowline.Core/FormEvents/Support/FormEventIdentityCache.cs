@@ -5,7 +5,7 @@ namespace Flowline.Core.FormEvents.Support;
 /// <summary>
 /// Persists resolved (entity, form name) -> formId mappings to a JSON file, so a later push can suggest
 /// a previously-seen form identity when a name lookup fails (e.g. after a rename). The caller supplies the
-/// file path — Flowline.Core has no reference to the Flowline CLI project's FlowlineStoragePaths, so there
+/// file path — this cache deliberately doesn't derive it from FlowlineStoragePaths itself, so there
 /// is no auto-deriving overload here (mirrors TelemetrySaltStore.cs's constructor/path shape).
 /// </summary>
 public sealed class FormEventIdentityCache(string path)

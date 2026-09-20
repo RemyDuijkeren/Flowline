@@ -1,5 +1,5 @@
 using System.Security.Cryptography;
-using Flowline.Utils;
+using Flowline.Core.Diagnostics;
 
 namespace Flowline.Logging;
 

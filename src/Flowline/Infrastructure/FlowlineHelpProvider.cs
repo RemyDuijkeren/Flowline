@@ -1,5 +1,5 @@
 using Flowline.Core.Console;
-using Flowline.Utils;
+using Flowline.Core.Diagnostics;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using Spectre.Console.Cli.Help;

@@ -1,4 +1,4 @@
-using Flowline.Utils;
+using Flowline.Core.Diagnostics;
 using Flowline.Validation;
 
 namespace Flowline.Diagnostics;

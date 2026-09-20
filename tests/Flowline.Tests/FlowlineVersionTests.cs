@@ -1,5 +1,5 @@
 using System.Reflection;
-using Flowline.Utils;
+using Flowline.Core.Diagnostics;
 using FluentAssertions;
 using Xunit;
 

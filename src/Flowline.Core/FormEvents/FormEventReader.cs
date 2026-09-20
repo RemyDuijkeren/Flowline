@@ -37,8 +37,8 @@ public class FormEventReader(IAnsiConsole console)
         bool suppressWarnings = false,
         CancellationToken cancellationToken = default)
     {
-        // formEventCachePath is caller-resolved (Flowline.Core has no reference to the Flowline CLI
-        // project's FlowlineStoragePaths — see FormEventIdentityCache's own doc comment). No path means
+        // formEventCachePath is caller-resolved (this reader deliberately doesn't derive it from
+        // FlowlineStoragePaths itself — see FormEventIdentityCache's own doc comment). No path means
         // no cache: skip it entirely rather than writing to a disposable random file, which would leave a
         // stray temp JSON per call for no benefit (nothing ever reads it back).
         var cache = formEventCachePath is null ? null : new FormEventIdentityCache(formEventCachePath);
