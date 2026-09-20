@@ -23,16 +23,16 @@ namespace Flowline.Diagnostics;
 /// </remarks>
 public static class FlowlineTelemetry
 {
-    // The exporter's own teardown runs for about three seconds whatever happens, so this bound is what
-    // every command actually pays, not just a blocked one.
+    // A backstop, not the expected cost. The teardown below waits for the export to genuinely finish,
+    // which it can only do because the exporter is given a short network timeout and no retries
+    // (ApplyExporterOptions): a healthy send settles in about two seconds and a dead endpoint gives up
+    // after three, so this is never reached in practice. It exists so that no combination of proxy,
+    // firewall and DNS can hold a command open indefinitely.
     //
-    // Measured against the live resource. With one signal, a span sent with a 250 ms bound never
-    // arrived and 700 ms or more always did. Adding the log pipeline changed that: at 1.5 s, six
-    // identical runs delivered five, and a run abandoned after the server had already accepted it was
-    // retried from the exporter's offline store, arriving twice. 3 s is what two signals need. The
-    // way to get this back down is to stop racing process exit at all — spool to disk and let the
-    // next run forward it — not to shorten the bound again.
-    const int DefaultFlushBoundMs = 3000;
+    // Cutting the wait short instead is what produced duplicates: a send the server had already
+    // accepted was abandoned before its response was read, left in the exporter's offline store, and
+    // re-sent by a later run — observed arriving up to four times.
+    const int FlushBackstopMs = 8000;
 
     static TracerProvider? s_provider;
     static IDisposable? s_logPipeline;
@@ -159,6 +159,14 @@ public static class FlowlineTelemetry
         o.EnableStandardMetrics = false;
         o.EnablePerformanceCounters = false;
 
+        // The exporter defaults to a 100-second network timeout and three exponential retries, which
+        // is right for a service and wrong for a command someone is waiting on: it makes "wait until
+        // the export is really done" a promise that can take minutes. One short attempt instead, so
+        // the teardown below can wait for a real answer rather than abandoning the send. A failure is
+        // written to the offline store and forwarded by a later run, which is what that store is for.
+        o.Retry.NetworkTimeout = TimeSpan.FromSeconds(3);
+        o.Retry.MaxRetries = 0;
+
         // A send the process abandoned on its way out is written here and forwarded by a later run,
         // which is what stops a run that overran its bound losing its telemetry outright. The default
         // location is a shared one under the system temp directory; keeping it beside the logs and the
@@ -200,10 +208,11 @@ public static class FlowlineTelemetry
     }
 
     /// <summary>
-    /// Ends the root span and settles the export, never taking longer than <paramref name="boundMs"/>.
-    /// Idempotent: the three exit hooks all call it and only the first does the work.
+    /// Ends the root span and waits for the export to finish, giving up only at
+    /// <paramref name="boundMs"/>. Idempotent: the three exit hooks all call it and only the first
+    /// does the work.
     /// </summary>
-    public static void Flush(int boundMs = DefaultFlushBoundMs)
+    public static void Flush(int boundMs = FlushBackstopMs)
     {
         if (Interlocked.Exchange(ref s_torndown, 1) != 0) return;
 
@@ -227,12 +236,16 @@ public static class FlowlineTelemetry
             if (provider is null && logPipeline is null) return;
 
             // ForceFlush returns as soon as the batch reaches the exporter, not when the transmission
-            // settles — the HTTP send is what Dispose waits on, and its timeout is not ours to set. So
-            // the bound is enforced here, on thread-pool (background) threads: an overrunning send is
-            // abandoned rather than held onto, and never delays process exit.
+            // settles — the HTTP send is what Dispose waits on. So the wait that matters is this one,
+            // and it waits for the send to genuinely finish rather than giving up at a deadline: the
+            // exporter is configured to make one short attempt, so "finished" arrives quickly whether
+            // it worked or not. Abandoning it instead is what produced duplicate deliveries.
+            //
+            // Still on thread-pool (background) threads, and still capped, so no combination of proxy,
+            // firewall and DNS can hold a command open indefinitely.
             //
             // The two pipelines tear down side by side rather than one after the other. Run in
-            // sequence, the spans consume the whole bound and the log records never leave at all.
+            // sequence, the spans consume the whole budget and the log records never leave at all.
             var teardown = new[]
             {
                 Task.Run(() =>

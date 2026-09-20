@@ -119,6 +119,20 @@ short `Retry.NetworkTimeout` the send fails fast, lands in `StorageDirectory`, a
 it — verified. That is the shape a "never wait, always forward later" design would need; it is not what
 a short bound gives you.
 
+**9. The exporter already streams, so the teardown is only ever the tail.** Measured with a local
+receiver and a sixteen-second run whose spans ended every four seconds: the exporter POSTed at +8.2 s
+and +15.2 s, during the run, and the teardown afterwards took 0.0 s. A long command therefore pays
+almost nothing on exit. A short one pays the whole cost, because its spans, exit code and duration do
+not exist until it ends; roughly 0.7 s of that is the real round trip to West Europe and the rest is
+SDK shutdown.
+
+**10. Waiting for the export to actually finish is possible once the exporter is told to give up
+quickly.** `Retry.NetworkTimeout` defaults to 100 seconds with three exponential retries, so waiting
+for genuine completion would risk minutes. Set to one three-second attempt, "done" arrives quickly
+whether the send worked or not, and the teardown can wait for it instead of abandoning it at a
+deadline. That removes the duplicate deliveries, because a send is only left in the offline store when
+it genuinely failed.
+
 ## Consequence for the plan
 
 KTD8's three call sites (after `RunAsync`, `ProcessExit`, SIGTERM) and its idempotency requirement
