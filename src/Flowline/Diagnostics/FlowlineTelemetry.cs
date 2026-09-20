@@ -23,11 +23,15 @@ namespace Flowline.Diagnostics;
 public static class FlowlineTelemetry
 {
     // The exporter's own teardown runs for about three seconds whatever happens, so this bound is what
-    // every command actually pays, not just a blocked one. Measured against the live resource: a span
-    // sent with a 250 ms bound never arrived, and one sent with 700 ms or more always did. 1.5 s is the
-    // margin over the smallest value observed to work, and it is the number to revisit if the cost of
-    // a command matters more than the odd lost span.
-    const int DefaultFlushBoundMs = 1500;
+    // every command actually pays, not just a blocked one.
+    //
+    // Measured against the live resource. With one signal, a span sent with a 250 ms bound never
+    // arrived and 700 ms or more always did. Adding the log pipeline changed that: at 1.5 s, six
+    // identical runs delivered five, and a run abandoned after the server had already accepted it was
+    // retried from the exporter's offline store, arriving twice. 3 s is what two signals need. The
+    // way to get this back down is to stop racing process exit at all — spool to disk and let the
+    // next run forward it — not to shorten the bound again.
+    const int DefaultFlushBoundMs = 3000;
 
     static TracerProvider? s_provider;
     static IDisposable? s_logPipeline;

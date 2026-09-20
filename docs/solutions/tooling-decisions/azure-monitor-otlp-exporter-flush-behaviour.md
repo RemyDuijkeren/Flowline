@@ -95,7 +95,14 @@ a blocked one. Measured against the live resource, sending one span per process 
 | 1500 ms | yes (2/2) |
 
 The abandoned teardown thread dies at process exit, so a bound below what the transmission needs loses
-the span silently: it is dropped in memory rather than spooled. Flowline uses 1500 ms.
+the span silently: it is dropped in memory rather than spooled.
+
+**A second signal changes the answer.** Once the Serilog stream is exported as well, the two pipelines
+tear down side by side and both have to finish inside the same bound. Measured the same way, at
+1500 ms six identical runs delivered five, and a run whose send was abandoned after the server had
+already accepted it was retried from the offline store on a later run and arrived twice. Flowline uses
+3000 ms for that reason. Sequencing the two teardowns instead of running them side by side is worse
+still: the spans consume the whole bound and no log record leaves at all.
 
 **8. Offline storage spools only on a transmission that fails, not on one that is abandoned.** With a
 short `Retry.NetworkTimeout` the send fails fast, lands in `StorageDirectory`, and a later run drains

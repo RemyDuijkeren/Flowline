@@ -184,7 +184,7 @@ public class FlowlineTelemetryTests : IDisposable
         FlowlineTelemetry.Flush(boundMs: 500);
         stopwatch.Stop();
 
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2), "the bound passed in is what holds, not the default");
     }
 
     // The listener Program.cs registers unconditionally, which is what makes Activity.Current non-null
