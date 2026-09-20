@@ -90,7 +90,7 @@ public class DriftCommand(CommandServices services, DataverseConnector dataverse
             // so a solution deleted or renamed in the target would otherwise read as "no drift" for the
             // cache's TTL. push and generate keep the cached read: they have downstream work that would
             // surface a stale answer.
-            await GetAndCheckStandaloneSolutionAsync(artifactSln!.UniqueName, env.EnvironmentUrl!, settings, cancellationToken, bypassCache: true);
+            await GetAndCheckStandaloneSolutionAsync(artifactSln!.UniqueName, env.EnvironmentUrl!, cancellationToken, bypassCache: true);
 
             var tmpUnpackDir = Directory.CreateTempSubdirectory("flowline-drift-").FullName;
             return await RunInTempDirAsync(tmpUnpackDir, async () =>
@@ -117,7 +117,7 @@ public class DriftCommand(CommandServices services, DataverseConnector dataverse
         // import, or sync's export) to catch a stale "solution still exists" cache entry. Without this,
         // a solution deleted or renamed in the target could read as "no drift" for up to the solution
         // cache's TTL.
-        var (projectSln, _) = await GetAndCheckSolutionAsync(null, env.EnvironmentUrl!, includeManaged: null, settings, cancellationToken, bypassCache: true);
+        var (projectSln, _) = await GetAndCheckSolutionAsync(null, env.EnvironmentUrl!, includeManaged: null, cancellationToken, bypassCache: true);
 
         var slnFolder = RootFolder;
         // Resolved, not composed: the Dataverse solution folder is wherever the solution file says the .cdsproj lives.
@@ -175,7 +175,7 @@ public class DriftCommand(CommandServices services, DataverseConnector dataverse
     {
         var role = TryResolveRole(target);
         if (role is not null)
-            return await GetAndCheckEnvironmentInfoAsync(role.Value, null, settings, ct);
+            return await GetAndCheckEnvironmentInfoAsync(role.Value, null, ct);
 
         var profile = await ProfileResolutionService.ResolveAsync(target, ct);
         var env = await Console.Status().FlowlineSpinner().StartAsync(

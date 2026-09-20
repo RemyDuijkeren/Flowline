@@ -44,10 +44,10 @@ public class PullCommand(CommandServices services, EnvironmentTargetResolver env
         // R3: DEV-only — refused before any PAC profile resolve, connect, or .flowline write.
         var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), RuntimeOptions,
             (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, RuntimeOptions, settings.NoCache, ct), cancellationToken);
-        var (devEnv, _) = await GetAndCheckEnvironmentAsync(target.Url, target.Role, settings, cancellationToken, devOnly: true);
+        var (devEnv, _) = await GetAndCheckEnvironmentAsync(target.Url, target.Role, cancellationToken, devOnly: true);
 
         // Solution is the single one configured in .flowline — sync is project-mode only
-        var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(null, devEnv.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
+        var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(null, devEnv.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, cancellationToken);
         if (slnInfo.IsManaged)
             throw new FlowlineException(ExitCode.ValidationFailed, "Managed solutions are not supported for pull — use an unmanaged solution.");
 

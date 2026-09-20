@@ -104,9 +104,9 @@ public class CloneCommand(CommandServices services,
     {
         var (sourceUrl, role) = await ResolveSourceUrlAsync(settings, config, cancellationToken);
 
-        var (env, _) = await GetAndCheckEnvironmentAsync(sourceUrl, role, settings, cancellationToken);
+        var (env, _) = await GetAndCheckEnvironmentAsync(sourceUrl, role, cancellationToken);
         var (sln, info) = await GetAndCheckSolutionAsync(
-            settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, settings, cancellationToken);
+            settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, cancellationToken);
 
         // No fallback to another role now that there's a single, explicitly chosen source (R9) — a
         // managed-only environment fails naming it, rather than silently skipping to another one.

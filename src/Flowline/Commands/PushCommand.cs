@@ -279,14 +279,14 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
 
         if (standaloneMode)
         {
-            (devEnv, profile) = await GetAndCheckStandaloneEnvironmentAsync(environmentUrl, settings, cancellationToken).ConfigureAwait(false);
-            slnInfo = await GetAndCheckStandaloneSolutionAsync(standaloneParams.SolutionName!, environmentUrl, settings, cancellationToken).ConfigureAwait(false);
+            (devEnv, profile) = await GetAndCheckStandaloneEnvironmentAsync(environmentUrl, cancellationToken).ConfigureAwait(false);
+            slnInfo = await GetAndCheckStandaloneSolutionAsync(standaloneParams.SolutionName!, environmentUrl, cancellationToken).ConfigureAwait(false);
             solutionName = standaloneParams.SolutionName!;
         }
         else
         {
-            (devEnv, profile) = await GetAndCheckEnvironmentAsync(environmentUrl, resolvedRole, settings, cancellationToken, devOnly: true);
-            var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken, settings: settings);
+            (devEnv, profile) = await GetAndCheckEnvironmentAsync(environmentUrl, resolvedRole, cancellationToken, devOnly: true);
+            var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken);
             slnInfo = slnInfoResult;
             solutionName = projectSln.UniqueName;
             pluginPackageMode = projectSln.PluginPackageMode;

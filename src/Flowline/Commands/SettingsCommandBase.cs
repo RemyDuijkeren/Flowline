@@ -87,7 +87,7 @@ public abstract class SettingsCommandBase<TSettings>(
         string target, EnvironmentRole? role, TSettings settings, CancellationToken ct)
     {
         if (role is not null)
-            return await GetAndCheckEnvironmentInfoAsync(role.Value, null, settings, ct);
+            return await GetAndCheckEnvironmentInfoAsync(role.Value, null, ct);
 
         var profile = await ProfileResolutionService.ResolveAsync(target, ct);
         var env = await Console.Status().FlowlineSpinner().StartAsync(
@@ -133,7 +133,7 @@ public abstract class SettingsCommandBase<TSettings>(
         }
 
         if (!standalone)
-            return (await GetAndCheckSolutionAsync(null, env.EnvironmentUrl!, includeManaged: null, settings, ct))
+            return (await GetAndCheckSolutionAsync(null, env.EnvironmentUrl!, includeManaged: null, cancellationToken: ct))
                 .projectSolution.UniqueName;
 
         return settings.SolutionName

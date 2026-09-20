@@ -263,7 +263,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     // Single source of truth for choosing between the four ProjectConfig.GetOrUpdate*Url wrappers —
     // ProvisionCommand's Role enum has no Prod member, so it converts to EnvironmentRole before calling
     // this rather than duplicating its own switch.
-    protected string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl, TSettings settings) => role switch
+    protected string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl) => role switch
     {
         EnvironmentRole.Prod => Config.GetOrUpdateProdUrl(inputUrl, RuntimeOptions),
         EnvironmentRole.Uat  => Config.GetOrUpdateUatUrl(inputUrl, RuntimeOptions),
@@ -273,13 +273,13 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     };
 
     protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironmentInfoAsync(
-        EnvironmentRole role, string? inputUrl, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
+        EnvironmentRole role, string? inputUrl, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
         bool skipTypeGuard = false, bool devOnly = false)
     {
         var label = RoleLabel(role);
         var key = role.ConfigKey();
 
-        var url = GetOrUpdateUrl(role, inputUrl, settings);
+        var url = GetOrUpdateUrl(role, inputUrl);
 
         // The role flags are gone (KD5) — the only remaining callers here (configure/drift resolving a
         // role keyword out of a positional <target>) have no flag to override a missing role URL with;
@@ -288,7 +288,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
             throw new FlowlineException(ExitCode.ConfigInvalid,
                 $"{label} URL isn't set in .flowline — add \"{key}\": \"<url>\" to .flowline.");
 
-        return await GetAndCheckEnvironmentAsync(url, role, settings, cancellationToken, resolvedProfile, skipTypeGuard, devOnly);
+        return await GetAndCheckEnvironmentAsync(url, role, cancellationToken, resolvedProfile, skipTypeGuard, devOnly);
     }
 
     // Non-persisting sibling of GetAndCheckEnvironmentInfoAsync above — for a caller (EnvironmentTargetResolver's
@@ -299,7 +299,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     // devOnly lets a DEV-only caller (push/sync) refuse Production even when role came back null from a
     // "use this URL once" pick, where the role-based guard below has nothing to check.
     protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironmentAsync(
-        string url, EnvironmentRole? role, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
+        string url, EnvironmentRole? role, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
         bool skipTypeGuard = false, bool devOnly = false)
     {
         var label = RoleLabel(role);
@@ -348,7 +348,6 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         string? inputName,
         string environmentUrl,
         bool? includeManaged = null,
-        TSettings settings = default!,
         CancellationToken cancellationToken = default,
         bool bypassCache = false)
     {
@@ -371,7 +370,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     // shared by PushCommand and GenerateCommand's --pluginFile/no-project paths, which take the
     // environment URL and solution name directly instead of resolving them through ProjectConfig.
     protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckStandaloneEnvironmentAsync(
-        string environmentUrl, TSettings settings, CancellationToken cancellationToken, PacProfile? resolvedProfile = null)
+        string environmentUrl, CancellationToken cancellationToken, PacProfile? resolvedProfile = null)
     {
         var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
         EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
@@ -391,7 +390,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     // stale "solution still exists" answer. drift has none — it is a health-check signal whose whole
     // output is that answer — so it opts in, matching what its project-mode path already does.
     protected async Task<SolutionInfo> GetAndCheckStandaloneSolutionAsync(
-        string solutionName, string environmentUrl, TSettings settings, CancellationToken cancellationToken, bool bypassCache = false)
+        string solutionName, string environmentUrl, CancellationToken cancellationToken, bool bypassCache = false)
     {
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up [bold]{solutionName}[/]...",

@@ -110,9 +110,9 @@ public class FlowlineCommandTests
             ConnectToDataverseAsync(connector, environmentUrl, cancellationToken, resolvedProfile);
 
         public Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironment(
-            string url, EnvironmentRole? role, FlowlineSettings settings, CancellationToken cancellationToken,
+            string url, EnvironmentRole? role, CancellationToken cancellationToken,
             PacProfile? resolvedProfile = null, bool skipTypeGuard = false, bool devOnly = false) =>
-            GetAndCheckEnvironmentAsync(url, role, settings, cancellationToken, resolvedProfile, skipTypeGuard, devOnly);
+            GetAndCheckEnvironmentAsync(url, role, cancellationToken, resolvedProfile, skipTypeGuard, devOnly);
     }
 
     static TestCommand MakeCommand(ProfileResolutionService profileResolutionService)
@@ -210,7 +210,7 @@ public class FlowlineCommandTests
         var command = MakeCommandWithValidator(MakeValidator("Production"));
         var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
 
-        var act = () => command.GetAndCheckEnvironment(EnvUrl, EnvironmentRole.Dev, new FlowlineSettings(),
+        var act = () => command.GetAndCheckEnvironment(EnvUrl, EnvironmentRole.Dev,
             CancellationToken.None, resolvedProfile: profile);
 
         (await act.Should().ThrowAsync<FlowlineException>())
@@ -224,7 +224,7 @@ public class FlowlineCommandTests
         var command = MakeCommandWithValidator(MakeValidator("Production"));
         var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
 
-        var (info, _) = await command.GetAndCheckEnvironment(EnvUrl, EnvironmentRole.Dev, new FlowlineSettings(),
+        var (info, _) = await command.GetAndCheckEnvironment(EnvUrl, EnvironmentRole.Dev,
             CancellationToken.None, resolvedProfile: profile, skipTypeGuard: true);
 
         info.Type.Should().Be("Production");
@@ -240,7 +240,7 @@ public class FlowlineCommandTests
         var command = MakeCommandWithValidator(MakeValidator("Production"));
         var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
 
-        var act = () => command.GetAndCheckEnvironment(EnvUrl, null, new FlowlineSettings(),
+        var act = () => command.GetAndCheckEnvironment(EnvUrl, null,
             CancellationToken.None, resolvedProfile: profile);
 
         await act.Should().NotThrowAsync();
@@ -254,7 +254,7 @@ public class FlowlineCommandTests
         var command = MakeCommandWithValidator(MakeValidator("Production"));
         var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
 
-        var act = () => command.GetAndCheckEnvironment(EnvUrl, null, new FlowlineSettings(),
+        var act = () => command.GetAndCheckEnvironment(EnvUrl, null,
             CancellationToken.None, resolvedProfile: profile, devOnly: true);
 
         (await act.Should().ThrowAsync<FlowlineException>())
@@ -270,7 +270,7 @@ public class FlowlineCommandTests
             new ValidationProbes { GetEnvironmentByProfileAsync = (_, _, _) => Task.FromResult<EnvironmentInfo?>(null) });
         var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
 
-        var act = () => command.GetAndCheckEnvironment(EnvUrl, EnvironmentRole.Dev, new FlowlineSettings(),
+        var act = () => command.GetAndCheckEnvironment(EnvUrl, EnvironmentRole.Dev,
             CancellationToken.None, resolvedProfile: profile);
 
         (await act.Should().ThrowAsync<FlowlineException>())
