@@ -47,7 +47,9 @@
     </ItemGroup>
 
     <ItemGroup>
+      <PackageReference Include="Azure.Monitor.OpenTelemetry.Exporter" />
       <PackageReference Include="CliWrap" />
+      <PackageReference Include="OpenTelemetry" />
       <!-- contentFiles hold two more copies of the 1.75 MB dictionary that lib/ already carries;
            the files EBG actually reads at runtime are copied explicitly below instead. -->
       <PackageReference Include="DLaB.Xrm.EarlyBoundGeneratorV2.Api" ExcludeAssets="contentFiles" GeneratePathProperty="true" />

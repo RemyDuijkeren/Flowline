@@ -30,6 +30,7 @@
 
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
     <PackageReference Include="Spectre.Console.Testing" />
   </ItemGroup>
 

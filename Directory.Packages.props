@@ -4,10 +4,12 @@
   </PropertyGroup>
   <ItemGroup Label="Production">
     <PackageVersion Include="Acornima" Version="1.8.0" />
+    <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.9.0" />
     <PackageVersion Include="CliWrap" Version="3.10.5" />
     <PackageVersion Include="DLaB.Xrm.EarlyBoundGeneratorV2.Api" Version="2.2026.7.28" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
     <PackageVersion Include="NuGet.Versioning" Version="7.9.0" />
+    <PackageVersion Include="OpenTelemetry" Version="1.19.0" />
     <PackageVersion Include="Serilog" Version="4.4.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
@@ -42,6 +44,7 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.InMemory" Version="1.19.0" />
     <PackageVersion Include="Spectre.Console.Testing" Version="0.57.2" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
