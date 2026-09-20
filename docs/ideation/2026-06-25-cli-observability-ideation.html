@@ -163,7 +163,7 @@
   <header class="doc-header">
     <div class="doc-meta">
       <span class="chip chip-type">Ideation</span>
-      <time class="chip chip-date" datetime="2026-06-25">2026-06-25 · updated 2026-06-29</time>
+      <time class="chip chip-date" datetime="2026-06-25">2026-06-25 · updated 2026-09-20</time>
       <span class="chip chip-mode">repo-grounded</span>
     </div>
     <h1 class="doc-title">CLI Observability &amp; Bug Reproduction</h1>
@@ -171,17 +171,17 @@
       <strong>Focus:</strong> Flowline CLI runs on local developer machines and build servers. When bugs occur, there is no persistent diagnostic trace, making reproduction dependent on users re-running with <code>--verbose</code>. How can we capture as much information as possible — automatically, regardless of network availability?
     </p>
     <p class="doc-focus" style="margin-top:8px;color:#15803d;">
-      <strong>Status (2026-06-29):</strong> Waves 1 and 1.5 shipped. ILogger/Serilog file sink, subprocess capture buffer, and console-to-ILogger tee all in production. Waves 2–4 planned below.
+      <strong>Status (2026-09-20):</strong> Waves 1, 1.5 and 2 shipped — ILogger/Serilog file sink, subprocess capture buffer, console-to-ILogger tee, and the per-invocation <code>ActivitySource</code> trace with stage spans and command tags. Wave 3 dropped. Wave 4 (I7) now has an implementation plan: <a href="../plans/2026-09-20-1047-feat-telemetry-app-insights-plan.md">2026-09-20-1047-feat-telemetry-app-insights-plan.md</a>.
     </p>
   </header>
 
   <!-- STATS STRIP -->
   <div class="stats-strip" aria-label="Summary statistics">
-    <div class="stat"><div class="stat-value green">3</div><div class="stat-label">shipped</div></div>
-    <div class="stat"><div class="stat-value gray">2</div><div class="stat-label">dropped</div></div>
-    <div class="stat"><div class="stat-value orange">3</div><div class="stat-label">planned</div></div>
-    <div class="stat"><div class="stat-value green">2</div><div class="stat-label">waves done</div></div>
-    <div class="stat"><div class="stat-value">2</div><div class="stat-label">waves ahead</div></div>
+    <div class="stat"><div class="stat-value green">4</div><div class="stat-label">shipped</div></div>
+    <div class="stat"><div class="stat-value gray">3</div><div class="stat-label">dropped</div></div>
+    <div class="stat"><div class="stat-value orange">1</div><div class="stat-label">planned</div></div>
+    <div class="stat"><div class="stat-value green">3</div><div class="stat-label">waves done</div></div>
+    <div class="stat"><div class="stat-value">1</div><div class="stat-label">wave ahead</div></div>
   </div>
 
   <!-- GROUNDING CONTEXT -->
@@ -268,7 +268,7 @@
         <li><a href="#i-4" class="dropped-link">I4. DiagnosticContext Stage Chain (dropped)</a></li>
         <li><a href="#i-5" class="dropped-link">I5. Crash-Initiated Support Bundle (dropped)</a></li>
         <li><a href="#i-6">I6. Per-Invocation Trace via ActivitySource</a></li>
-        <li><a href="#i-7">I7. App Insights Telemetry</a></li>
+        <li><a href="#i-7">I7. App Insights Telemetry (planned)</a></li>
       </ol>
     </nav>
 
@@ -489,7 +489,7 @@
             <span class="chip axis-chip axis-dc">Diagnostic Capture</span>
             <span class="chip conf-high">Confidence 88%</span>
             <span class="chip cx-s">Complexity S</span>
-            <span class="chip status-planned">Planned · Wave 2</span>
+            <span class="chip status-shipped">Shipped · Wave 2</span>
           </div>
         </div>
         <div class="idea-body">
@@ -532,13 +532,17 @@
             <span class="chip axis-chip axis-rt">Remote Telemetry</span>
             <span class="chip conf-med">Confidence 65%</span>
             <span class="chip cx-l">Complexity L</span>
-            <span class="chip status-planned">Planned · Wave 4</span>
+            <span class="chip status-planned">Planned · Wave 4 · plan written</span>
           </div>
         </div>
         <div class="idea-body">
           <p>On any invocation: send traces and exception events to Azure Application Insights via the OTel OTLP exporter (<code>Azure.Monitor.OpenTelemetry.Exporter</code>). The <code>ActivitySource</code> from I6 feeds directly into an OTel <code>TracerProvider</code> configured with the Azure Monitor exporter — no <code>TelemetryClient</code>, no classic App Insights SDK. Payload: exception type name, exit code enum value, command name (no args), Flowline version, OS/arch, CI flag, hashed machine ID. No PII: no file paths, no Dataverse URLs, no user identifiers. Disclose at first run to stderr. Honor <code>FLOWLINE_TELEMETRY_OPTOUT=1</code> and <code>DO_NOT_TRACK=1</code> unconditionally. Consent model (opt-in vs. opt-out default) TBD — see field below. Before process exit: <code>tracerProvider.ForceFlush(TimeSpan.FromSeconds(5))</code> then dispose — the exporter drains its buffer synchronously.</p>
 
           <div class="idea-fields">
+            <div class="idea-field">
+              <span class="field-label">Plan</span>
+              <span class="field-value"><a href="../plans/2026-09-20-1047-feat-telemetry-app-insights-plan.md">docs/plans/2026-09-20-1047-feat-telemetry-app-insights-plan.md</a> (2026-09-20). Settles the open questions on this card. Consent is <strong>opt-out with a first-run stderr disclosure</strong>, controlled by two environment variables (<code>FLOWLINE_TELEMETRY_OPTOUT</code>, <code>PP_TOOLS_TELEMETRY_OPTOUT</code>) plus pac's own setting: <code>pac telemetry disable</code> disables Flowline too, since Flowline already depends on pac for auth. Foreign signals disable only, never enable. The Azure resource is deployed from Bicep in <code>infra/</code>, capped to stay inside the free allowance, and its region is permanent because the ingestion host ships embedded in the assembly. No <code>flowline telemetry</code> command and no per-command flag — the plan records that neither <code>dotnet</code>, <code>pac</code> nor <code>pa</code> has a per-command flag, though pac does have the command. The connection string is <strong>embedded in the assembly</strong>. Two reversals against this card: the <strong>full exception, message and stack trace are sent</strong>, not just the type name, because in the early phase the trace is what fixes the bug; and there is <strong>no send-side field filter</strong>. Protection comes from scrubbing instead — URLs, emails, paths, solution names and branch names are hashed before anything is written, in the log file and the telemetry alike, so the log file is a preview of the payload. Both reversals are marked <em>for now</em> in the plan.</span>
+            </div>
             <div class="idea-field">
               <span class="field-label">Stack</span>
               <span class="field-value">
@@ -594,7 +598,7 @@
     <div class="section-eyebrow">Sequencing — Actual + Planned</div>
     <h2 class="section-title" id="waves-title">Implementation Waves</h2>
 
-    <p style="font-size:14px;color:var(--text-2);margin-bottom:20px;max-width:72ch;">Waves 1 and 1.5 shipped. Wave 2 is the logical next step — small, high-value, touches the same injection points. Wave 3 dropped 2026-07-05 — the per-invocation log link already covers what the bundle would provide. Wave 4 is a separate product decision.</p>
+    <p style="font-size:14px;color:var(--text-2);margin-bottom:20px;max-width:72ch;">Waves 1, 1.5 and 2 shipped. Wave 3 dropped 2026-07-05 — the per-invocation log link already covers what the bundle would provide. Wave 4 is planned as of 2026-09-20 and is the only one left.</p>
 
     <div style="display:flex;flex-direction:column;gap:12px;">
 
@@ -643,7 +647,7 @@
         <div style="background:#eef2ff;border-bottom:1px solid #c7d2fe;padding:12px 20px;display:flex;align-items:center;gap:12px;">
           <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent-text);">Wave 2 — Rich Context</span>
           <span style="font-size:12px;color:var(--accent-text);font-weight:600;">I6 + cleanup</span>
-          <span style="font-size:12px;color:var(--text-3);margin-left:auto;">Small PR · same injection point</span>
+          <span style="font-size:12px;color:#15803d;font-weight:600;margin-left:auto;">✓ Shipped</span>
         </div>
         <div style="padding:14px 20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div style="font-size:13.5px;color:var(--text-2);">
@@ -681,12 +685,12 @@
         <div style="background:#f8f9fc;border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:12px;">
           <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-3);">Wave 4 — Telemetry</span>
           <span style="font-size:12px;color:var(--text-3);font-weight:600;">I7</span>
-          <span style="font-size:12px;color:var(--text-3);margin-left:auto;">Separate product decision</span>
+          <span style="font-size:12px;color:var(--text-3);margin-left:auto;">Planned · plan written 2026-09-20</span>
         </div>
         <div style="padding:14px 20px;">
           <div style="font-size:13.5px;color:var(--text-2);">
             <strong style="color:var(--text);display:block;margin-bottom:4px;">I7 — App Insights Opt-Out Telemetry</strong>
-            Lowest confidence (65%), highest complexity (L). Requires Azure resource + connection string distribution + ongoing maintenance. Its value — aggregate crash signal across all users — only materialises after Waves 1–3 are deployed and you want patterns that local logs can't show. Treat as a separate product decision, not part of the observability rollout.
+            Lowest confidence (65%), highest complexity (L). Requires Azure resource + connection string distribution + ongoing maintenance. Its value — aggregate crash signal across all users — only materialises after Waves 1–3 are deployed and you want patterns that local logs can't show. Treated as a separate product decision, and now planned: <a href="../plans/2026-09-20-1047-feat-telemetry-app-insights-plan.md">2026-09-20-1047-feat-telemetry-app-insights-plan.md</a>.
           </div>
         </div>
       </div>
@@ -805,7 +809,7 @@
 </div><!-- /page -->
 
 <footer class="composition-signal" style="max-width:920px;margin:0 auto;padding:20px 24px;">
-  Composed 2026-06-25 by ce-ideate · Updated 2026-06-29 to reflect Wave 1 + 1.5 implementation · Updated 2026-06-29 to drop I4, revise I6 to ActivitySource · Flowline CLI observability &amp; bug reproduction
+  Composed 2026-06-25 by ce-ideate · Updated 2026-06-29 to reflect Wave 1 + 1.5 implementation · Updated 2026-06-29 to drop I4, revise I6 to ActivitySource · Updated 2026-09-20: Wave 2 shipped, Wave 4 planned · Flowline CLI observability &amp; bug reproduction
 </footer>
 
 </body>
