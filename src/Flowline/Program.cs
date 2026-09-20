@@ -212,7 +212,10 @@ var tabStatus = TerminalTabStatus.Start(AnsiConsole.Console, TerminalTabStatus.L
 // The run's root span, and the exporter behind it when consent allows one. Above RunAsync because the
 // exception handler runs *inside* CommandApp, and the span it tags has to still be current there — the
 // command's own span is already disposed by the time the exception reaches the handler.
-FlowlineTelemetry.Start(args.FirstOrDefault() ?? applicationName, FlowlineScrubber.Current);
+// Fires only when a provider was actually built, so an opted-out run, or a build with no connection
+// string, writes nothing (R2, R10).
+if (FlowlineTelemetry.Start(args.FirstOrDefault() ?? applicationName, FlowlineScrubber.Current))
+    TelemetryDisclosure.ShowOnce();
 
 // Environment.Exit (five call sites in GitUtils/PacUtils/DotNetUtils) terminates without unwinding, so
 // the wrapper's finally never runs and the indicator would be left spinning for the rest of the
