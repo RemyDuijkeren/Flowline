@@ -85,12 +85,19 @@ public sealed class FlowlineScrubber(byte[] salt)
     /// derived from a machine or user name (KTD11). Regenerated with the salt on an ephemeral CI agent,
     /// where it therefore counts jobs rather than machines.
     /// </summary>
-    public string MachineId =>
-        Convert.ToHexString(HMACSHA256.HashData(salt, "flowline.machine"u8.ToArray()))[..16].ToLowerInvariant();
+    // Longer than the other two: this one has to stay distinct across every machine that reports,
+    // rather than across the values inside one run.
+    public string MachineId => _machineId ??= HashHex(salt, "flowline.machine"u8.ToArray(), 16);
+    string? _machineId;
 
+    // Case-sensitive, unlike Hash: a URL's path can be, and two URLs differing only in case are two
+    // URLs.
     internal static string HashUrl(string url, byte[] salt) =>
-        Convert.ToHexString(HMACSHA256.HashData(salt, Encoding.UTF8.GetBytes(url)))[..8].ToLowerInvariant();
+        HashHex(salt, Encoding.UTF8.GetBytes(url), 8);
 
     internal static string Hash(string value, byte[] salt) =>
-        Convert.ToHexString(HMACSHA256.HashData(salt, Encoding.UTF8.GetBytes(value.ToLowerInvariant())))[..8].ToLowerInvariant();
+        HashHex(salt, Encoding.UTF8.GetBytes(value.ToLowerInvariant()), 8);
+
+    static string HashHex(byte[] salt, byte[] data, int length) =>
+        Convert.ToHexString(HMACSHA256.HashData(salt, data))[..length].ToLowerInvariant();
 }

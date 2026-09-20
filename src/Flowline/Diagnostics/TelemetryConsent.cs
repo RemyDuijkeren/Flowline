@@ -24,8 +24,19 @@ public static class TelemetryConsent
         return true;
     }
 
-    public static bool IsEnabled() =>
-        IsEnabled(TelemetryConnectionString.Value, Environment.GetEnvironmentVariable, new PacTelemetrySetting().ReadTelemetryEnabled());
+    public static bool IsEnabled()
+    {
+        // The cheap checks run before pac's file is opened. Arguments are evaluated before the call, so
+        // passing the pac signal straight into the overload below would read and parse that file on
+        // every opted-out run — the runs most likely to belong to someone who cares what the tool does
+        // on their machine.
+        if (string.IsNullOrWhiteSpace(TelemetryConnectionString.Value)) return false;
+        if (IsOptOut(Environment.GetEnvironmentVariable(FlowlineOptOutVariable)) ||
+            IsOptOut(Environment.GetEnvironmentVariable(PacOptOutVariable))) return false;
+
+        return IsEnabled(TelemetryConnectionString.Value, Environment.GetEnvironmentVariable,
+            new PacTelemetrySetting().ReadTelemetryEnabled());
+    }
 
     static bool IsOptOut(string? value) =>
         value?.Trim().ToLowerInvariant() switch
