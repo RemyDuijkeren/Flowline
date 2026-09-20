@@ -132,6 +132,7 @@ var programLogger = loggerFactory.CreateLogger("Flowline");
 
 services.AddSingleton<ILoggerFactory>(loggerFactory);
 services.AddLogging();
+services.AddSingleton<CommandServices>();
 
 runtimeOptions.ArgsRedacted = SubprocessCapture.RedactSensitiveArgs(string.Join(" ", args));
 

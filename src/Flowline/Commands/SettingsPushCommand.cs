@@ -15,14 +15,9 @@ namespace Flowline.Commands;
 
 /// <summary>Applies a per-environment settings file to a Dataverse environment.</summary>
 public class SettingsPushCommand(
-    IAnsiConsole console,
-    DataverseConnector dataverseConnector,
-    FlowlineRuntimeOptions runtimeOptions,
-    ProfileResolutionService profileResolutionService,
-    ILoggerFactory loggerFactory,
-    SubprocessCapture capture,
-    NuGetVersionClient nuGetVersionClient)
-    : SettingsCommandBase<SettingsPushCommand.Settings>(console, dataverseConnector, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+    CommandServices services,
+    DataverseConnector dataverseConnector)
+    : SettingsCommandBase<SettingsPushCommand.Settings>(services, dataverseConnector)
 {
     public sealed class Settings : SettingsSettings
     {

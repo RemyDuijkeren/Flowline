@@ -13,9 +13,9 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class CloneCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture,
-    ProjectScaffolder projectScaffolder, CreateEnvironmentResolver createEnvironmentResolver, NuGetVersionClient nuGetVersionClient, EnvironmentTargetResolver environmentTargetResolver) :
-    FlowlineCommand<CloneCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+public class CloneCommand(CommandServices services,
+    ProjectScaffolder projectScaffolder, CreateEnvironmentResolver createEnvironmentResolver, EnvironmentTargetResolver environmentTargetResolver) :
+    FlowlineCommand<CloneCommand.Settings>(services)
 {
     /// <summary>Seam for testing — overrides PacUtils.GetSolutionsAsync (shells out to a real pac.exe
     /// subprocess with no mocking seam of its own).</summary>

@@ -24,14 +24,9 @@ namespace Flowline.Commands;
 /// three times over.
 /// </remarks>
 public abstract class SettingsCommandBase<TSettings>(
-    IAnsiConsole console,
-    DataverseConnector dataverseConnector,
-    FlowlineRuntimeOptions runtimeOptions,
-    ProfileResolutionService profileResolutionService,
-    ILoggerFactory loggerFactory,
-    SubprocessCapture capture,
-    NuGetVersionClient nuGetVersionClient)
-    : FlowlineCommand<TSettings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+    CommandServices services,
+    DataverseConnector dataverseConnector)
+    : FlowlineCommand<TSettings>(services)
     where TSettings : SettingsSettings
 {
     protected DataverseConnector DataverseConnector { get; } = dataverseConnector;

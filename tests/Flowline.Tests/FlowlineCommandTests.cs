@@ -94,8 +94,8 @@ public class FlowlineCommandTests
 
     // Minimal concrete subclass — FlowlineCommand<TSettings> is abstract, and ConnectToDataverseAsync /
     // GetAndCheckEnvironmentInfoAsync are protected, so a test-local subclass is the only seam available.
-    sealed class TestCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient)
-        : FlowlineCommand<FlowlineSettings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+    sealed class TestCommand(CommandServices services)
+        : FlowlineCommand<FlowlineSettings>(services)
     {
         // U3 seam — GetAndCheckEnvironmentAsync's env-existence check goes through this instead of a real
         // pac subprocess when set.
@@ -118,7 +118,7 @@ public class FlowlineCommandTests
     static TestCommand MakeCommand(ProfileResolutionService profileResolutionService)
     {
         var console = new TestConsole();
-        return new TestCommand(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()));
+        return new TestCommand(new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient())));
     }
 
     [Fact]

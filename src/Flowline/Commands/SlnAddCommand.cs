@@ -21,8 +21,8 @@ namespace Flowline.Commands;
 /// the case it exists for, and that repo has no <c>.flowline</c>, no git history worth probing, and
 /// possibly no pac install.
 /// </remarks>
-public class SlnAddCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient)
-    : FlowlineCommand<SlnAddCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+public class SlnAddCommand(CommandServices services)
+    : FlowlineCommand<SlnAddCommand.Settings>(services)
 {
     public sealed class Settings : FlowlineSettings
     {

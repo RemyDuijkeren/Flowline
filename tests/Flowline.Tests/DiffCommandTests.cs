@@ -43,8 +43,8 @@ public class DiffCommandTests : IDisposable
         var profileResolutionService = new ProfileResolutionService(console, connector, runtimeOptions);
         var capture = new SubprocessCapture(console);
 
-        var command = new DiffCommand(console, runtimeOptions, profileResolutionService,
-            NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient()));
+        var command = new DiffCommand(new CommandServices(console, runtimeOptions, profileResolutionService,
+            NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient())));
 
         return (command, console);
     }

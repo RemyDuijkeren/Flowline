@@ -19,11 +19,10 @@ namespace Flowline.Commands;
 // SDK-create the empty unmanaged solution, scaffold it exactly like a clone, then write the DEV role
 // only once everything succeeded (R10/R16). RequiresFlowlineProject=false: like clone, init is how a Flowline
 // project comes to exist, so there is no project yet to require.
-public class InitCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService,
-    ILoggerFactory loggerFactory, SubprocessCapture capture, CreateEnvironmentResolver createEnvironmentResolver,
-    DataverseConnector dataverseConnector, SolutionCreateService solutionCreateService, ProjectScaffolder projectScaffolder, NuGetVersionClient nuGetVersionClient,
+public class InitCommand(CommandServices services, CreateEnvironmentResolver createEnvironmentResolver,
+    DataverseConnector dataverseConnector, SolutionCreateService solutionCreateService, ProjectScaffolder projectScaffolder,
     EnvironmentTargetResolver environmentTargetResolver) :
-    FlowlineCommand<InitCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+    FlowlineCommand<InitCommand.Settings>(services)
 {
     /// <summary>Seam for testing — overrides DataverseConnector.ConnectViaPacAsync (a real MSAL token
     /// acquisition with no mocking seam of its own).</summary>

@@ -19,9 +19,9 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class GenerateCommand(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions runtimeOptions,
-    IEnumerable<IGenerator> generators, ProfileResolutionService profileResolutionService, SecretResolver secretResolver, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient, EnvironmentTargetResolver environmentTargetResolver)
-    : FlowlineCommand<GenerateCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+public class GenerateCommand(CommandServices services, DataverseConnector dataverseConnector,
+    IEnumerable<IGenerator> generators, SecretResolver secretResolver, EnvironmentTargetResolver environmentTargetResolver)
+    : FlowlineCommand<GenerateCommand.Settings>(services)
 {
     public sealed class Settings : EnvironmentSettings
     {

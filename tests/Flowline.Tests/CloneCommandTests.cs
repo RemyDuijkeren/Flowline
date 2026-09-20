@@ -881,8 +881,9 @@ public class CloneCommandTests
         };
         var environmentTargetResolver = new EnvironmentTargetResolver(console);
 
-        var command = new CloneCommand(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, capture,
-            projectScaffolder, createEnvironmentResolver, new NuGetVersionClient(new HttpClient()), environmentTargetResolver);
+        var command = new CloneCommand(
+            new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient())),
+            projectScaffolder, createEnvironmentResolver, environmentTargetResolver);
 
         return (command, console);
     }

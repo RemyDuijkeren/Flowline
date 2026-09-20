@@ -26,8 +26,8 @@ namespace Flowline.Commands;
 /// environment — <c>drift</c> is the command that compares against a live environment. That is why the
 /// setup probe is skipped entirely below.
 /// </remarks>
-public class DiffCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient)
-    : FlowlineCommand<DiffCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+public class DiffCommand(CommandServices services)
+    : FlowlineCommand<DiffCommand.Settings>(services)
 {
     public sealed class Settings : FlowlineSettings
     {

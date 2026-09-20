@@ -37,14 +37,9 @@ public abstract class SettingsComponentSettings : SettingsSettings
 /// read from the invoked name.
 /// </remarks>
 public abstract class SettingsComponentCommandBase<TSettings>(
-    IAnsiConsole console,
-    DataverseConnector dataverseConnector,
-    FlowlineRuntimeOptions runtimeOptions,
-    ProfileResolutionService profileResolutionService,
-    ILoggerFactory loggerFactory,
-    SubprocessCapture capture,
-    NuGetVersionClient nuGetVersionClient)
-    : SettingsCommandBase<TSettings>(console, dataverseConnector, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+    CommandServices services,
+    DataverseConnector dataverseConnector)
+    : SettingsCommandBase<TSettings>(services, dataverseConnector)
     where TSettings : SettingsComponentSettings
 {
     /// <summary>
@@ -828,14 +823,9 @@ internal static class SettingsComponentNames
 
 /// <summary>Turns anything with an on and an off on or off, or reads its state.</summary>
 public class SettingsStateCommand(
-    IAnsiConsole console,
-    DataverseConnector dataverseConnector,
-    FlowlineRuntimeOptions runtimeOptions,
-    ProfileResolutionService profileResolutionService,
-    ILoggerFactory loggerFactory,
-    SubprocessCapture capture,
-    NuGetVersionClient nuGetVersionClient)
-    : SettingsComponentCommandBase<SettingsStateCommand.Settings>(console, dataverseConnector, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+    CommandServices services,
+    DataverseConnector dataverseConnector)
+    : SettingsComponentCommandBase<SettingsStateCommand.Settings>(services, dataverseConnector)
 {
     /// <summary>
     /// The classes <c>settings state</c> can narrow to (KTD25).
@@ -940,14 +930,9 @@ public class SettingsStateCommand(
 
 /// <summary>Sets an environment variable's value or binds a connection reference, or reads it.</summary>
 public class SettingsValueCommand(
-    IAnsiConsole console,
-    DataverseConnector dataverseConnector,
-    FlowlineRuntimeOptions runtimeOptions,
-    ProfileResolutionService profileResolutionService,
-    ILoggerFactory loggerFactory,
-    SubprocessCapture capture,
-    NuGetVersionClient nuGetVersionClient)
-    : SettingsComponentCommandBase<SettingsValueCommand.Settings>(console, dataverseConnector, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+    CommandServices services,
+    DataverseConnector dataverseConnector)
+    : SettingsComponentCommandBase<SettingsValueCommand.Settings>(services, dataverseConnector)
 {
     /// <inheritdoc cref="SettingsStateCommand.StateType"/>
     public enum ValueType { EnvVar, ConnRef }

@@ -17,14 +17,9 @@ namespace Flowline.Commands;
 
 /// <summary>Captures an environment's configuration into a settings file, or every configured one.</summary>
 public class SettingsPullCommand(
-    IAnsiConsole console,
-    DataverseConnector dataverseConnector,
-    FlowlineRuntimeOptions runtimeOptions,
-    ProfileResolutionService profileResolutionService,
-    ILoggerFactory loggerFactory,
-    SubprocessCapture capture,
-    NuGetVersionClient nuGetVersionClient)
-    : SettingsCommandBase<SettingsPullCommand.Settings>(console, dataverseConnector, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+    CommandServices services,
+    DataverseConnector dataverseConnector)
+    : SettingsCommandBase<SettingsPullCommand.Settings>(services, dataverseConnector)
 {
     public sealed class Settings : SettingsSettings
     {

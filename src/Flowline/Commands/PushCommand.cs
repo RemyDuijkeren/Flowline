@@ -18,8 +18,8 @@ using Flowline.Validation;
 
 namespace Flowline.Commands;
 
-public class PushCommand(IAnsiConsole console, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FormEventService formEventService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient, EnvironmentTargetResolver environmentTargetResolver)
-    : FlowlineCommand<PushCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+public class PushCommand(CommandServices services, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FormEventService formEventService, EnvironmentTargetResolver environmentTargetResolver)
+    : FlowlineCommand<PushCommand.Settings>(services)
 {
     [Flags]
     public enum PushScope

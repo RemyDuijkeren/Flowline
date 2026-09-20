@@ -33,10 +33,8 @@ public class UpdateNoticeWiringTests
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
     }
 
-    sealed class TestCommand(
-        IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService,
-        SubprocessCapture capture, NuGetVersionClient nuGetVersionClient, FlowlineValidator validator)
-        : FlowlineCommand<FlowlineSettings>(console, runtimeOptions, profileResolutionService, NullLoggerFactory.Instance, capture, nuGetVersionClient)
+    sealed class TestCommand(CommandServices services, FlowlineValidator validator)
+        : FlowlineCommand<FlowlineSettings>(services)
     {
         // Stands in for ScaffoldCommand/SlnAddCommand, which override the setup check away entirely and
         // need no project on disk either.
@@ -72,10 +70,12 @@ public class UpdateNoticeWiringTests
             new ValidationProbes());
 
         var command = new TestCommand(
-            console, new FlowlineRuntimeOptions(),
-            new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions()),
-            new SubprocessCapture(console),
-            new NuGetVersionClient(new HttpClient(new FakeHandler($$"""{"versions":["{{newer}}"]}"""))),
+            new CommandServices(
+                console, new FlowlineRuntimeOptions(),
+                new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions()),
+                NullLoggerFactory.Instance,
+                new SubprocessCapture(console),
+                new NuGetVersionClient(new HttpClient(new FakeHandler($$"""{"versions":["{{newer}}"]}""")))),
             validator);
 
         return (command, console, newer, validator);

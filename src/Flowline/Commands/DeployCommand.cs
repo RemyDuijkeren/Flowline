@@ -22,7 +22,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class DeployCommand(IAnsiConsole console, DataverseConnector dataverseConnector, IEnumerable<IPostDeployService> postDeployServices, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) : FlowlineCommand<DeployCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+public class DeployCommand(CommandServices services, DataverseConnector dataverseConnector, IEnumerable<IPostDeployService> postDeployServices) : FlowlineCommand<DeployCommand.Settings>(services)
 {
     public sealed class Settings : DataverseSettings
     {

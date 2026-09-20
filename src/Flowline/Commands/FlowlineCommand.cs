@@ -19,21 +19,21 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) : AsyncCommand<TSettings>
+public abstract class FlowlineCommand<TSettings>(CommandServices services) : AsyncCommand<TSettings>
     where TSettings : FlowlineSettings
 {
-    protected readonly SubprocessCapture _capture = capture;
+    protected readonly SubprocessCapture _capture = services.Capture;
 
     public static string FormatDuration(TimeSpan elapsed) =>
         elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s" :
         elapsed.TotalSeconds  >= 1 ? $"{(int)elapsed.TotalSeconds}s" :
                                      $"{(int)elapsed.TotalMilliseconds}ms";
 
-    protected readonly IAnsiConsole Console = console;
-    protected FlowlineRuntimeOptions RuntimeOptions { get; } = runtimeOptions;
-    protected ProfileResolutionService ProfileResolutionService { get; } = profileResolutionService;
+    protected readonly IAnsiConsole Console = services.Console;
+    protected FlowlineRuntimeOptions RuntimeOptions { get; } = services.RuntimeOptions;
+    protected ProfileResolutionService ProfileResolutionService { get; } = services.ProfileResolutionService;
     private ILogger? _logger;
-    protected ILogger Logger => _logger ??= loggerFactory.CreateLogger(GetType().Name);
+    protected ILogger Logger => _logger ??= services.LoggerFactory.CreateLogger(GetType().Name);
 
     protected string RootFolder { get; private set; } = Directory.GetCurrentDirectory();
     /// <summary>The project's .flowline configuration, or an empty one when there is no file yet.</summary>
@@ -125,7 +125,7 @@ public abstract class FlowlineCommand<TSettings>(IAnsiConsole console, FlowlineR
         // failing git/pac probe, never checked and never cached — leaving the notice unreachable in exactly
         // the folders a new user starts in.
         UpdateNoticeChecker.PrintNotice(Console,
-            await UpdateNoticeChecker.CheckAsync(Console, Validator, nuGetVersionClient, NoCacheOf(settings), cancellationToken));
+            await UpdateNoticeChecker.CheckAsync(Console, Validator, services.NuGetVersionClient, NoCacheOf(settings), cancellationToken));
 
         // The project wins when there is one, standalone only fills the gap when there isn't. A .flowline
         // governs its whole subtree (see FindFlowlineProjectRoot), so a command run anywhere beneath

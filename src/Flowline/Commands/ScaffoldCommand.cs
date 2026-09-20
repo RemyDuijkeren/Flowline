@@ -28,8 +28,8 @@ namespace Flowline.Commands;
 /// after it and added to it; if there isn't, the template lands alone. Config is never read for the
 /// decision.
 /// </remarks>
-public class ScaffoldCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, ProjectScaffolder projectScaffolder, NuGetVersionClient nuGetVersionClient)
-    : FlowlineCommand<ScaffoldCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+public class ScaffoldCommand(CommandServices services, ProjectScaffolder projectScaffolder)
+    : FlowlineCommand<ScaffoldCommand.Settings>(services)
 {
     public sealed class Settings : FlowlineSettings
     {

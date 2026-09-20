@@ -196,8 +196,10 @@ public class InitCommandTests
         var projectScaffolder = new ProjectScaffolder(console, capture);
         var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, capture);
 
-        var command = new InitCommand(console, new FlowlineRuntimeOptions(), profileResolutionService,
-            NullLoggerFactory.Instance, capture, createEnvironmentResolver, connector, new SolutionCreateService(), projectScaffolder, new NuGetVersionClient(new HttpClient()),
+        var command = new InitCommand(
+            new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService,
+                NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient())),
+            createEnvironmentResolver, connector, new SolutionCreateService(), projectScaffolder,
             new EnvironmentTargetResolver(console))
         {
             ConnectOverride = (_, _, _) => Task.FromResult(orgService),

@@ -28,10 +28,8 @@ public class FlowlineCommandStandaloneTests
         public IReadOnlyList<string> Raw { get; } = [];
     }
 
-    sealed class TestCommand(
-        IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService,
-        ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient)
-        : FlowlineCommand<FlowlineSettings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+    sealed class TestCommand(CommandServices services)
+        : FlowlineCommand<FlowlineSettings>(services)
     {
         public bool Standalone { get; set; }
         public bool RequiresFlowlineProjectValue { get; set; } = true;
@@ -76,8 +74,8 @@ public class FlowlineCommandStandaloneTests
         console.Profile.Capabilities.Interactive = false;
         var connector = new DataverseConnector(console, new HttpClient());
         var profileResolutionService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions());
-        return new TestCommand(console, new FlowlineRuntimeOptions(), profileResolutionService,
-            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()));
+        return new TestCommand(new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService,
+            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient())));
     }
 
     static CommandContext MakeContext(string name = "test-command") =>

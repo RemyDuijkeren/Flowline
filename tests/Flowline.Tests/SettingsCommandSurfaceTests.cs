@@ -44,10 +44,8 @@ public class SettingsCommandSurfaceTests : IDisposable
 
     // ── R9: what a missing name does ────────────────────────────────────────
 
-    sealed class StateProbe(
-        IAnsiConsole console, DataverseConnector connector, FlowlineRuntimeOptions options,
-        ProfileResolutionService profiles, SubprocessCapture capture, NuGetVersionClient nuget)
-        : SettingsStateCommand(console, connector, options, profiles, NullLoggerFactory.Instance, capture, nuget)
+    sealed class StateProbe(CommandServices services, DataverseConnector connector)
+        : SettingsStateCommand(services, connector)
     {
         public TestConsole Out => (TestConsole)Console;
 
@@ -71,8 +69,8 @@ public class SettingsCommandSurfaceTests : IDisposable
     static StateProbe MakeStateProbe(bool interactive)
     {
         var (console, connector, profiles) = Deps(interactive);
-        return new StateProbe(console, connector, new FlowlineRuntimeOptions(), profiles,
-            new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()));
+        return new StateProbe(new CommandServices(console, new FlowlineRuntimeOptions(), profiles,
+            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient())), connector);
     }
 
     static InventoryComponent Flow(string name, bool enabled = true) =>
@@ -561,10 +559,8 @@ public class SettingsCommandSurfaceTests : IDisposable
 
     // ── R16: what a pull with no environment does ────────────────────────────
 
-    sealed class PullProbe(
-        IAnsiConsole console, DataverseConnector connector, FlowlineRuntimeOptions options,
-        ProfileResolutionService profiles, SubprocessCapture capture, NuGetVersionClient nuget)
-        : SettingsPullCommand(console, connector, options, profiles, NullLoggerFactory.Instance, capture, nuget)
+    sealed class PullProbe(CommandServices services, DataverseConnector connector)
+        : SettingsPullCommand(services, connector)
     {
         public TestConsole Out => (TestConsole)Console;
 
@@ -575,8 +571,8 @@ public class SettingsCommandSurfaceTests : IDisposable
     static PullProbe MakePullProbe(bool interactive)
     {
         var (console, connector, profiles) = Deps(interactive);
-        return new PullProbe(console, connector, new FlowlineRuntimeOptions(), profiles,
-            new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()));
+        return new PullProbe(new CommandServices(console, new FlowlineRuntimeOptions(), profiles,
+            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient())), connector);
     }
 
     // The bare word used to sweep every configured environment unattended. That is the widest and slowest

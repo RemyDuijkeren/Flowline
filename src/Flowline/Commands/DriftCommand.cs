@@ -15,7 +15,7 @@ using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class DriftCommand(IAnsiConsole console, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient) : FlowlineCommand<DriftCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+public class DriftCommand(CommandServices services, DataverseConnector dataverseConnector, OrphanCleanupService orphanCleanupService) : FlowlineCommand<DriftCommand.Settings>(services)
 {
     public sealed class Settings : DataverseSettings
     {

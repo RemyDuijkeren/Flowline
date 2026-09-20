@@ -18,7 +18,7 @@ public enum Role { Dev, Test, Uat }
 
 public enum CopyType { Minimal, Full }
 
-public class ProvisionCommand(IAnsiConsole console, FlowlineRuntimeOptions runtimeOptions, ProfileResolutionService profileResolutionService, ILoggerFactory loggerFactory, SubprocessCapture capture, NuGetVersionClient nuGetVersionClient, EnvironmentTargetResolver environmentTargetResolver) : FlowlineCommand<ProvisionCommand.Settings>(console, runtimeOptions, profileResolutionService, loggerFactory, capture, nuGetVersionClient)
+public class ProvisionCommand(CommandServices services, EnvironmentTargetResolver environmentTargetResolver) : FlowlineCommand<ProvisionCommand.Settings>(services)
 {
     public sealed class Settings : DataverseSettings
     {
