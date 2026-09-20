@@ -1,5 +1,6 @@
 ﻿using Flowline;
 using Flowline.Commands;
+using Flowline.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Deploy;
@@ -212,6 +213,24 @@ var tabStatus = TerminalTabStatus.Start(AnsiConsole.Console, TerminalTabStatus.L
 // The run's root span, and the exporter behind it when consent allows one. Above RunAsync because the
 // exception handler runs *inside* CommandApp, and the span it tags has to still be current there — the
 // command's own span is already disposed by the time the exception reaches the handler.
+// KTD6/R6: the solution name and the project folder name are registered here, not only in the
+// command pipeline, because not every command runs that pipeline — StatusCommand derives from
+// AsyncCommand directly, and it renders the solution unique name, which LoggingRenderHook tees into
+// the log file. Both lookups are file reads. The branch name is not registered here on purpose: it
+// costs a git subprocess, and the commands that write one all go through FlowlineCommand, which
+// registers it from a probe it has already paid for.
+try
+{
+    var scrubRoot = FlowlineCommand<DriftCommand.Settings>.FindFlowlineProjectRoot(Directory.GetCurrentDirectory());
+    if (scrubRoot is not null)
+    {
+        FlowlineScrubber.Current.AddKnownValue(ProjectConfig.Load(scrubRoot)?.Solution?.UniqueName);
+        FlowlineScrubber.Current.AddKnownValue(
+            Path.GetFileName(scrubRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+    }
+}
+catch { } // Intentional: nothing about scrubbing setup is worth failing a launch for.
+
 // Fires only when a provider was actually built, so an opted-out run, or a build with no connection
 // string, writes nothing (R2, R10).
 if (FlowlineTelemetry.Start(args.FirstOrDefault() ?? applicationName, FlowlineScrubber.Current))
