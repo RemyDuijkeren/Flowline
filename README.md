@@ -172,10 +172,11 @@ export function onChangeCreditlimit(executionContext) { ... }
 
 ## Telemetry
 
-Flowline reports what breaks. Every run sends the command name, its exit code and duration, your
-OS, the Flowline, .NET, PAC CLI and Git versions in play, whether you are on CI, and — when a
-command fails — the full exception with its stack trace. It is on by default, and the first run
-that sends says so on stderr.
+Flowline reports what breaks. Every run sends the command name, its exit code and duration, a timing
+for each phase it goes through, your OS, the Flowline, .NET, PAC CLI and Git versions in play,
+whether you are on CI, and — when a command fails — the full exception with its stack trace. It also
+sends the run's log lines, the same ones the local log file holds. It is on by default, and the
+first run that sends says so on stderr.
 
 Everything that could name you or a client is replaced by a salted hash before it leaves:
 environment URLs, email addresses, the user segment of filesystem paths, solution names and Git

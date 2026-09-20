@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Flowline reports crashes and usage to its authors.** Every run sends the command, its exit code and duration, your OS and tool versions, whether you are on CI, and the full exception when something fails. On by default, disclosed on stderr the first time it sends. `pac telemetry disable` turns it off and persists; `FLOWLINE_TELEMETRY_OPTOUT` or `PP_TOOLS_TELEMETRY_OPTOUT` do the same for a CI image. Nothing about what a command did to an environment is sent, and everything that could name you or a client is hashed first — your log file shows exactly what was sent. See the Telemetry section in the README.
+- **Flowline reports crashes and usage to its authors.** Every run sends the command, its exit code and duration, a timing for each phase it goes through, your OS and tool versions, whether you are on CI, the full exception when something fails, and the run's log lines. On by default, disclosed on stderr the first time it sends. `pac telemetry disable` turns it off and persists; `FLOWLINE_TELEMETRY_OPTOUT` or `PP_TOOLS_TELEMETRY_OPTOUT` do the same for a CI image. Nothing about what a command did to an environment is sent, and everything that could name you or a client is hashed first — your log file shows exactly what was sent. See the Telemetry section in the README.
 
 ### Changed
 
