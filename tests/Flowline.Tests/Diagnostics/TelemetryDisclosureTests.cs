@@ -26,19 +26,22 @@ public class TelemetryDisclosureTests : IDisposable
     }
 
     [Fact]
-    public void TheNoticeNamesTheOptOutVariableAndPointsAtTheLogFile()
+    public void TheNoticeNamesWhatNobodyWouldAssumeAndPointsAtTheRest()
     {
         var writer = new StringWriter();
 
         TelemetryDisclosure.ShowOnce(new ValidationCacheStore(_cachePath), writer);
 
         var text = writer.ToString();
-        text.Should().Contain("FLOWLINE_TELEMETRY_OPTOUT");
-        text.Should().Contain("for good", "an environment variable only lasts for the shell that set it");
-        text.Should().Contain("log file");
-        text.Should().Contain("exception");
+        // The two things nobody assumes from the word "telemetry", and the route to everything else.
+        text.Should().Contain("log lines");
+        text.Should().Contain("stack trace");
+        text.Should().Contain("log file", "the claim that the local log is the payload is the verifiable one");
         text.Should().Contain("wiki/18-Telemetry", "a one-off notice cannot carry the whole story");
+        text.Should().NotContain("anonym", "a salted hash is pseudonymisation, not anonymisation");
         text.Should().NotContain("—", "em dashes are out of house style");
+        text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Should().HaveCountLessThanOrEqualTo(3, "a first-run notice nobody reads is worth nothing");
     }
 
     [Fact]

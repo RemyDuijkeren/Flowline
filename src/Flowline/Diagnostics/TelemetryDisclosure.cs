@@ -12,13 +12,18 @@ namespace Flowline.Diagnostics;
 /// </remarks>
 public static class TelemetryDisclosure
 {
+    /// <remarks>
+    /// Three lines, and two of them are load-bearing. The ordinary fields are left out because someone
+    /// reading "telemetry" already assumes a command name and an exit code; the log lines and the
+    /// stack traces are named because nobody assumes those, and they are the thing a security team
+    /// would object to. "Hashed" rather than "anonymised": the values are hashed with a salt that
+    /// lives on the user's machine, which is pseudonymisation, and this is the one message whose
+    /// whole job is being true.
+    /// </remarks>
     public const string Text = """
-        · Flowline sends usage and crash telemetry: the command you ran, its exit code, how long each
-          step took, your OS and tool versions, and the log lines this run wrote. A failure also sends
-          the exception and its stack trace. URLs, email addresses, paths, solution names and branch
-          names are hashed first, so your own log file shows exactly what was sent.
-          Turn it off for this shell with FLOWLINE_TELEMETRY_OPTOUT=1, or for good: see
-          https://github.com/RemyDuijkeren/Flowline/wiki/18-Telemetry
+        · Flowline sends usage and crash telemetry, including the log lines a run writes and the full
+          stack trace when one fails. Identifying values are hashed first, so your own log file shows
+          exactly what was sent. Read it, or turn this off: https://github.com/RemyDuijkeren/Flowline/wiki/18-Telemetry
         """;
 
     public static void ShowOnce() => ShowOnce(new ValidationCacheStore(), Console.Error);
