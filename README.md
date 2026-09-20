@@ -231,6 +231,9 @@ inferred from the observed host rather than documented by Microsoft.
 Blocking it entirely is supported and silent: a blocked or proxied endpoint does not change a
 command's exit code or its output.
 
+Full details, including how to read the payload and how to cover a whole team:
+**[Telemetry](https://github.com/RemyDuijkeren/Flowline/wiki/18-Telemetry)**.
+
 ---
 
 ## Documentation
