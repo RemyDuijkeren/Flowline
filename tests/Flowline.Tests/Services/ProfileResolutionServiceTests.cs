@@ -359,6 +359,19 @@ public class ProfileResolutionServiceTests
     }
 
     [Fact]
+    public async Task Guard_AutoSwitchWithNoPacAuthSelectBinding_ThrowsInsteadOfShellingOut()
+    {
+        // KTD3: the pac call is bound by the composition root. A service built without it must fail
+        // loudly at the switch, never fall back to launching pac itself.
+        var profile = MakeProfile();
+        var svc = MakeService(out _, new ProfileFound(profile), isProfileActive: false, autoSwitchProfile: true, allProfiles: [profile]);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => svc.ResolveAsync(EnvironmentUrl));
+
+        ex.Message.Should().Contain("has no `pac auth select` binding");
+    }
+
+    [Fact]
     public async Task Guard_AutoSwitchInteractive_SwitchesWithoutShowingPrompt()
     {
         var profile = MakeProfile();
