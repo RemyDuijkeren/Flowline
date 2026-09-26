@@ -14,7 +14,6 @@ using Flowline.Services;
 using Flowline.Settings;
 using Flowline.Utils;
 using System.Diagnostics;
-using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
@@ -58,8 +57,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
 
     // One definition for both ToolVersions construction sites (project setup and standalone setup), which
     // otherwise carried the same expression forty lines apart.
-    static string ThisFlowlineVersion =>
-        Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "0.0.0";
+    static string ThisFlowlineVersion => FlowlineVersion.Display;
 
     // Lets a command run against a folder with no .flowline project — settings-aware (unlike
     // RequiresFlowlineProject) because standalone mode is usually gated on a flag such as --path, not
@@ -141,7 +139,10 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
             ? r[context.Name.Length..].TrimStart()
             : RuntimeOptions.ArgsRedacted ?? "";
         var sw = Stopwatch.StartNew();
-        using var activity = FlowlineActivitySource.Source.StartActivity(context.Name);
+        // The run's root span, not a nested one: the root is what App Insights shows as the request, so
+        // tags set here are the ones Performance and Failures can split by. Read once, because the
+        // SIGTERM teardown can clear it from another thread.
+        var activity = FlowlineTelemetry.Root;
         Logger.LogInformation("Command: {Command} {Args}", context.Name, argsOnly);
 
         if (ShowWelcome && Console.Profile.Capabilities.Interactive && Validator.ShouldShowWelcomeScreen(RuntimeOptions.NoCache))

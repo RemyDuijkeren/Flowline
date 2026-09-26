@@ -180,12 +180,14 @@ app.Configure(config =>
         // it through {Exception} unscrubbed, and there is no interception point that would catch that
         // without a second implementation of the rules. ToString() covers the inner chain in one pass.
         var scrubbedException = FlowlineScrubber.Current.Scrub(ex.ToString());
+        var exceptionType = ex.GetType().FullName ?? ex.GetType().Name;
+        var scrubbedMessage = FlowlineScrubber.Current.Scrub(ex.Message);
 
         switch (ex)
         {
             case FlowlineException fe:
                 programLogger.LogError("Command failed: {ExceptionDetail}", scrubbedException);
-                FlowlineTelemetry.RecordFailure((int)fe.ExitCode, scrubbedException);
+                FlowlineTelemetry.RecordFailure((int)fe.ExitCode, exceptionType, scrubbedMessage, scrubbedException);
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(fe.Message)}");
                 WriteExceptionContext(fe, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
@@ -204,7 +206,7 @@ app.Configure(config =>
             // which would otherwise be reported as a user Ctrl+C and exit 130.
             case var _ when DataverseTimeout.Matches(ex, cancellationTokenSource.IsCancellationRequested):
                 programLogger.LogError("Dataverse request timed out: {ExceptionDetail}", scrubbedException);
-                FlowlineTelemetry.RecordFailure((int)ExitCode.Timeout, scrubbedException);
+                FlowlineTelemetry.RecordFailure((int)ExitCode.Timeout, exceptionType, scrubbedMessage, scrubbedException);
                 AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(DataverseTimeout.Message)}");
                 AnsiConsole.MarkupLine($"[dim]{Markup.Escape(DataverseTimeout.NextStep(args.FirstOrDefault()))}[/]");
                 AnsiConsole.MarkupLine(logLink);
@@ -220,7 +222,7 @@ app.Configure(config =>
             // treatment as a FlowlineException rather than a raw internal stack trace.
             case CommandRuntimeException cre:
                 programLogger.LogError("Command failed: {ExceptionDetail}", scrubbedException);
-                FlowlineTelemetry.RecordFailure((int)ExitCode.ValidationFailed, scrubbedException);
+                FlowlineTelemetry.RecordFailure((int)ExitCode.ValidationFailed, exceptionType, scrubbedMessage, scrubbedException);
                 // "Unknown command 'dev'" is true and teaches nothing when the token is a perfectly good
                 // environment in the wrong position. Only this one shape is recognised, and it cannot
                 // match an invocation the parser would have accepted.
@@ -234,7 +236,7 @@ app.Configure(config =>
                 return (int)ExitCode.ValidationFailed;
             default:
                 programLogger.LogError("Unhandled exception: {ExceptionDetail}", scrubbedException);
-                FlowlineTelemetry.RecordFailure((int)ExitCode.GeneralError, scrubbedException);
+                FlowlineTelemetry.RecordFailure((int)ExitCode.GeneralError, exceptionType, scrubbedMessage, scrubbedException);
                 AnsiConsole.WriteException(ex, ExceptionFormats.ShortenPaths);
                 WriteExceptionContext(ex, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);

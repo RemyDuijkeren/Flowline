@@ -38,6 +38,9 @@ public static class FlowlineTelemetry
     static Activity? s_root;
     static int s_torndown;
 
+    /// <summary>The run's root span, or null once teardown has started or when none was started.</summary>
+    public static Activity? Root => s_root;
+
     /// <summary>Starts the run's root span and, when consent allows it, the exporter behind it.</summary>
     /// <returns>Whether a provider was built, which is the same condition the first-run disclosure fires on.</returns>
     public static bool Start(string activityName, FlowlineScrubber scrubber) =>
@@ -71,7 +74,9 @@ public static class FlowlineTelemetry
         // their own logs. The ActivityListener in Program.cs is what records it when no provider exists.
         try
         {
-            s_root = FlowlineActivitySource.Source.StartActivity(activityName);
+            // Server, not the default Internal: the Azure Monitor exporter only turns Server and Consumer
+            // spans into requests, and a run that arrives as a dependency never shows up as an operation.
+            s_root = FlowlineActivitySource.Source.StartActivity(activityName, ActivityKind.Server);
         }
         catch
         {
@@ -203,7 +208,13 @@ public static class FlowlineTelemetry
     }
 
     /// <summary>Records the failure on the run's root span, from the one place that already rendered and scrubbed it.</summary>
-    public static void RecordFailure(int exitCode, string? scrubbedException)
+    /// <remarks>
+    /// The exception goes on as an <c>exception</c> event built from values scrubbed by the caller,
+    /// which is what the exporter turns into an entry in the Exceptions table. Not
+    /// <see cref="Activity.AddException"/>: that writes the raw message and stack trace into the event,
+    /// and <see cref="ScrubbingProcessor"/> only rewrites tags, never events.
+    /// </remarks>
+    public static void RecordFailure(int exitCode, string exceptionType, string? scrubbedMessage, string? scrubbedException)
     {
         // Captured once. This runs on the main thread from the exception handler while Flush can null
         // the field from the SIGTERM handler on a thread-pool callback, and re-reading it would put a
@@ -217,6 +228,14 @@ public static class FlowlineTelemetry
             root.SetStatus(ActivityStatusCode.Error);
             if (!string.IsNullOrEmpty(scrubbedException))
                 root.SetTag("exception.detail", scrubbedException);
+
+            // The exporter drops an exception event with an empty message, so the type stands in.
+            root.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+            {
+                ["exception.type"] = exceptionType,
+                ["exception.message"] = string.IsNullOrEmpty(scrubbedMessage) ? exceptionType : scrubbedMessage,
+                ["exception.stacktrace"] = scrubbedException,
+            }));
         }
         catch { } // Intentional: as above.
     }

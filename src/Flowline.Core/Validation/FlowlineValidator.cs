@@ -1,7 +1,7 @@
-using System.Reflection;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
+using Flowline.Core.Diagnostics;
 using Spectre.Console;
 
 namespace Flowline.Core.Validation;
@@ -255,6 +255,5 @@ public sealed class FlowlineValidator
     static string NormalizePath(string path) =>
         Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToLowerInvariant();
 
-    static string? GetFlowlineVersion() =>
-        Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
+    static string? GetFlowlineVersion() => FlowlineVersion.Display;
 }

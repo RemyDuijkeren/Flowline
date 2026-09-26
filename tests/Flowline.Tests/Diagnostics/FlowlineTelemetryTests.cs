@@ -35,6 +35,25 @@ public class FlowlineTelemetryTests : IDisposable
         Activity.Current!.DisplayName.Should().Be("deploy");
     }
 
+    // The Azure Monitor exporter maps only Server and Consumer spans to requests; anything else lands in
+    // dependencies, and the run never appears as an operation in Performance or Failures.
+    [Fact]
+    public void TheRootSpanIsAServerSpan_SoTheRunArrivesAsARequest()
+    {
+        using var listener = RecordingListener();
+
+        FlowlineTelemetry.Start("deploy", Scrubber, NoConnectionString, consented: false);
+
+        Activity.Current!.Kind.Should().Be(ActivityKind.Server);
+        FlowlineTelemetry.Root.Should().BeSameAs(Activity.Current);
+    }
+
+    // The span source version is what App Insights shows as the application version, so it has to
+    // carry the prerelease label to be filterable.
+    [Fact]
+    public void TheSpanSourceCarriesThePackageVersion() =>
+        FlowlineActivitySource.Source.Version.Should().Be(FlowlineVersion.Display);
+
     [Fact]
     public void WithNoConnectionString_NoProviderIsBuilt_AndNothingThrows()
     {
@@ -74,12 +93,46 @@ public class FlowlineTelemetryTests : IDisposable
         using var listener = RecordingListener();
         FlowlineTelemetry.Start("deploy", Scrubber, NoConnectionString, consented: false);
 
-        FlowlineTelemetry.RecordFailure(17, "InvalidOperationException: import failed");
+        FlowlineTelemetry.RecordFailure(17, "System.InvalidOperationException", "import failed",
+            "InvalidOperationException: import failed");
 
         var root = Activity.Current!;
         root.GetTagItem("exit.code").Should().Be(17);
         root.GetTagItem("exception.detail").Should().Be("InvalidOperationException: import failed");
         root.Status.Should().Be(ActivityStatusCode.Error);
+    }
+
+    // The exporter builds an Exceptions-table entry only from an event named "exception" carrying a
+    // type and a non-empty message; a tag alone leaves that tab empty.
+    [Fact]
+    public void RecordFailure_AddsAnExceptionEvent_FromTheValuesItWasGiven()
+    {
+        using var listener = RecordingListener();
+        FlowlineTelemetry.Start("deploy", Scrubber, NoConnectionString, consented: false);
+
+        FlowlineTelemetry.RecordFailure(17, "System.InvalidOperationException", "import failed",
+            "InvalidOperationException: import failed");
+
+        var evt = Activity.Current!.Events.Should().ContainSingle().Subject;
+        evt.Name.Should().Be("exception");
+        var tags = evt.Tags.ToDictionary(t => t.Key, t => t.Value);
+        tags["exception.type"].Should().Be("System.InvalidOperationException");
+        tags["exception.message"].Should().Be("import failed");
+        tags["exception.stacktrace"].Should().Be("InvalidOperationException: import failed");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void RecordFailure_WithNoMessage_UsesTheTypeSoTheExporterKeepsTheEvent(string? message)
+    {
+        using var listener = RecordingListener();
+        FlowlineTelemetry.Start("deploy", Scrubber, NoConnectionString, consented: false);
+
+        FlowlineTelemetry.RecordFailure(1, "System.Exception", message, "System.Exception");
+
+        Activity.Current!.Events.Single().Tags.Should()
+            .Contain(new KeyValuePair<string, object?>("exception.message", "System.Exception"));
     }
 
     // The guarantee the whole feature rests on, and the one nothing else would catch: processors run
@@ -135,6 +188,7 @@ public class FlowlineTelemetryTests : IDisposable
 
         Activity.Current!.GetTagItem("exit.code").Should().Be(0);
         Activity.Current.Status.Should().Be(ActivityStatusCode.Unset);
+        Activity.Current.Events.Should().BeEmpty("a cancelled run is not an exception");
     }
 
     [Fact]
@@ -170,7 +224,7 @@ public class FlowlineTelemetryTests : IDisposable
     [Fact]
     public void RecordingAFailureWithNoRunStartedDoesNotThrow()
     {
-        FlowlineTelemetry.RecordFailure(1, "boom");
+        FlowlineTelemetry.RecordFailure(1, "System.Exception", "boom", "boom");
         FlowlineTelemetry.RecordExit(1);
     }
 
