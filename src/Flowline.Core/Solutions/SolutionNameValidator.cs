@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Solutions;
 
 /// <summary>
 /// Validates the names <c>flowline init</c> sends to Dataverse — solution unique/display name,

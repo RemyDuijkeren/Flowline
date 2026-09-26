@@ -1,6 +1,6 @@
 using NuGet.Versioning;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Updates;
 
 /// <summary>
 /// Compares the running version against a set of published versions and names the newest one worth

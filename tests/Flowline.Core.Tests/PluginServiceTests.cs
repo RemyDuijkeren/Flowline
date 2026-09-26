@@ -7,7 +7,6 @@ using Flowline.Attributes;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
-using Flowline.Core.Services;
 using Flowline.Core.Plugins;
 using FluentAssertions;
 using Microsoft.PowerPlatform.Dataverse.Client;

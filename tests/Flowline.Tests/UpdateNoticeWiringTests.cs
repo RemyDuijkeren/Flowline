@@ -1,9 +1,10 @@
 using System.Net;
 using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Diagnostics;
 using Flowline.Core.Environments;
-using Flowline.Core.Services;
+using Flowline.Core.Updates;
 using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Services;

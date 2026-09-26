@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.SolutionPersistence;
 using Microsoft.VisualStudio.SolutionPersistence.Model;
 using Microsoft.VisualStudio.SolutionPersistence.Serializer;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.MsBuild;
 
 /// <summary>What a call to <see cref="MsBuildSolutionWriter.AddProjectAsync"/> changed on disk.</summary>
 /// <param name="Created"><c>true</c> when there was no solution file and the writer made one.</param>

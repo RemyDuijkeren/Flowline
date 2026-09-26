@@ -1,4 +1,4 @@
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Deploy;
 
 // Shared by WebResourceService and FormEventExecutor's plan-report writers — both render an always-
 // visible summary line plus optional verbose per-item detail, keyed on the same Verbose/DryRun split.

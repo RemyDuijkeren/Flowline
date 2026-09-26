@@ -4,7 +4,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Flowline.Core;
 using Flowline.Core.Console;
-using Flowline.Core.Services;
+using Flowline.Core.Solutions;
 using Flowline.Utils;
 using Spectre.Console;
 

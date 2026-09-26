@@ -1,7 +1,7 @@
 using Flowline.Core.Console;
 using Flowline.Core.Models;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Solutions;
 
 /// <summary>The exactly-one-<c>.cdsproj</c> rule (R7), operating on an already-parsed project list.</summary>
 /// <remarks>

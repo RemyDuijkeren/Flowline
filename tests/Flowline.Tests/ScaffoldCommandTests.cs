@@ -1,8 +1,11 @@
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Environments;
-using Flowline.Core.Services;
+using Flowline.Core.MsBuild;
+using Flowline.Core.Solutions;
+using Flowline.Core.Updates;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Microsoft.Extensions.Logging.Abstractions;

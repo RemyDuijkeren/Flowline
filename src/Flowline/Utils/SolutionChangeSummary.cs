@@ -1,3 +1,4 @@
+using Flowline.Core.Solutions;
 ﻿using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
@@ -5,7 +6,6 @@ using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Core;
 using Flowline.Core.Console;
-using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Spectre.Console;
 

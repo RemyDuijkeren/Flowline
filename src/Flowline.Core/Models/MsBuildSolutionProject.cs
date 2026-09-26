@@ -1,3 +1,5 @@
+using Flowline.Core.MsBuild;
+using Flowline.Core.Solutions;
 namespace Flowline.Core.Models;
 
 /// <summary>
@@ -6,12 +8,12 @@ namespace Flowline.Core.Models;
 /// <remarks>
 /// "Solution" here means the MSBuild/Visual Studio solution file, not a Dataverse solution.
 /// Everywhere else in Flowline the unqualified word means the Dataverse artifact — see
-/// <see cref="Flowline.Core.Services.SolutionReader"/>, which reads Dataverse solution records.
+/// <see cref="Flowline.Core.Solutions.SolutionReader"/>, which reads Dataverse solution records.
 /// </remarks>
 /// <param name="Path">
 /// Path to the project, relative to the folder holding the solution file, using
 /// <see cref="System.IO.Path.DirectorySeparatorChar"/>. Normalized by
-/// <see cref="Flowline.Core.Services.MsBuildSolutionReader"/> so callers never see the raw
+/// <see cref="Flowline.Core.MsBuild.MsBuildSolutionReader"/> so callers never see the raw
 /// separator difference between the two formats.
 /// </param>
 /// <param name="Name">The project's display name as recorded in the solution file.</param>

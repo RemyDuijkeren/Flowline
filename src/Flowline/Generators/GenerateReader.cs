@@ -1,8 +1,8 @@
+using Flowline.Core.Dataverse;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
-using Flowline.Core.Services;
 
 namespace Flowline.Generators;
 

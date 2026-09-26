@@ -1,7 +1,7 @@
 using Flowline.Core;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Environments;
 using Flowline.Core.Models;
-using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using FluentAssertions;

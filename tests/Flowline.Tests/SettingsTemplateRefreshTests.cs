@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core.Configure;
+using Flowline.Core.Dataverse;
 using Flowline.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console.Testing;

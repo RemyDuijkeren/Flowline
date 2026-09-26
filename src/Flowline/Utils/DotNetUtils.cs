@@ -2,7 +2,7 @@ using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Core;
 using Flowline.Core.Console;
-using Flowline.Core.Services;
+using Flowline.Core.MsBuild;
 using Flowline.Diagnostics;
 using Spectre.Console;
 

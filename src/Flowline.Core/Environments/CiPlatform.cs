@@ -1,4 +1,4 @@
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Environments;
 
 /// <summary>
 /// Names the CI system this process is running under, for logs and telemetry.

@@ -1,4 +1,4 @@
-using Flowline.Core.Services;
+using Flowline.Core.MsBuild;
 using FluentAssertions;
 
 namespace Flowline.Core.Tests;

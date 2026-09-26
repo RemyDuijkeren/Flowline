@@ -1,6 +1,6 @@
 using Flowline.Core;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Models;
-using Flowline.Core.Services;
 using Flowline.Services;
 using FluentAssertions;
 using Spectre.Console.Testing;

@@ -1,5 +1,6 @@
 using FluentAssertions;
-using Flowline.Core.Services;
+using Flowline.Core.MsBuild;
+using Flowline.Core.Solutions;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;

@@ -1,9 +1,10 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Flowline.Core.Models;
+using Flowline.Core.MsBuild;
 using Flowline.Core.Plugins;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Solutions;
 
 /// <summary>
 /// Identifies the WebResources project among the solution file's <c>.csproj</c> entries by elimination

@@ -1,3 +1,4 @@
+using Flowline.Core.Solutions;
 namespace Flowline.Core.Configure;
 
 /// <summary>Where a settings file was found, and by which rule (R4a).</summary>

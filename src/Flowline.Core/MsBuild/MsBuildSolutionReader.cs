@@ -1,9 +1,10 @@
 using System.Xml;
 using Flowline.Core.Models;
+using Flowline.Core.Solutions;
 using Microsoft.VisualStudio.SolutionPersistence.Model;
 using Microsoft.VisualStudio.SolutionPersistence.Serializer;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.MsBuild;
 
 /// <summary>
 /// Locates and reads MSBuild solution files (<c>.sln</c> and <c>.slnx</c>).

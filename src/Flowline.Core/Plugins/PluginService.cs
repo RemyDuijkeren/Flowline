@@ -1,9 +1,10 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Models;
 using Flowline.Core.Console;
-using Flowline.Core.Services;
+using Flowline.Core.Solutions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;

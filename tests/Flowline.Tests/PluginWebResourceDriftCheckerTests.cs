@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Flowline.Core;
 using Flowline.Core.Deploy;
-using Flowline.Core.Services;
+using Flowline.Core.Solutions;
 
 namespace Flowline.Tests;
 

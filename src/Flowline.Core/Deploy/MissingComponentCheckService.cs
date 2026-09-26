@@ -3,7 +3,6 @@ using Microsoft.Crm.Sdk.Messages;
 using Microsoft.Xrm.Sdk;
 using Flowline.Core;
 using Flowline.Core.Console;
-using Flowline.Core.Services;
 using Spectre.Console;
 
 namespace Flowline.Core.Deploy;

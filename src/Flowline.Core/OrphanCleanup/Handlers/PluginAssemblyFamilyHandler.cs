@@ -2,9 +2,9 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using Flowline.Core.Console;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Models;
 using Flowline.Core.Plugins;
-using Flowline.Core.Services;
 using Spectre.Console;
 
 namespace Flowline.Core.OrphanCleanup.Handlers;

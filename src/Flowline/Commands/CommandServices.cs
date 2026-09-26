@@ -1,6 +1,6 @@
 using Flowline.Core;
 using Flowline.Core.Environments;
-using Flowline.Core.Services;
+using Flowline.Core.Updates;
 using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Services;

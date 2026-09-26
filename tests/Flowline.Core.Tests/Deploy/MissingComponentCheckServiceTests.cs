@@ -7,7 +7,6 @@ using FluentAssertions;
 using Flowline.Core;
 using Flowline.Core.Deploy;
 using Flowline.Core.Models;
-using Flowline.Core.Services;
 using Spectre.Console.Testing;
 
 namespace Flowline.Core.Tests.Deploy;

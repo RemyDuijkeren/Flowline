@@ -2,9 +2,10 @@ using System.Text.RegularExpressions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Models;
 using Flowline.Core.Console;
-using Flowline.Core.Services;
+using Flowline.Core.Solutions;
 using Spectre.Console;
 
 namespace Flowline.Core.WebResources;

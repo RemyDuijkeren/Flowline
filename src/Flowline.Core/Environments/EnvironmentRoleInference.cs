@@ -1,6 +1,6 @@
 using Flowline.Core.Environments;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Environments;
 
 // CONCEPTS.md "Role inference": the role a URL not yet in .flowline gets assigned, so it can be saved
 // under a key without the user naming one. Null Role means nothing could be inferred.

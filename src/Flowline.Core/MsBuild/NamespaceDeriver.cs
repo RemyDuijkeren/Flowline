@@ -1,6 +1,7 @@
+using Flowline.Core.Solutions;
 using System.Xml.Linq;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.MsBuild;
 
 public static class NamespaceDeriver
 {

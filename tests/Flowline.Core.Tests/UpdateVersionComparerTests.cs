@@ -1,4 +1,4 @@
-using Flowline.Core.Services;
+using Flowline.Core.Updates;
 using FluentAssertions;
 using Xunit;
 

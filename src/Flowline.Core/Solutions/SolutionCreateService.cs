@@ -1,3 +1,4 @@
+using Flowline.Core.Dataverse;
 using System.Security.Cryptography;
 using System.ServiceModel;
 using System.Text;
@@ -5,7 +6,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Solutions;
 
 /// <summary>
 /// Creates the empty unmanaged solution for <c>flowline init</c>'s (and <c>clone</c>'s create-new

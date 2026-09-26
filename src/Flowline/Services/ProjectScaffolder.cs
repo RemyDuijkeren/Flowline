@@ -2,7 +2,8 @@ using CliWrap;
 using Flowline.Core;
 using Flowline.Core.Config;
 using Flowline.Core.Console;
-using Flowline.Core.Services;
+using Flowline.Core.MsBuild;
+using Flowline.Core.Solutions;
 using Flowline.Diagnostics;
 using Flowline.Utils;
 using Spectre.Console;
@@ -24,7 +25,7 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
     /// The folder clone <em>authors</em>, not one it discovers, and the only place in Flowline allowed to
     /// name it. On a first clone there is no solution file and no <c>.cdsproj</c> yet — clone writes both —
     /// so there is nothing to resolve from. Every command that runs afterwards resolves the folder from the
-    /// <c>.cdsproj</c> the solution file records (<see cref="Flowline.Core.Services.SolutionFileLayout.DataverseSolutionFolder"/>),
+    /// <c>.cdsproj</c> the solution file records (<see cref="Flowline.Core.Solutions.SolutionFileLayout.DataverseSolutionFolder"/>),
     /// which is what lets a project move its Dataverse solution folder and keep working. Do not "fix" these
     /// call sites into resolver calls: they run before the thing they would resolve exists.
     /// </remarks>

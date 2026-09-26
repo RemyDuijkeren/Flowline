@@ -1,5 +1,5 @@
 using System.ServiceModel;
-using Flowline.Core.Services;
+using Flowline.Core.Solutions;
 using FluentAssertions;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;

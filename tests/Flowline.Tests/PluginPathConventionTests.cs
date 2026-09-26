@@ -1,3 +1,4 @@
+using Flowline.Core.MsBuild;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 

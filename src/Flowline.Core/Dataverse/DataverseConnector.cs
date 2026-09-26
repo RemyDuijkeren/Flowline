@@ -14,7 +14,7 @@ using System.Runtime.Versioning;
 using System.Text.Json;
 using Spectre.Console;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Dataverse;
 
 public class DataverseConnector(IAnsiConsole console, HttpClient httpClient, FlowlineRuntimeOptions? runtimeOptions = null)
 {

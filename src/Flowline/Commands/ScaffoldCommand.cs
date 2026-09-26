@@ -1,9 +1,10 @@
+using Flowline.Core.MsBuild;
+using Flowline.Core.Solutions;
 using Flowline.Settings;
 ﻿using System.ComponentModel;
 using Flowline.Core.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
-using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Microsoft.Extensions.Logging;

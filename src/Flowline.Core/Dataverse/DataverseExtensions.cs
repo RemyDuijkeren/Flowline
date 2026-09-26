@@ -2,7 +2,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Dataverse;
 
 public static class DataverseExtensions
 {

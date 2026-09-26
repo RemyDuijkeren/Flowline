@@ -1,7 +1,7 @@
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Flowline.Core.Models;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Deploy;
 
 // ExistsInTarget is the solution's presence in the target environment as of the pre-deploy check —
 // true whenever the target already had a prior version installed, which is also exactly the condition

@@ -1,7 +1,6 @@
 using System.Net;
 using Flowline.Core.Console;
 using Flowline.Core.Diagnostics;
-using Flowline.Core.Services;
 using Flowline.Core.Updates;
 using Flowline.Core.Validation;
 using Flowline.Services;

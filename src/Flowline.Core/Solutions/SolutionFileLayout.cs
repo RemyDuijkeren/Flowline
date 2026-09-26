@@ -1,8 +1,9 @@
 using Flowline.Core.Console;
 using Flowline.Core.Models;
+using Flowline.Core.MsBuild;
 using Flowline.Core.Plugins;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Solutions;
 
 /// <summary>
 /// Reads the solution file once and exposes every project Flowline resolves from it — the Dataverse

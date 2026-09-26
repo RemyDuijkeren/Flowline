@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Flowline.Core.Services;
+namespace Flowline.Core.Updates;
 
 /// <summary>
 /// Fetches the published version list for a package from the NuGet flat-container index. Every

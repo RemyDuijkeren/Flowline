@@ -1,10 +1,10 @@
+using Flowline.Core.Solutions;
 using Flowline.Settings;
 ﻿using System.ComponentModel;
 using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Core;
 using Flowline.Core.Console;
-using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;

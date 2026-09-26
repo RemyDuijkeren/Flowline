@@ -1,7 +1,7 @@
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Models;
-using Flowline.Core.Services;
 using Spectre.Console;
 
 namespace Flowline.Core.Environments;

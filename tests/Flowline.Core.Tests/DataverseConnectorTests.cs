@@ -1,7 +1,7 @@
 using System.Reflection;
 using Flowline;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Models;
-using Flowline.Core.Services;
 using Microsoft.Identity.Client;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console.Testing;

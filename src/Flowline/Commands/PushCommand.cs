@@ -1,13 +1,15 @@
 using System.ComponentModel;
 using Flowline.Core;
 using Flowline.Core.Config;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Console;
 using Flowline.Core.Diagnostics;
-using Flowline.Core.Services;
+using Flowline.Core.MsBuild;
 using Flowline.Core.FormEvents;
 using Flowline.Core.Plugins;
+using Flowline.Core.Solutions;
 using Flowline.Core.Validation;
 using Flowline.Core.WebResources;
 using Flowline.Diagnostics;
