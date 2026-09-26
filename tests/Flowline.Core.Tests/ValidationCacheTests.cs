@@ -3,7 +3,7 @@ using Flowline.Core.Models;
 using Flowline.Core.Validation;
 using FluentAssertions;
 
-namespace Flowline.Tests;
+namespace Flowline.Core.Tests;
 
 public class ValidationCacheTests : IDisposable
 {

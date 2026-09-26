@@ -1,14 +1,12 @@
-using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Config;
 using Flowline.Core.Environments;
 using Flowline.Core.Models;
-using Flowline.Services;
 using FluentAssertions;
 using Spectre.Console;
 using Spectre.Console.Testing;
 
-namespace Flowline.Tests.Services;
+namespace Flowline.Core.Tests;
 
 [Collection("ProjectConfigConsole")]
 public class EnvironmentTargetResolverTests

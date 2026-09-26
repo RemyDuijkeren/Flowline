@@ -3,7 +3,7 @@ using Flowline.Core;
 using Flowline.Core.Deploy;
 using Flowline.Core.Solutions;
 
-namespace Flowline.Tests;
+namespace Flowline.Core.Tests;
 
 public class PluginWebResourceDriftCheckerTests : IDisposable
 {

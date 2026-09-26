@@ -2,11 +2,10 @@ using Flowline.Core;
 using Flowline.Core.Dataverse;
 using Flowline.Core.Environments;
 using Flowline.Core.Models;
-using Flowline.Services;
 using FluentAssertions;
 using Spectre.Console.Testing;
 
-namespace Flowline.Tests;
+namespace Flowline.Core.Tests;
 
 public class ProfileResolutionServiceStandaloneTests
 {

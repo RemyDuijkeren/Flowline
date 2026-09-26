@@ -3,7 +3,7 @@ using Flowline.Core.Diagnostics;
 using FluentAssertions;
 using Xunit;
 
-namespace Flowline.Tests;
+namespace Flowline.Core.Tests;
 
 // `flowline --version` and the welcome screen used AssemblyFileVersion, which MinVer stamps identically
 // for every prerelease of the same release (0.13.1-alpha.0.2 and 0.13.1-alpha.0.7 both report 0.13.1.0).

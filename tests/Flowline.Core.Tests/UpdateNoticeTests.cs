@@ -3,13 +3,12 @@ using Flowline.Core.Console;
 using Flowline.Core.Diagnostics;
 using Flowline.Core.Updates;
 using Flowline.Core.Validation;
-using Flowline.Services;
 using FluentAssertions;
 using NuGet.Versioning;
 using Spectre.Console.Testing;
 using Xunit;
 
-namespace Flowline.Tests;
+namespace Flowline.Core.Tests;
 
 // Seam-level tests for UpdateNoticeChecker — the piece FlowlineCommand.CheckSetupAsync delegates to.
 // Tested in isolation rather than through a full command: FlowlineValidator.Default persists to the

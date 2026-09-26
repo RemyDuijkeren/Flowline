@@ -2,7 +2,7 @@ using Flowline.Core;
 using Flowline.Core.MsBuild;
 using FluentAssertions;
 
-namespace Flowline.Tests;
+namespace Flowline.Core.Tests;
 
 public class NamespaceDeriverTests : IDisposable
 {

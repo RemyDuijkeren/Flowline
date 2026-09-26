@@ -3,7 +3,7 @@ using Flowline.Core;
 using Flowline.Core.Models;
 using Flowline.Core.Validation;
 
-namespace Flowline.Tests;
+namespace Flowline.Core.Tests;
 
 public class FlowlineValidatorTests
 {
