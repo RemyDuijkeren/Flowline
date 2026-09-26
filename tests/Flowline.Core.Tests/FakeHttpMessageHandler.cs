@@ -6,11 +6,13 @@ public sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, Cancellation
     : HttpMessageHandler
 {
     public bool WasInvoked { get; private set; }
+    public int CallCount { get; private set; }
     public CancellationToken? LastToken { get; private set; }
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         WasInvoked = true;
+        CallCount++;
         LastToken = cancellationToken;
         return responder(request, cancellationToken);
     }

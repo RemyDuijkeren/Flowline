@@ -11,24 +11,9 @@ using Xunit;
 namespace Flowline.Core.Tests;
 
 // Seam-level tests for UpdateNoticeChecker — the piece FlowlineCommand.CheckSetupAsync delegates to.
-// Tested in isolation rather than through a full command: CheckSetupAsync's other probes (git/dotnet/pac)
-// shell out for real.
 public class UpdateNoticeTests
 {
-    // Local fake — Flowline.Tests has no reference to Flowline.Core.Tests, where the shared
-    // FakeHttpMessageHandler lives.
-    sealed class FakeHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder) : HttpMessageHandler
-    {
-        public int CallCount { get; private set; }
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            CallCount++;
-            return responder(request, cancellationToken);
-        }
-    }
-
-    static NuGetVersionClient MakeClient(FakeHandler handler) => new(new HttpClient(handler));
+    static NuGetVersionClient MakeClient(FakeHttpMessageHandler handler) => new(new HttpClient(handler));
 
     static FlowlineValidator MakeValidator(string? cachePath = null) =>
         new(new ValidationCacheStore(cachePath ?? Path.Combine(Path.GetTempPath(), $"flowline-update-notice-{Guid.NewGuid()}.json")), new ValidationProbes());
@@ -56,7 +41,7 @@ public class UpdateNoticeTests
     public async Task CheckAsync_NonInteractive_NeverTouchesCacheOrNetwork()
     {
         var console = MakeConsole(interactive: false);
-        var handler = new FakeHandler((_, _) => throw new InvalidOperationException("should never be called"));
+        var handler = new FakeHttpMessageHandler((_, _) => throw new InvalidOperationException("should never be called"));
         var client = MakeClient(handler);
         var validator = MakeValidator();
 
@@ -72,7 +57,7 @@ public class UpdateNoticeTests
     {
         var console = MakeConsole(interactive: true);
         var (newerVersion, payload) = NewerVersionScenario();
-        var handler = new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) }));
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) }));
         var client = MakeClient(handler);
         var validator = MakeValidator();
 
@@ -128,7 +113,7 @@ public class UpdateNoticeTests
         // verbatim would say "X is out — you're on X" for the rest of the day.
         var validator = MakeValidator();
         validator.SaveUpdateCheck(FlowlineVersion.Display);
-        var handler = new FakeHandler((_, _) => throw new InvalidOperationException("cache hit should not fetch"));
+        var handler = new FakeHttpMessageHandler((_, _) => throw new InvalidOperationException("cache hit should not fetch"));
 
         var result = await UpdateNoticeChecker.CheckAsync(
             MakeConsole(interactive: true), validator, MakeClient(handler), noCache: false, CancellationToken.None);
@@ -142,7 +127,7 @@ public class UpdateNoticeTests
     {
         // A Ctrl+C must not buy a day of silence the way a genuine network failure does.
         var validator = MakeValidator();
-        var handler = new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
 
         await UpdateNoticeChecker.CheckAsync(
             MakeConsole(interactive: true), validator, MakeClient(handler), noCache: false, new CancellationToken(canceled: true));
@@ -166,7 +151,7 @@ public class UpdateNoticeTests
     public async Task CheckAsync_TwoConsecutiveInteractiveRuns_FreshCache_ReturnsVerdictBothTimesWithoutASecondNetworkCall()
     {
         var (newerVersion, payload) = NewerVersionScenario();
-        var handler = new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) }));
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) }));
         var client = MakeClient(handler);
         var validator = MakeValidator();
 
@@ -190,7 +175,7 @@ public class UpdateNoticeTests
     public async Task CheckAsync_VersionClientReturnsNull_ReturnsNullWithoutThrowing()
     {
         var console = MakeConsole(interactive: true);
-        var handler = new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
         var client = MakeClient(handler);
         var validator = MakeValidator();
 
@@ -202,7 +187,7 @@ public class UpdateNoticeTests
     [Fact]
     public async Task CheckAsync_FailedCheck_BacksOffInsteadOfRetryingOnTheNextRun()
     {
-        var handler = new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
+        var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
         var client = MakeClient(handler);
         var validator = MakeValidator();
 
@@ -217,7 +202,7 @@ public class UpdateNoticeTests
     public async Task CheckAsync_UnderlyingHttpCallThrows_ReturnsNullWithoutPropagating()
     {
         var console = MakeConsole(interactive: true);
-        var handler = new FakeHandler((_, _) => throw new HttpRequestException("offline"));
+        var handler = new FakeHttpMessageHandler((_, _) => throw new HttpRequestException("offline"));
         var client = MakeClient(handler);
         var validator = MakeValidator();
 
@@ -238,7 +223,7 @@ public class UpdateNoticeTests
         {
             var console = MakeConsole(interactive: true);
             var (_, payload) = NewerVersionScenario();
-            var handler = new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) }));
+            var handler = new FakeHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) }));
             var client = MakeClient(handler);
             var validator = MakeValidator(Path.Combine(brokenParent, "validation-cache.json"));
 
