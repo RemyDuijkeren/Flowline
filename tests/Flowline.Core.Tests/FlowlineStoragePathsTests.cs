@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Flowline.Core.Diagnostics;
 
-namespace Flowline.Tests.Utils;
+namespace Flowline.Core.Tests;
 
 public class FlowlineStoragePathsTests
 {
