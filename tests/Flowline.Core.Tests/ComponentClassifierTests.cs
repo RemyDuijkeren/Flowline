@@ -2,7 +2,7 @@ using FluentAssertions;
 using Flowline.Core;
 using Flowline.Core.OrphanCleanup;
 
-namespace Flowline.Tests;
+namespace Flowline.Core.Tests;
 
 public class ComponentClassifierTests : IDisposable
 {
