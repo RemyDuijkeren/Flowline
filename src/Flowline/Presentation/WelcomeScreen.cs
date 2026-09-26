@@ -3,7 +3,7 @@ using Flowline.Core.Diagnostics;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
-namespace Flowline.Infrastructure;
+namespace Flowline.Presentation;
 
 /// <summary>
 /// The welcome banner every interactive command prints before its own output.

@@ -4,6 +4,7 @@ using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Services;
+using Flowline.Settings;
 using FluentAssertions;
 using Spectre.Console.Cli;
 using Spectre.Console.Testing;

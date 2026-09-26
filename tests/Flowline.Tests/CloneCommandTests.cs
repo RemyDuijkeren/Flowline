@@ -7,6 +7,7 @@ using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
+using Flowline.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console.Cli;
 using Spectre.Console.Testing;

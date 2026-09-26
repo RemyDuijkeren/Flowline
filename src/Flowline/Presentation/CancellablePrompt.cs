@@ -1,6 +1,6 @@
 using Spectre.Console;
 
-namespace Flowline.Commands;
+namespace Flowline.Presentation;
 
 /// <summary>
 /// Esc at a prompt: the operator backed out of the run, not just out of the question.

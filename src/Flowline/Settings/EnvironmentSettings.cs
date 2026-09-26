@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using Spectre.Console.Cli;
 
-namespace Flowline;
+namespace Flowline.Settings;
 
 // Base for the commands that name the environment they act on with a flag: push, pull, generate, init
 // and clone. deploy, drift and configure take that environment as their positional <target> instead, so

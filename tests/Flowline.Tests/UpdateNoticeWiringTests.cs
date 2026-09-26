@@ -7,6 +7,7 @@ using Flowline.Core.Services;
 using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Services;
+using Flowline.Settings;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NuGet.Versioning;

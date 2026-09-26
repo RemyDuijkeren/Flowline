@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel;
 using Spectre.Console.Cli;
 
-namespace Flowline;
+namespace Flowline.Settings;
 
 // Base for every command that touches Dataverse (push, pull, generate, init, clone, deploy, drift,
 // configure, provision). diff, scaffold, sln add and status never talk to Dataverse, so they stay on

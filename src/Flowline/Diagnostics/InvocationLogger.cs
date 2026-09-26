@@ -7,7 +7,7 @@ using Flowline.Logging;
 using Flowline.Utils;
 using Microsoft.Extensions.Logging;
 
-namespace Flowline.Commands;
+namespace Flowline.Diagnostics;
 
 internal static class InvocationLogger
 {

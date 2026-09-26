@@ -5,6 +5,7 @@ using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Config;
 using Flowline.Core.Models;
+using Flowline.Settings;
 using FluentAssertions;
 using Microsoft.Xrm.Sdk;
 using Spectre.Console.Cli;

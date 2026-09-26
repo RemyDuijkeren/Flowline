@@ -1,5 +1,6 @@
 using Flowline;
 using Flowline.Commands;
+using Flowline.Settings;
 using Flowline.Utils;
 using FluentAssertions;
 

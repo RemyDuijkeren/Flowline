@@ -5,7 +5,6 @@ using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
-using Flowline.Infrastructure;
 using Flowline.Services;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;

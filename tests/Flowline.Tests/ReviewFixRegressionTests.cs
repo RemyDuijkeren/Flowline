@@ -2,6 +2,7 @@ using System.Reflection;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Config;
+using Flowline.Settings;
 using Flowline.Utils;
 using FluentAssertions;
 

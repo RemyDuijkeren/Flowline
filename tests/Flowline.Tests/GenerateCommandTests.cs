@@ -4,6 +4,7 @@ using System.Text.Json;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Config;
+using Flowline.Settings;
 using FluentAssertions;
 using Spectre.Console.Cli;
 

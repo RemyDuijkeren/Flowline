@@ -2,7 +2,7 @@
 using Flowline.Core;
 using Spectre.Console.Cli;
 
-namespace Flowline;
+namespace Flowline.Settings;
 
 public class FlowlineSettings : CommandSettings
 {

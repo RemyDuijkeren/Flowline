@@ -11,11 +11,11 @@ using Flowline.Core.Plugins;
 using Flowline.Core.Validation;
 using Flowline.Core.WebResources;
 using Flowline.Diagnostics;
-using Flowline.Infrastructure;
 using Flowline.Services;
 using Spectre.Console;
 using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
+using Flowline.Settings;
 using Flowline.Utils;
 
 namespace Flowline.Commands;

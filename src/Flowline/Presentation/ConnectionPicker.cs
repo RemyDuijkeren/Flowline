@@ -3,7 +3,7 @@ using Flowline.Core.Models;
 using Flowline.Utils;
 using Spectre.Console;
 
-namespace Flowline.Commands;
+namespace Flowline.Presentation;
 
 /// <summary>
 /// Asks which connection to bind, offering the environment's own (R9b, KTD20).

@@ -6,6 +6,7 @@ using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Logging;
 using Flowline.Services;
+using Flowline.Settings;
 using Flowline.Tests;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
