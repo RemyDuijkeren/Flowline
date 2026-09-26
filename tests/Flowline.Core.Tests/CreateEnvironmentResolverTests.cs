@@ -2,17 +2,21 @@ using Flowline.Core;
 using Flowline.Core.Dataverse;
 using Flowline.Core.Environments;
 using Flowline.Core.Models;
-using Flowline.Diagnostics;
-using Flowline.Services;
+using Flowline.Core.Validation;
 using FluentAssertions;
 using Spectre.Console;
 using Spectre.Console.Testing;
 
-namespace Flowline.Tests;
+namespace Flowline.Core.Tests;
 
 public class CreateEnvironmentResolverTests
 {
     const string DevUrl = "https://contoso-dev.crm4.dynamics.com";
+
+    // Stub probes and a throwaway cache file: nothing reaches pac or the user's real validation cache.
+    static FlowlineValidator NewValidator() => new(
+        new ValidationCacheStore(Path.Combine(Path.GetTempPath(), $"flowline-validation-cache-{Guid.NewGuid()}.json")),
+        new ValidationProbes());
 
     // Interactivity now comes from the injected console's capabilities — TestConsole is non-interactive
     // by default, and .Interactive() flips it.
@@ -22,7 +26,7 @@ public class CreateEnvironmentResolverTests
         if (interactive) console.Interactive();
         var connector = new DataverseConnector(console, new HttpClient());
         profileResolutionService ??= new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions());
-        return new CreateEnvironmentResolver(console, profileResolutionService, TestValidator.Create());
+        return new CreateEnvironmentResolver(console, profileResolutionService, NewValidator());
     }
 
     static CreateEnvironmentResolver MakeResolverForUrl(string type, out ProfileResolutionService profiles)
@@ -39,7 +43,7 @@ public class CreateEnvironmentResolverTests
             // on a dev machine, absent on a CI runner.
             GetPacProfilesOverride = () => [profile]
         };
-        return new CreateEnvironmentResolver(console, profiles, TestValidator.Create())
+        return new CreateEnvironmentResolver(console, profiles, NewValidator())
         {
             GetEnvironmentInfoByUrlOverride = (_, _, _, _) => Task.FromResult<EnvironmentInfo?>(
                 new EnvironmentInfo { DisplayName = $"Contoso {type}", EnvironmentUrl = DevUrl, Type = type })
@@ -129,7 +133,7 @@ public class CreateEnvironmentResolverTests
         {
             FindBestProfileOverride = _ => new ProfileNotFound(DevUrl)
         };
-        var resolver = new CreateEnvironmentResolver(console, profileResolutionService, TestValidator.Create());
+        var resolver = new CreateEnvironmentResolver(console, profileResolutionService, NewValidator());
 
         var act = () => resolver.ResolveCreateTargetAsync(DevUrl, new FlowlineRuntimeOptions(), CancellationToken.None);
 
@@ -188,5 +192,18 @@ public class CreateEnvironmentResolverTests
 
         await act.Should().ThrowAsync<FlowlineException>()
             .WithMessage("*--env <url>*");
+    }
+
+    // --- KTD3: the tenant listing is bound by the composition root; unbound, it fails loudly ---
+
+    [Fact]
+    public async Task ResolveSource_NoEnvironmentListingBound_ThrowsInsteadOfShellingOut()
+    {
+        var resolver = MakeResolver(interactive: true);
+
+        var act = () => resolver.ResolveSourceAsync(null, new FlowlineRuntimeOptions(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain("no environment listing bound");
     }
 }
