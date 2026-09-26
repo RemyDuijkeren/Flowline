@@ -1,15 +1,11 @@
-using Flowline;
 using Flowline.Core;
 using Flowline.Core.Dataverse;
 using Flowline.Core.Environments;
 using Flowline.Core.Models;
-using Flowline.Services;
-using Flowline.Settings;
 using FluentAssertions;
-using Spectre.Console.Cli;
 using Spectre.Console.Testing;
 
-namespace Flowline.Tests.Services;
+namespace Flowline.Core.Tests;
 
 public class ProfileResolutionServiceTests
 {
@@ -460,21 +456,6 @@ public class ProfileResolutionServiceTests
         ex.ExitCode.Should().Be(ExitCode.NotAuthenticated);
         ex.Message.Should().Contain("still isn't active");
         console.Output.Should().NotContain("Switched active PAC auth profile");
-    }
-
-    // ── AutoSwitchProfile flag parsing (-a / --auto-select-auth-profile) ────
-
-    [Fact]
-    public void AutoSwitchProfile_ShortAndLongForm_ParseToSameProperty()
-    {
-        // No CommandApp-level short-form-alias parsing test exists elsewhere in this codebase to mirror
-        // (e.g. for -v/-f) — asserting the attribute directly is the simplest equivalent check that -a
-        // and --auto-select-auth-profile both bind to DataverseSettings.AutoSwitchProfile.
-        var property = typeof(DataverseSettings).GetProperty(nameof(DataverseSettings.AutoSwitchProfile))!;
-        var option = (CommandOptionAttribute)property.GetCustomAttributes(typeof(CommandOptionAttribute), false).Single();
-
-        option.LongNames.Should().Contain("auto-select-auth-profile");
-        option.ShortNames.Should().Contain("a");
     }
 
     // ── Active profile reachability (U6/R14) ─────────────────────────────────

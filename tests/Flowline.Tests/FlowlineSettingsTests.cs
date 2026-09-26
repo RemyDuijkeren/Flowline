@@ -9,6 +9,19 @@ namespace Flowline.Tests;
 public class FlowlineSettingsTests
 {
     [Fact]
+    public void AutoSwitchProfile_ShortAndLongForm_ParseToSameProperty()
+    {
+        // No CommandApp-level short-form-alias parsing test exists elsewhere in this codebase to mirror
+        // (e.g. for -v/-f) — asserting the attribute directly is the simplest equivalent check that -a
+        // and --auto-select-auth-profile both bind to DataverseSettings.AutoSwitchProfile.
+        var property = typeof(DataverseSettings).GetProperty(nameof(DataverseSettings.AutoSwitchProfile))!;
+        var option = (CommandOptionAttribute)property.GetCustomAttributes(typeof(CommandOptionAttribute), false).Single();
+
+        option.LongNames.Should().Contain("auto-select-auth-profile");
+        option.ShortNames.Should().Contain("a");
+    }
+
+    [Fact]
     public void HasForce_IsCaseInsensitive_ForSpecifierValue()
     {
         var options = new FlowlineRuntimeOptions { Force = ["CONFIG"] };
