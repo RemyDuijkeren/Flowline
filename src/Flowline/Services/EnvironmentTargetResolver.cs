@@ -65,7 +65,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
                 $"'{value}' isn't a role (dev, test, uat, prod) or a URL — pass --env <dev|test|uat|prod|url>.");
 
         // A URL Flowline hasn't seen — read its type through the profile-less lookup (KTD2: never
-        // PacUtils.GetPartsFromEnvUrl, which exits the process on a regex miss) so the role gate below
+        // pac's GetPartsFromEnvUrl, which exits the process on a regex miss) so the role gate below
         // runs before any profile is resolved or connection made.
         var envInfo = await getEnvironmentInfoByUrl(value, cancellationToken);
         var envType = envInfo?.Type;

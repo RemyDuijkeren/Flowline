@@ -876,7 +876,7 @@ public class CloneCommandTests
         };
         var capture = new SubprocessCapture(console);
         var projectScaffolder = new ProjectScaffolder(console, capture);
-        var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, capture)
+        var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService)
         {
             GetEnvironmentInfoByUrlOverride = (_, _, _, _) => Task.FromResult<EnvironmentInfo?>(MakeEnv(envType))
         };

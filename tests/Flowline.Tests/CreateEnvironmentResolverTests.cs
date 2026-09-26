@@ -21,7 +21,7 @@ public class CreateEnvironmentResolverTests
         if (interactive) console.Interactive();
         var connector = new DataverseConnector(console, new HttpClient());
         profileResolutionService ??= new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions());
-        return new CreateEnvironmentResolver(console, profileResolutionService, new SubprocessCapture(console));
+        return new CreateEnvironmentResolver(console, profileResolutionService);
     }
 
     static CreateEnvironmentResolver MakeResolverForUrl(string type, out ProfileResolutionService profiles)
@@ -38,7 +38,7 @@ public class CreateEnvironmentResolverTests
             // on a dev machine, absent on a CI runner.
             GetPacProfilesOverride = () => [profile]
         };
-        return new CreateEnvironmentResolver(console, profiles, new SubprocessCapture(console))
+        return new CreateEnvironmentResolver(console, profiles)
         {
             GetEnvironmentInfoByUrlOverride = (_, _, _, _) => Task.FromResult<EnvironmentInfo?>(
                 new EnvironmentInfo { DisplayName = $"Contoso {type}", EnvironmentUrl = DevUrl, Type = type })
@@ -128,7 +128,7 @@ public class CreateEnvironmentResolverTests
         {
             FindBestProfileOverride = _ => new ProfileNotFound(DevUrl)
         };
-        var resolver = new CreateEnvironmentResolver(console, profileResolutionService, new SubprocessCapture(console));
+        var resolver = new CreateEnvironmentResolver(console, profileResolutionService);
 
         var act = () => resolver.ResolveCreateTargetAsync(DevUrl, new FlowlineRuntimeOptions(), CancellationToken.None);
 

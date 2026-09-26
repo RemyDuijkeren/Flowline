@@ -18,7 +18,8 @@ public sealed class FlowlineValidator
     readonly ValidationCacheStore _store;
     readonly ValidationProbes _probes;
 
-    public static FlowlineValidator Default { get; } = new(new ValidationCacheStore(), new ValidationProbes());
+    public static FlowlineValidator Default { get; } =
+        new(new ValidationCacheStore(), Infrastructure.PacValidationProbes.Create(new Diagnostics.SubprocessCapture(AnsiConsole.Console)));
 
     public FlowlineValidator(ValidationCacheStore store, ValidationProbes probes)
     {

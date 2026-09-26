@@ -1,6 +1,7 @@
 using Flowline;
 using Flowline.Core;
 using Flowline.Core.Models;
+using Flowline.Services;
 using FluentAssertions;
 
 namespace Flowline.Tests;
@@ -196,7 +197,7 @@ public class BuildAuthSelectArgsTests
         var profile = new PacProfile { Name = "MyProfile", Kind = "DATAVERSE" };
         var allProfiles = new List<PacProfile> { profile };
 
-        var result = PacUtils.BuildAuthSelectArgs(profile, allProfiles);
+        var result = ProfileResolutionService.BuildAuthSelectArgs(profile, allProfiles);
 
         result.ArgName.Should().Be("--name");
         result.ArgValue.Should().Be("MyProfile");
@@ -209,7 +210,7 @@ public class BuildAuthSelectArgsTests
         var target = new PacProfile { Kind = "DATAVERSE", User = "b@contoso.com" };
         var allProfiles = new List<PacProfile> { first, target };
 
-        var result = PacUtils.BuildAuthSelectArgs(target, allProfiles);
+        var result = ProfileResolutionService.BuildAuthSelectArgs(target, allProfiles);
 
         result.ArgName.Should().Be("--index");
         result.ArgValue.Should().Be("2");
@@ -221,7 +222,7 @@ public class BuildAuthSelectArgsTests
         var profile = new PacProfile { Name = "   ", Kind = "DATAVERSE" };
         var allProfiles = new List<PacProfile> { profile };
 
-        var result = PacUtils.BuildAuthSelectArgs(profile, allProfiles);
+        var result = ProfileResolutionService.BuildAuthSelectArgs(profile, allProfiles);
 
         result.ArgName.Should().Be("--index");
         result.ArgValue.Should().Be("1");
@@ -233,7 +234,7 @@ public class BuildAuthSelectArgsTests
         var profile = new PacProfile { Kind = "DATAVERSE" };
         var allProfiles = new List<PacProfile>();
 
-        var act = () => PacUtils.BuildAuthSelectArgs(profile, allProfiles);
+        var act = () => ProfileResolutionService.BuildAuthSelectArgs(profile, allProfiles);
 
         act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.NotAuthenticated);
     }

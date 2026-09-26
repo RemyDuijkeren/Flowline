@@ -2,8 +2,6 @@ using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
-using Flowline.Diagnostics;
-using Flowline.Utils;
 using Flowline.Validation;
 using Spectre.Console;
 
@@ -21,7 +19,7 @@ namespace Flowline.Services;
 public class CreateEnvironmentResolver(
     IAnsiConsole console,
     ProfileResolutionService profileResolutionService,
-    SubprocessCapture capture)
+    Func<CancellationToken, Task<List<EnvironmentInfo>>>? listEnvironments = null)
 {
     // KTD4: whitelist, not a Production blocklist — null, empty, and unrecognized types (e.g. "Trial")
     // are refused too, not just Production.
@@ -36,8 +34,8 @@ public class CreateEnvironmentResolver(
         !string.Equals(type, "Default", StringComparison.OrdinalIgnoreCase) &&
         !string.Equals(type, "Teams", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Seam for testing — overrides PacUtils.GetEnvironmentsAsync (shells out to a real
-    /// pac.exe subprocess with no mocking seam of its own).</summary>
+    /// <summary>Seam for testing — overrides the tenant environment listing the composition root binds
+    /// (pac-backed in production).</summary>
     internal Func<CancellationToken, Task<List<EnvironmentInfo>>>? GetEnvironmentsOverride { get; set; }
 
     /// <summary>Seam for testing — overrides FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync.</summary>
@@ -99,7 +97,8 @@ public class CreateEnvironmentResolver(
 
     async Task<List<EnvironmentInfo>> FetchEnvironmentsAsync(CancellationToken cancellationToken)
     {
-        var getEnvironments = GetEnvironmentsOverride ?? (ct => PacUtils.GetEnvironmentsAsync(capture, ct));
+        var getEnvironments = GetEnvironmentsOverride ?? listEnvironments
+            ?? throw new InvalidOperationException("CreateEnvironmentResolver has no environment listing bound. The composition root must supply it.");
         var environments = await console.Status().FlowlineSpinner().StartAsync(
             "Checking your tenant's environments...",
             _ => getEnvironments(cancellationToken));

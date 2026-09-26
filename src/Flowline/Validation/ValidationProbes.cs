@@ -1,34 +1,32 @@
 using Flowline.Core.Models;
 using Flowline.Core.Services;
-using Flowline.Diagnostics;
-using Flowline.Utils;
 using Spectre.Console;
 
 namespace Flowline.Validation;
 
+// KTD3: every probe that shells out (pac, git, dotnet) defaults to a stub that throws, so a caller that
+// forgot to bind it fails loudly instead of silently launching a process. The real bindings are supplied
+// by the composition root (Flowline's PacValidationProbes).
 public sealed class ValidationProbes
 {
-    // Default capture for the static FlowlineValidator.Default instance. Errors still print.
-    static readonly SubprocessCapture s_defaultCapture = new SubprocessCapture(AnsiConsole.Console);
-
-    // Default DataverseConnector for the profile-aware environment probe — same static-default-instance
-    // pattern as s_defaultCapture, so FlowlineValidator.Default needs no DI wiring.
+    // Default DataverseConnector for the profile-aware environment probe. It is pac.exe-free (a direct BAP
+    // admin API token read), so it stays a real default rather than a stub.
     static readonly DataverseConnector s_defaultDataverseConnector = new(AnsiConsole.Console, new HttpClient());
 
     public Func<bool, CancellationToken, Task<string>> CheckDotNetAsync { get; init; } =
-        DotNetUtils.AssertDotNetInstalledAsync;
+        (_, _) => throw NotBound(nameof(CheckDotNetAsync));
 
     public Func<bool, CancellationToken, Task<(string Version, string InstallType)>> CheckPacAsync { get; init; } =
-        PacUtils.AssertPacCliInstalledAsync;
+        (_, _) => throw NotBound(nameof(CheckPacAsync));
 
     public Func<bool, CancellationToken, Task<string>> CheckGitAsync { get; init; } =
-        (verbose, ct) => GitUtils.AssertGitInstalledAsync(s_defaultCapture, verbose, ct);
+        (_, _) => throw NotBound(nameof(CheckGitAsync));
 
     public Func<string, bool, CancellationToken, Task> CheckGitRepoAsync { get; init; } =
-        (rootFolder, verbose, ct) => GitUtils.AssertGitRepoAsync(rootFolder, s_defaultCapture, verbose, ct);
+        (_, _, _) => throw NotBound(nameof(CheckGitRepoAsync));
 
     public Func<string, CancellationToken, Task<EnvironmentInfo?>> GetEnvironmentAsync { get; init; } =
-        (url, ct) => PacUtils.GetEnvironmentInfoByUrlAsync(url, s_defaultCapture, ct);
+        (_, _) => throw NotBound(nameof(GetEnvironmentAsync));
 
     // Profile-scoped, pac.exe-free environment lookup via a direct BAP admin API token read — used
     // wherever a PAC auth profile has already been resolved for the target URL. GetEnvironmentAsync above
@@ -38,8 +36,11 @@ public sealed class ValidationProbes
         (profile, url, ct) => s_defaultDataverseConnector.GetEnvironmentInfoAsync(profile, url, ct);
 
     public Func<string, CancellationToken, Task<List<SolutionInfo>>> GetSolutionsAsync { get; init; } =
-        (url, ct) => PacUtils.GetSolutionsAsync(url, s_defaultCapture, ct);
+        (_, _) => throw NotBound(nameof(GetSolutionsAsync));
 
     public Func<string, string, CancellationToken, Task<string?>> GetPublisherCustomizationPrefixAsync { get; init; } =
-        (url, name, ct) => PacUtils.GetPublisherCustomizationPrefixAsync(url, name, s_defaultCapture, ct);
+        (_, _, _) => throw NotBound(nameof(GetPublisherCustomizationPrefixAsync));
+
+    static InvalidOperationException NotBound(string probe) =>
+        new($"Validation probe '{probe}' has no binding. The composition root must supply it.");
 }

@@ -14,6 +14,7 @@ using Flowline.Generators;
 using Flowline.Infrastructure;
 using Flowline.Logging;
 using Flowline.Services;
+using Flowline.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -62,7 +63,12 @@ var services = new ServiceCollection();
 services.AddSingleton<IAnsiConsole>(AnsiConsole.Console);
 services.AddSingleton(runtimeOptions);
 services.AddSingleton<DataverseConnector>();
-services.AddSingleton<ProfileResolutionService>();
+// KTD3: the pac-backed bindings the engine declares but never names are supplied here.
+services.AddSingleton(sp => new ProfileResolutionService(
+    sp.GetRequiredService<IAnsiConsole>(),
+    sp.GetRequiredService<DataverseConnector>(),
+    sp.GetRequiredService<FlowlineRuntimeOptions>(),
+    PacUtils.SelectAuthProfileAsync));
 services.AddSingleton<HttpClient>();
 services.AddSingleton<NuGetVersionClient>();
 services.AddSingleton<XrmContextToolProvider>();
@@ -81,7 +87,10 @@ PostDeployServiceRegistration.RegisterPostDeployServices(services);
 services.AddSingleton<SubprocessCapture>();
 services.AddSingleton<ProjectScaffolder>();
 services.AddSingleton<SolutionCreateService>();
-services.AddSingleton<CreateEnvironmentResolver>();
+services.AddSingleton(sp => new CreateEnvironmentResolver(
+    sp.GetRequiredService<IAnsiConsole>(),
+    sp.GetRequiredService<ProfileResolutionService>(),
+    ct => PacUtils.GetEnvironmentsAsync(sp.GetRequiredService<SubprocessCapture>(), ct)));
 services.AddSingleton<EnvironmentTargetResolver>();
 
 Serilog.ILogger? serilogLogger = null;

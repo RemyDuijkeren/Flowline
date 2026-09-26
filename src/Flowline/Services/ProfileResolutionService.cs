@@ -3,14 +3,17 @@ using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
-using Flowline.Utils;
 using Spectre.Console;
 
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Flowline.Tests")]
 
 namespace Flowline.Services;
 
-public class ProfileResolutionService(IAnsiConsole console, DataverseConnector dataverseConnector, FlowlineRuntimeOptions runtimeOptions)
+public class ProfileResolutionService(
+    IAnsiConsole console,
+    DataverseConnector dataverseConnector,
+    FlowlineRuntimeOptions runtimeOptions,
+    Func<PacProfile, IReadOnlyList<PacProfile>, CancellationToken, Task>? selectAuthProfile = null)
 {
     /// <summary>Seam for testing — set to override FindBestProfile resolution.</summary>
     internal Func<string, ProfileResolutionResult>? FindBestProfileOverride { get; set; }
@@ -25,8 +28,8 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
     /// (which reads authprofiles_v2.json off disk — present on a dev machine, absent on a CI runner).</summary>
     internal Func<PacProfile?>? GetCurrentResourceSpecificProfileOverride { get; set; }
 
-    /// <summary>Seam for testing — set to override PacUtils.SelectAuthProfileAsync (which shells out
-    /// to a real pac.exe subprocess with no mocking seam of its own).</summary>
+    /// <summary>Seam for testing — set to override the `pac auth select` binding the composition root
+    /// supplies (a real pac.exe subprocess with no mocking seam of its own).</summary>
     internal Func<PacProfile, IReadOnlyList<PacProfile>, CancellationToken, Task>? SelectAuthProfileOverride { get; set; }
 
     /// <summary>Seam for testing — set to override DataverseConnector.ProbeReachabilityAsync (which
@@ -191,7 +194,8 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
 
     async Task SwitchProfileAsync(PacProfile profile, IReadOnlyList<PacProfile> allProfiles, CancellationToken cancellationToken)
     {
-        var select = SelectAuthProfileOverride ?? PacUtils.SelectAuthProfileAsync;
+        var select = SelectAuthProfileOverride ?? selectAuthProfile
+            ?? throw new InvalidOperationException("ProfileResolutionService has no `pac auth select` binding. The composition root must supply it.");
         await select(profile, allProfiles, cancellationToken);
 
         // pac auth select exiting 0 only means the process ran without error — invalidate the cached
@@ -209,9 +213,32 @@ public class ProfileResolutionService(IAnsiConsole console, DataverseConnector d
 
     FlowlineException BuildMismatchException(PacProfile profile, IReadOnlyList<PacProfile> allProfiles)
     {
-        var (argName, argValue) = PacUtils.BuildAuthSelectArgs(profile, allProfiles);
+        var (argName, argValue) = BuildAuthSelectArgs(profile, allProfiles);
         return new FlowlineException(ExitCode.NotAuthenticated,
             $"PAC auth profile '{profile.DisplayName}' isn't the active PAC CLI profile — run: pac auth select {argName} '{argValue}'");
+    }
+
+    // Pure arg-building piece shared with the pac-backed profile switch, which runs the actual
+    // `pac auth select`. It launches nothing, so it lives here with its engine-side caller.
+    // Confirmed live via 'pac auth list': indices shown as [1], [2], ... are 1-based, and 'pac auth
+    // select --index' expects that same 1-based value — not the 0-based position in the list.
+    public static (string ArgName, string ArgValue) BuildAuthSelectArgs(PacProfile profile, IReadOnlyList<PacProfile> allProfiles)
+    {
+        if (!string.IsNullOrWhiteSpace(profile.Name))
+            return ("--name", profile.Name);
+
+        var index = -1;
+        for (var i = 0; i < allProfiles.Count; i++)
+        {
+            if (allProfiles[i] != profile) continue;
+            index = i;
+            break;
+        }
+        if (index < 0)
+            throw new FlowlineException(ExitCode.NotAuthenticated,
+                "Could not determine profile index for 'pac auth select' — profile not found in loaded auth profiles.");
+
+        return ("--index", (index + 1).ToString());
     }
 
     // A full profile table was tried and dropped here (buried the one useful comparison among

@@ -195,7 +195,7 @@ public class InitCommandTests
 
         var capture = new SubprocessCapture(console);
         var projectScaffolder = new ProjectScaffolder(console, capture);
-        var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, capture);
+        var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService);
 
         var command = new InitCommand(
             new CommandServices(console, runtimeOptions ?? new FlowlineRuntimeOptions(), profileResolutionService,
