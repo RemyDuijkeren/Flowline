@@ -26,6 +26,18 @@ public class FlowlineValidatorTests
         return new FlowlineValidator(store, probes);
     }
 
+    // KTD3: an unbound tool probe fails loudly and names itself, rather than launching a process.
+    [Fact]
+    public async Task EnsurePacCliAsync_ProbeNotBound_ThrowsNamingTheProbe()
+    {
+        var validator = MakeValidator(out _, new ValidationProbes());
+
+        var act = () => validator.EnsurePacCliAsync(new FlowlineRuntimeOptions(), noCache: true, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain("'CheckPacAsync' has no binding");
+    }
+
     [Fact]
     public async Task GetEnvironmentInfoByUrlAsync_ProfileOverload_ForwardsGivenProfileToProbe()
     {
