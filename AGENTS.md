@@ -62,19 +62,41 @@ decides where a new file goes, is below.
 ### Project boundary rule
 
 `Flowline.Core` = everything that could run without a terminal attached — engine, Dataverse
-operations, rendering primitives. `Flowline` = Spectre.Cli wiring only: `Program.cs`, `Commands/`,
-settings types, `Templates/`.
+operations, rendering primitives. `Flowline` = Spectre.Cli wiring and process execution:
+`Program.cs`, `Commands/`, `Settings/`, `Templates/`, and every class that launches pac, git or dotnet.
 
 Core is the engine, not a UI-free domain layer — `Spectre.Console` in Core is correct and expected
 (`Console/` holds render hooks and path formatting). The one hard constraint: **Core must never
 reference `Flowline`**. Dependency direction is one-way and compiler-enforced; that enforcement is
 why the two projects exist.
 
-New file placement: if it needs `CommandContext`, `CommandSettings`, or command registration, it
-belongs in `Flowline`. Otherwise it belongs in `Flowline.Core`. Known misfiled today (move
-opportunistically, not as a big-bang refactor): `Flowline/Services/`, `Flowline/Generators/`,
-`Flowline/Validation/`, and engine parts of `Flowline/Utils/` (`PacUtils`, `GitUtils`,
-`SolutionChangeSummary`).
+Core also never launches a process: no `CliWrap`, no `Process.Start`. That keeps its tests runnable on
+a machine with no `pac` or `git` on PATH. Engine code that needs a subprocess result declares a
+delegate, and `Flowline` binds it at the composition root (`Infrastructure/PacValidationProbes.cs`
+and the factory registrations in `Program.cs`). An unbound delegate throws a named error rather than
+shelling out.
+
+New file placement: if it needs `CommandContext`, `CommandSettings`, or command registration, or it
+launches a process, it belongs in `Flowline`. Otherwise it belongs in `Flowline.Core`, in the feature
+folder for its role; Core has no `Services/` or `Utils/` bucket. Still in `Flowline` without a CLI or
+process tie of its own, each deferred for a stated cost (move opportunistically, not as a big-bang
+refactor):
+
+- `Generators/`, plus `Services/DataverseContextGenerator`, `XrmContextRunner` and
+  `XrmContextToolProvider`: moving them drags the DLaB Early Bound Generator package and the
+  `AddEbgRuntimeData` MSBuild target out of `Flowline.csproj`.
+- `Services/ProjectScaffolder`: launches `dotnet` at four sites and writes templates through
+  `TemplateWriter`.
+- `Utils/TemplateWriter`: reads embedded resources declared in `Flowline.csproj`.
+- `Utils/StatusGrid`: uses `WhoAmIInfo`, which is declared in `PacUtils.cs`.
+- Telemetry helpers `Logging/FlowlineScrubber`, `Logging/TelemetrySaltStore`,
+  `Diagnostics/PacTelemetrySetting`, `TelemetryConsent` and `TelemetryDisclosure`: they pass the
+  boundary, and are deferred until the telemetry work settles.
+
+Not misfiled: `Utils/PacUtils`, `GitUtils`, `DotNetUtils`, `SolutionChangeSummary`, and
+`Services/BackupService`, `SolutionCheckService` and `GitComponentProvenanceLookup` launch
+processes, or (`SolutionChangeSummary`) call `GitUtils` to do so, so they belong in `Flowline`.
+
 - `tests/Flowline.Tests/` — CLI and command tests
 - `tests/Flowline.Core.Tests/` — core service tests; also covers `Flowline.Attributes` contracts via the metadata scanner
 - `docs/solutions/` — prior bug fixes, architectural patterns, and workflow solutions
