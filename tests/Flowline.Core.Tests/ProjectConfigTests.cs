@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Config;
 using Flowline.Core.Environments;
@@ -7,11 +6,11 @@ using FluentAssertions;
 using Spectre.Console;
 using Spectre.Console.Testing;
 
-namespace Flowline.Tests;
+namespace Flowline.Core.Tests;
 
-// Shares a collection with GeneratePersistedSettingsApplicationTests (GenerateCommandTests.cs) — both
-// swap the static AnsiConsole.Console via WithSwappedConsole, and xUnit runs different classes in
-// parallel by default, so an unscoped pair races and reads each other's captured output.
+// Shares a collection with EnvironmentTargetResolverTests — both swap the static AnsiConsole.Console,
+// and xUnit runs different classes in parallel by default, so an unscoped pair races and reads each
+// other's captured output.
 [Collection("ProjectConfigConsole")]
 public class ProjectConfigTests : IDisposable
 {
@@ -246,9 +245,7 @@ public class ProjectConfigTests : IDisposable
 
     // KTD6: generic setter — first-save line, silent same-value, and the role-keyed accessors.
 
-    // internal, not private: GenerateCommandTests reuses this to check ApplyPersistedGenerateSettings'
-    // console output against the same shared core (U5).
-    internal static T WithSwappedConsole<T>(Func<TestConsole, T> act)
+    static T WithSwappedConsole<T>(Func<TestConsole, T> act)
     {
         var original = AnsiConsole.Console;
         var testConsole = new TestConsole();

@@ -6,7 +6,9 @@ using Flowline.Core;
 using Flowline.Core.Config;
 using Flowline.Settings;
 using FluentAssertions;
+using Spectre.Console;
 using Spectre.Console.Cli;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -523,12 +525,27 @@ public class GenerateCommandSolutionValidationTests
 
 // U5/R11: --namespace, --extra-tables, --generator, --output and --service-context-name each follow
 // the one write-on-first-use, ask-on-change rule via GenerateCommand.ApplyPersistedGenerateSettings.
-// Shares a collection with ProjectConfigTests — both swap the static AnsiConsole.Console via
-// ProjectConfigTests.WithSwappedConsole, and an unscoped pair races across parallel test classes.
+// Swaps the static AnsiConsole.Console, so it runs in the console collection and no other class in
+// this assembly races it for the captured output.
 [Collection("ProjectConfigConsole")]
 public class GeneratePersistedSettingsApplicationTests
 {
     const string RootFolder = @"C:\proj";
+
+    static T WithSwappedConsole<T>(Func<TestConsole, T> act)
+    {
+        var original = AnsiConsole.Console;
+        var testConsole = new TestConsole();
+        AnsiConsole.Console = testConsole;
+        try
+        {
+            return act(testConsole);
+        }
+        finally
+        {
+            AnsiConsole.Console = original;
+        }
+    }
 
     static ProjectSolution NewSolution(GenerateConfig? generate = null) =>
         new() { UniqueName = "ContosoSales", Generate = generate };
@@ -539,7 +556,7 @@ public class GeneratePersistedSettingsApplicationTests
         var sln = NewSolution();
         var settings = new GenerateCommand.Settings { Namespace = "Contoso.Models" };
 
-        var output = ProjectConfigTests.WithSwappedConsole(console =>
+        var output = WithSwappedConsole(console =>
         {
             GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, new FlowlineRuntimeOptions(), RootFolder);
             return console.Output;
@@ -555,7 +572,7 @@ public class GeneratePersistedSettingsApplicationTests
         var sln = NewSolution(new GenerateConfig { Namespace = "Contoso.Models" });
         var settings = new GenerateCommand.Settings { Namespace = "Contoso.Models" };
 
-        var output = ProjectConfigTests.WithSwappedConsole(console =>
+        var output = WithSwappedConsole(console =>
         {
             GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, new FlowlineRuntimeOptions(), RootFolder);
             return console.Output;
@@ -596,7 +613,7 @@ public class GeneratePersistedSettingsApplicationTests
         var sln = NewSolution(new GenerateConfig { ExtraTables = ["account", "contact"] });
         var settings = new GenerateCommand.Settings { ExtraTables = "account,contact" };
 
-        var output = ProjectConfigTests.WithSwappedConsole(console =>
+        var output = WithSwappedConsole(console =>
         {
             GenerateCommand.ApplyPersistedGenerateSettings(sln, settings, new FlowlineRuntimeOptions(), RootFolder);
             return console.Output;
