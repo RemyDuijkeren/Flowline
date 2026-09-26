@@ -206,6 +206,42 @@ public static class PacUtils
         return 0;
     }
 
+    /// <summary>Runs <c>pac solution clone</c> into <paramref name="outputDirectory"/>. Returns the raw
+    /// result without validating it, so the caller decides how a failure reads.</summary>
+    public static async Task<CommandResult> CloneSolutionAsync(
+        string solutionName, string environmentUrl, bool includeManaged, string outputDirectory,
+        SubprocessCapture capture, StatusContext? ctx, CancellationToken cancellationToken)
+    {
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        return await Cli.Wrap(cmdName)
+            .WithArguments(args =>
+                args.AddIfNotNull(prefixArgs)
+                    .Add("solution")
+                    .Add("clone")
+                    .Add("--name").Add(solutionName)
+                    .Add("--environment").Add(environmentUrl)
+                    .Add("--packagetype").Add(includeManaged ? "Both" : "Unmanaged")
+                    .Add("--outputDirectory").Add(outputDirectory)
+                    .Add("--async"))
+            .WithValidation(CommandResultValidation.None)
+            .WithCapture(capture, ctx)
+            .ExecuteAsync(cancellationToken);
+    }
+
+    /// <summary>Runs <c>pac plugin init</c> in <paramref name="folder"/>, which must already exist.</summary>
+    public static async Task InitPluginProjectAsync(string folder, SubprocessCapture capture, CancellationToken cancellationToken)
+    {
+        var (cmdName, prefixArgs, _) = await GetBestPacCommandAsync(cancellationToken);
+        await Cli.Wrap(cmdName)
+            .WithArguments(args => args
+                .AddIfNotNull(prefixArgs)
+                .Add("plugin")
+                .Add("init")) // --skip-signing
+            .WithWorkingDirectory(folder)
+            .WithCapture(capture)
+            .ExecuteAsync(cancellationToken);
+    }
+
     public static async Task SyncSolutionFromDataverseAsync(
         string solutionName, string dataverseSolutionFolder, string environmentUrl,
         bool includeManaged, SubprocessCapture capture, CancellationToken cancellationToken)

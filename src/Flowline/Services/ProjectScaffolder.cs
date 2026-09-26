@@ -356,23 +356,9 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
 
         Directory.CreateDirectory(slnFolder);
 
-        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
         CommandResult result = await console.Status().FlowlineSpinner().StartAsync(
             $"Cloning solution [bold]{projectSln.UniqueName}[/] from Dataverse...",
-            ctx => Cli.Wrap(cmdName)
-                      .WithArguments(args =>
-                          args.AddIfNotNull(prefixArgs)
-                              .Add("solution")
-                              .Add("clone")
-                              .Add("--name").Add(projectSln.UniqueName)
-                              .Add("--environment").Add(environmentUrl)
-                              .Add("--packagetype").Add(projectSln.IncludeManaged ? "Both" : "Unmanaged")
-                              .Add("--outputDirectory").Add(slnFolder)
-                              .Add("--async"))
-                      .WithValidation(CommandResultValidation.None)
-                      .WithCapture(capture, ctx)
-                      .ExecuteAsync(cancellationToken)
-                      .Task);
+            ctx => PacUtils.CloneSolutionAsync(projectSln.UniqueName, environmentUrl, projectSln.IncludeManaged, slnFolder, capture, ctx, cancellationToken));
 
         if (!result.IsSuccess)
             throw new FlowlineException(ExitCode.GeneralError, "Clone failed — check the environment and your PAC login.");
@@ -581,15 +567,7 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
             {
                 Directory.CreateDirectory(initFolder);
 
-                var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
-                await Cli.Wrap(cmdName)
-                         .WithArguments(args => args
-                                                .AddIfNotNull(prefixArgs)
-                                                .Add("plugin")
-                                                .Add("init")) // --skip-signing
-                         .WithWorkingDirectory(initFolder)
-                         .WithCapture(capture)
-                         .ExecuteAsync(cancellationToken);
+                await PacUtils.InitPluginProjectAsync(initFolder, capture, cancellationToken);
                 DeleteScaffoldedGitignore(initFolder); // superseded by the project-root .gitignore
 
                 if (needsRename)
