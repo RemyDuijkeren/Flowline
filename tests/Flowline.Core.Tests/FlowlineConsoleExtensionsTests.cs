@@ -81,4 +81,63 @@ public class FlowlineConsoleExtensionsTests
         beforePromptCalled.Should().BeTrue();
         result.Should().BeTrue();
     }
+
+    // Confirm: --force auto-accepts the matching specifier, and a non-interactive run without it names the
+    // specifier it needs. Interactivity is a TestConsole capability: default off, .Interactive() opts in.
+
+    [Fact]
+    public void Confirm_NonInteractive_ForceContainsConfig_ReturnsTrueWithoutPrompting()
+    {
+        var options = new FlowlineRuntimeOptions { Force = ["config"] };
+
+        new TestConsole().Confirm("Overwrite it?", false, options, "config").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Confirm_NonInteractive_ForceContainsAll_ReturnsTrueWithoutPrompting()
+    {
+        var options = new FlowlineRuntimeOptions { Force = ["all"] };
+
+        new TestConsole().Confirm("Overwrite it?", false, options, "config").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Confirm_NonInteractive_ForceEmpty_ThrowsForceRequiredNamingConfig()
+    {
+        var options = new FlowlineRuntimeOptions { Force = [] };
+
+        var act = () => new TestConsole().Confirm("Overwrite it?", false, options, "config");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force config"));
+    }
+
+    [Fact]
+    public void Confirm_NonInteractive_ForceContainsMatchingSpecifier_ReturnsTrueWithoutPrompting()
+    {
+        var options = new FlowlineRuntimeOptions { Force = ["first-import"] };
+
+        new TestConsole().Confirm("Continue?", false, options, "first-import").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Confirm_NonInteractive_ForceContainsDifferentSpecifier_ThrowsNamingRequestedSpecifier()
+    {
+        var options = new FlowlineRuntimeOptions { Force = ["config"] };
+
+        var act = () => new TestConsole().Confirm("Continue?", false, options, "first-import");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ForceRequired && e.Message.Contains("--force first-import"));
+    }
+
+    [Fact]
+    public void Confirm_Interactive_Force_ReturnsTrueWithoutPromptingEvenWhenInteractive()
+    {
+        // No input pushed — if Confirm tried to prompt, TestConsole would throw on the empty queue.
+        var console = new TestConsole().Interactive();
+        var options = new FlowlineRuntimeOptions { Force = ["first-import"] };
+
+        console.Confirm("Continue?", false, options, "first-import").Should().BeTrue();
+    }
 }
