@@ -1,13 +1,10 @@
-namespace Flowline.Core.Services;
+using Flowline.Core.Environments;
 
-// Mirrors Flowline.Commands.EnvironmentRole (Prod/Uat/Test/Dev) without referencing it — Core must
-// never reference Flowline (AGENTS.md project boundary rule). EnvironmentTargetResolver maps this to
-// the real EnvironmentRole.
-public enum InferredRole { Dev, Test, Uat, Prod }
+namespace Flowline.Core.Services;
 
 // CONCEPTS.md "Role inference": the role a URL not yet in .flowline gets assigned, so it can be saved
 // under a key without the user naming one. Null Role means nothing could be inferred.
-public readonly record struct RoleInferenceResult(InferredRole? Role, string? Source)
+public readonly record struct RoleInferenceResult(EnvironmentRole? Role, string? Source)
 {
     public static readonly RoleInferenceResult None = new(null, null);
 }
@@ -19,14 +16,14 @@ public static class EnvironmentRoleInference
     // absent: Production is a type Dataverse reports, never a name someone chose, so it comes from the
     // type step alone. Left out on purpose: sandbox/sbx (a type, not a role), int (integration or
     // internal), demo, train, hotfix (real orgs with no role in the model).
-    static readonly Dictionary<string, InferredRole> Keywords = new(StringComparer.OrdinalIgnoreCase)
+    static readonly Dictionary<string, EnvironmentRole> Keywords = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["dev"] = InferredRole.Dev, ["develop"] = InferredRole.Dev, ["development"] = InferredRole.Dev,
-        ["test"] = InferredRole.Test, ["tst"] = InferredRole.Test, ["testing"] = InferredRole.Test,
-        ["qa"] = InferredRole.Test, ["sit"] = InferredRole.Test,
-        ["uat"] = InferredRole.Uat, ["acc"] = InferredRole.Uat, ["acceptance"] = InferredRole.Uat,
-        ["acceptatie"] = InferredRole.Uat, ["preprod"] = InferredRole.Uat,
-        ["staging"] = InferredRole.Uat, ["stage"] = InferredRole.Uat, ["stg"] = InferredRole.Uat,
+        ["dev"] = EnvironmentRole.Dev, ["develop"] = EnvironmentRole.Dev, ["development"] = EnvironmentRole.Dev,
+        ["test"] = EnvironmentRole.Test, ["tst"] = EnvironmentRole.Test, ["testing"] = EnvironmentRole.Test,
+        ["qa"] = EnvironmentRole.Test, ["sit"] = EnvironmentRole.Test,
+        ["uat"] = EnvironmentRole.Uat, ["acc"] = EnvironmentRole.Uat, ["acceptance"] = EnvironmentRole.Uat,
+        ["acceptatie"] = EnvironmentRole.Uat, ["preprod"] = EnvironmentRole.Uat,
+        ["staging"] = EnvironmentRole.Uat, ["stage"] = EnvironmentRole.Uat, ["stg"] = EnvironmentRole.Uat,
     };
 
     static readonly char[] DisplayNameSeparators = [' ', '-', '_', '(', ')', '[', ']', '/', ',', '.'];
@@ -38,7 +35,7 @@ public static class EnvironmentRoleInference
     public static RoleInferenceResult Infer(string? url, string? environmentType, string? displayName = null)
     {
         if (string.Equals(environmentType, "Production", StringComparison.OrdinalIgnoreCase))
-            return new RoleInferenceResult(InferredRole.Prod, "environment type");
+            return new RoleInferenceResult(EnvironmentRole.Prod, "environment type");
 
         if (InferFromTokens(HostLabelTokens(url)) is { } urlRole)
             return new RoleInferenceResult(urlRole, "URL name");
@@ -47,7 +44,7 @@ public static class EnvironmentRoleInference
             return new RoleInferenceResult(nameRole, "environment name");
 
         if (string.Equals(environmentType, "Developer", StringComparison.OrdinalIgnoreCase))
-            return new RoleInferenceResult(InferredRole.Dev, "environment type");
+            return new RoleInferenceResult(EnvironmentRole.Dev, "environment type");
 
         return RoleInferenceResult.None;
     }
@@ -65,7 +62,7 @@ public static class EnvironmentRoleInference
 
     // Whole-token match so devon-crm and testify never hit; trailing digits stripped so dev2 and test01
     // read as their role; the last matching token wins, matching the suffix provision writes.
-    static InferredRole? InferFromTokens(string[]? tokens)
+    static EnvironmentRole? InferFromTokens(string[]? tokens)
     {
         if (tokens is null) return null;
 

@@ -1,7 +1,8 @@
 using System.Text.Json;
 using Flowline.Commands;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
+using Flowline.Core.Environments;
 using FluentAssertions;
 using Spectre.Console;
 using Spectre.Console.Testing;

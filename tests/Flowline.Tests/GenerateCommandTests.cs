@@ -2,8 +2,8 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json;
 using Flowline.Commands;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using FluentAssertions;
 using Spectre.Console.Cli;
 

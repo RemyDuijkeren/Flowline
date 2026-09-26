@@ -1,6 +1,7 @@
 using FluentAssertions;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
+using Flowline.Core.Models;
 using Flowline.Generators;
 using Flowline.Services;
 using Flowline.Utils;

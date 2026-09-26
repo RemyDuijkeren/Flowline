@@ -1,5 +1,5 @@
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
-using Flowline.Validation;
 using FluentAssertions;
 using Xunit;
 

@@ -1,7 +1,7 @@
 using System.Reflection;
 using Flowline.Commands;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Utils;
 using FluentAssertions;
 

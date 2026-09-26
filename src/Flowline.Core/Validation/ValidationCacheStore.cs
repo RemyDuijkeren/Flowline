@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Flowline.Validation;
+namespace Flowline.Core.Validation;
 
 public sealed class ValidationCacheStore
 {

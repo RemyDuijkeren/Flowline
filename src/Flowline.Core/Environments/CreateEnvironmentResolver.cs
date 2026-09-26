@@ -2,10 +2,10 @@ using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
-using Flowline.Validation;
+using Flowline.Core.Validation;
 using Spectre.Console;
 
-namespace Flowline.Services;
+namespace Flowline.Core.Environments;
 
 // U4: resolves a target environment (flag or tenant-wide picker) and switches to an existing pac auth
 // profile. Two entry points for the two callers (they differ by whether a Dataverse write follows):
@@ -19,6 +19,7 @@ namespace Flowline.Services;
 public class CreateEnvironmentResolver(
     IAnsiConsole console,
     ProfileResolutionService profileResolutionService,
+    FlowlineValidator validator,
     Func<CancellationToken, Task<List<EnvironmentInfo>>>? listEnvironments = null)
 {
     // KTD4: whitelist, not a Production blocklist — null, empty, and unrecognized types (e.g. "Trial")
@@ -38,7 +39,7 @@ public class CreateEnvironmentResolver(
     /// (pac-backed in production).</summary>
     internal Func<CancellationToken, Task<List<EnvironmentInfo>>>? GetEnvironmentsOverride { get; set; }
 
-    /// <summary>Seam for testing — overrides FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync.</summary>
+    /// <summary>Seam for testing — overrides the injected validator's GetEnvironmentInfoByUrlAsync.</summary>
     internal Func<string, PacProfile, FlowlineRuntimeOptions, CancellationToken, Task<EnvironmentInfo?>>? GetEnvironmentInfoByUrlOverride { get; set; }
 
     // INIT (greenfield create): resolve the DEV target. The picker is filtered to create-eligible types
@@ -80,7 +81,7 @@ public class CreateEnvironmentResolver(
         var profile = await profileResolutionService.ResolveAsync(url, cancellationToken);
 
         var getEnvironmentInfo = GetEnvironmentInfoByUrlOverride
-            ?? ((u, p, o, ct) => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(u, p, o, options.NoCache, ct));
+            ?? ((u, p, o, ct) => validator.GetEnvironmentInfoByUrlAsync(u, p, o, options.NoCache, ct));
         var env = await console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{url}[/]...",
             _ => getEnvironmentInfo(url, profile, options, cancellationToken));

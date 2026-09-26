@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Flowline.Config;
+namespace Flowline.Core.Config;
 
 // Auto: today's zero-config default — a .nupkg anywhere under the plugins build output routes to the
 // package path (R1/KD1), falling back to the classic .dll silently when the build produced none. Nupkg:

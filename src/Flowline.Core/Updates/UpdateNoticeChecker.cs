@@ -1,14 +1,14 @@
 using Flowline.Core.Console;
 using Flowline.Core.Diagnostics;
 using Flowline.Core.Services;
-using Flowline.Validation;
+using Flowline.Core.Validation;
 using Spectre.Console;
 
-namespace Flowline.Services;
+namespace Flowline.Core.Updates;
 
-/// <summary>The "a newer Flowline is out" notice. Takes the validator as a parameter rather than
-/// reaching for <c>FlowlineValidator.Default</c>, which writes to the user's real cache file.</summary>
-internal static class UpdateNoticeChecker
+/// <summary>The "a newer Flowline is out" notice. Takes the validator as a parameter, so a test can pass
+/// one whose cache is not the user's real cache file.</summary>
+public static class UpdateNoticeChecker
 {
     const string PackageId = "Flowline";
 

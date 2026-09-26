@@ -2,12 +2,14 @@ using System.ComponentModel;
 using CliWrap;
 using Flowline.Core;
 using Flowline.Core.Console;
+using Flowline.Core.Environments;
+using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Infrastructure;
 using Flowline.Services;
 using Flowline.Utils;
-using Flowline.Validation;
 using Spectre.Console;
 using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
@@ -89,7 +91,7 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
         }
 
         // Validate target environment
-        var targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, RuntimeOptions, settings.NoCache, cancellationToken);
+        var targetEnv = await Validator.GetEnvironmentInfoByUrlAsync(targetUrl, RuntimeOptions, settings.NoCache, cancellationToken);
         var targetExisted = targetEnv != null;
         if (targetEnv == null)
         {
@@ -113,7 +115,7 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
             if (!createResult.IsSuccess)
                 throw new FlowlineException(ExitCode.GeneralError, "Environment creation failed — check the environment and your PAC login. Use --verbose for more details.");
 
-            targetEnv = await FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, RuntimeOptions, settings.NoCache, cancellationToken);
+            targetEnv = await Validator.GetEnvironmentInfoByUrlAsync(targetUrl, RuntimeOptions, settings.NoCache, cancellationToken);
             if (targetEnv == null)
             {
                 Console.Error("Environment created but not found — check the Power Platform admin center");

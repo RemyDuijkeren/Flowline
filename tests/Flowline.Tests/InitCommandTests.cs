@@ -1,8 +1,9 @@
 using System.ComponentModel;
 using System.Reflection;
 using Flowline.Commands;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
@@ -195,11 +196,11 @@ public class InitCommandTests
 
         var capture = new SubprocessCapture(console);
         var projectScaffolder = new ProjectScaffolder(console, capture);
-        var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService);
+        var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, TestValidator.Create());
 
         var command = new InitCommand(
             new CommandServices(console, runtimeOptions ?? new FlowlineRuntimeOptions(), profileResolutionService,
-                NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient())),
+                NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient()), TestValidator.Create()),
             createEnvironmentResolver, connector, new SolutionCreateService(), projectScaffolder,
             new EnvironmentTargetResolver(console))
         {

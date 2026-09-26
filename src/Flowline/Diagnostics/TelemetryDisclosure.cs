@@ -1,5 +1,5 @@
 using Flowline.Core.Diagnostics;
-using Flowline.Validation;
+using Flowline.Core.Validation;
 
 namespace Flowline.Diagnostics;
 

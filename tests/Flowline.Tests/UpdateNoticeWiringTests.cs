@@ -2,10 +2,11 @@ using System.Net;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Diagnostics;
+using Flowline.Core.Environments;
 using Flowline.Core.Services;
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Services;
-using Flowline.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NuGet.Versioning;
@@ -75,7 +76,7 @@ public class UpdateNoticeWiringTests
                 new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions()),
                 NullLoggerFactory.Instance,
                 new SubprocessCapture(console),
-                new NuGetVersionClient(new HttpClient(new FakeHandler($$"""{"versions":["{{newer}}"]}""")))),
+                new NuGetVersionClient(new HttpClient(new FakeHandler($$"""{"versions":["{{newer}}"]}"""))), TestValidator.Create()),
             validator);
 
         return (command, console, newer, validator);

@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Services;
 using Flowline.Logging;
 using Flowline.Utils;

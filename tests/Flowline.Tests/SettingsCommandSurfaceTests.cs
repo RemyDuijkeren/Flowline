@@ -1,11 +1,13 @@
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Configure;
 using Flowline.Core.Console;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
+using Flowline.Tests;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console;
@@ -70,7 +72,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     {
         var (console, connector, profiles) = Deps(interactive);
         return new StateProbe(new CommandServices(console, new FlowlineRuntimeOptions(), profiles,
-            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient())), connector);
+            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()), TestValidator.Create()), connector);
     }
 
     static InventoryComponent Flow(string name, bool enabled = true) =>
@@ -572,7 +574,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     {
         var (console, connector, profiles) = Deps(interactive);
         return new PullProbe(new CommandServices(console, new FlowlineRuntimeOptions(), profiles,
-            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient())), connector);
+            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()), TestValidator.Create()), connector);
     }
 
     // The bare word used to sweep every configured environment unattended. That is the widest and slowest

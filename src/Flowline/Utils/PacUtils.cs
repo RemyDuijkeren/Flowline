@@ -1,6 +1,7 @@
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Console;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Utils;
 using CliWrap;
@@ -618,17 +619,6 @@ public class EnvironmentUrlParts
     public string Organization { get; set; } = null!;
     public string Host { get; set; } = null!;
     public string Region { get; set; } = null!;
-}
-
-public class SolutionInfo
-{
-    public Guid Id { get; set; }
-    public string? SolutionUniqueName { get; set; }
-    public string? FriendlyName { get; set; }
-    public string? PublisherUniqueName { get; set; }
-    public string? PublisherPrefix { get; set; }
-    public string? VersionNumber { get; set; }
-    public bool IsManaged { get; set; }
 }
 
 public record WhoAmIInfo(string ConnectedAs);

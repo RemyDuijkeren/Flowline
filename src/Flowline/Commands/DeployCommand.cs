@@ -5,17 +5,18 @@ using System.Xml;
 using System.Xml.Linq;
 using CliWrap;
 using CliWrap.Buffered;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Console;
 using Flowline.Core.Deploy;
+using Flowline.Core.Environments;
+using Flowline.Core.Validation;
 using Flowline.Infrastructure;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;
-using Flowline.Validation;
 using Spectre.Console;
 using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
@@ -420,7 +421,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         var profile = await ProfileResolutionService.ResolveAsync(targetUrl, ct);
         var targetEnv = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{targetUrl}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(targetUrl, profile, RuntimeOptions, settings.NoCache, ct));
+            _ => Validator.GetEnvironmentInfoByUrlAsync(targetUrl, profile, RuntimeOptions, settings.NoCache, ct));
 
         if (targetEnv == null)
             throw new FlowlineException(ExitCode.ConnectionFailed,
@@ -430,7 +431,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
 
         var existingSolution = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.UniqueName}[/]...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.UniqueName, includeManaged: true, RuntimeOptions, settings.NoCache, ct, bypassCache: true));
+            _ => Validator.GetSolutionInfoAsync(targetUrl, sln.UniqueName, includeManaged: true, RuntimeOptions, settings.NoCache, ct, bypassCache: true));
 
         if (existingSolution != null)
         {
@@ -498,7 +499,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
 
         var predecessorInfo = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.UniqueName}[/] in {dtapDecision.PredecessorLabel}...",
-            _ => FlowlineValidator.Default.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.UniqueName, includeManaged: true, RuntimeOptions, settings.NoCache, ct, bypassCache: true));
+            _ => Validator.GetSolutionInfoAsync(dtapDecision.PredecessorUrl!, sln.UniqueName, includeManaged: true, RuntimeOptions, settings.NoCache, ct, bypassCache: true));
 
         if (predecessorInfo == null)
             throw new FlowlineException(ExitCode.ValidationFailed,

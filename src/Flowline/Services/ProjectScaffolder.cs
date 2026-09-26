@@ -1,6 +1,6 @@
 using CliWrap;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Console;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;

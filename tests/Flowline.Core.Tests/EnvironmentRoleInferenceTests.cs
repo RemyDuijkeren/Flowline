@@ -1,3 +1,4 @@
+using Flowline.Core.Environments;
 using Flowline.Core.Services;
 using FluentAssertions;
 
@@ -6,23 +7,23 @@ namespace Flowline.Core.Tests;
 public class EnvironmentRoleInferenceTests
 {
     [Theory]
-    [InlineData("https://contoso-dev.crm4.dynamics.com", InferredRole.Dev)]
-    [InlineData("https://contoso-develop.crm4.dynamics.com", InferredRole.Dev)]
-    [InlineData("https://contoso-development.crm4.dynamics.com", InferredRole.Dev)]
-    [InlineData("https://contoso-test.crm4.dynamics.com", InferredRole.Test)]
-    [InlineData("https://contoso-tst.crm4.dynamics.com", InferredRole.Test)]
-    [InlineData("https://contoso-testing.crm4.dynamics.com", InferredRole.Test)]
-    [InlineData("https://contoso-qa.crm4.dynamics.com", InferredRole.Test)]
-    [InlineData("https://contoso-sit.crm4.dynamics.com", InferredRole.Test)]
-    [InlineData("https://contoso-uat.crm4.dynamics.com", InferredRole.Uat)]
-    [InlineData("https://contoso-acc.crm4.dynamics.com", InferredRole.Uat)]
-    [InlineData("https://contoso-acceptance.crm4.dynamics.com", InferredRole.Uat)]
-    [InlineData("https://contoso-acceptatie.crm4.dynamics.com", InferredRole.Uat)]
-    [InlineData("https://contoso-preprod.crm4.dynamics.com", InferredRole.Uat)]
-    [InlineData("https://contoso-staging.crm4.dynamics.com", InferredRole.Uat)]
-    [InlineData("https://contoso-stage.crm4.dynamics.com", InferredRole.Uat)]
-    [InlineData("https://contoso-stg.crm4.dynamics.com", InferredRole.Uat)]
-    public void Infer_UrlKeyword_MapsToRole(string url, InferredRole expected)
+    [InlineData("https://contoso-dev.crm4.dynamics.com", EnvironmentRole.Dev)]
+    [InlineData("https://contoso-develop.crm4.dynamics.com", EnvironmentRole.Dev)]
+    [InlineData("https://contoso-development.crm4.dynamics.com", EnvironmentRole.Dev)]
+    [InlineData("https://contoso-test.crm4.dynamics.com", EnvironmentRole.Test)]
+    [InlineData("https://contoso-tst.crm4.dynamics.com", EnvironmentRole.Test)]
+    [InlineData("https://contoso-testing.crm4.dynamics.com", EnvironmentRole.Test)]
+    [InlineData("https://contoso-qa.crm4.dynamics.com", EnvironmentRole.Test)]
+    [InlineData("https://contoso-sit.crm4.dynamics.com", EnvironmentRole.Test)]
+    [InlineData("https://contoso-uat.crm4.dynamics.com", EnvironmentRole.Uat)]
+    [InlineData("https://contoso-acc.crm4.dynamics.com", EnvironmentRole.Uat)]
+    [InlineData("https://contoso-acceptance.crm4.dynamics.com", EnvironmentRole.Uat)]
+    [InlineData("https://contoso-acceptatie.crm4.dynamics.com", EnvironmentRole.Uat)]
+    [InlineData("https://contoso-preprod.crm4.dynamics.com", EnvironmentRole.Uat)]
+    [InlineData("https://contoso-staging.crm4.dynamics.com", EnvironmentRole.Uat)]
+    [InlineData("https://contoso-stage.crm4.dynamics.com", EnvironmentRole.Uat)]
+    [InlineData("https://contoso-stg.crm4.dynamics.com", EnvironmentRole.Uat)]
+    public void Infer_UrlKeyword_MapsToRole(string url, EnvironmentRole expected)
     {
         var result = EnvironmentRoleInference.Infer(url, environmentType: "Sandbox");
 
@@ -31,14 +32,14 @@ public class EnvironmentRoleInferenceTests
     }
 
     [Theory]
-    [InlineData("https://dev-contoso.crm4.dynamics.com", InferredRole.Dev)]        // prefix
-    [InlineData("https://contoso-dev-eu.crm4.dynamics.com", InferredRole.Dev)]     // middle
-    [InlineData("https://contoso-crm-dev.crm4.dynamics.com", InferredRole.Dev)]    // suffix after another token
-    [InlineData("https://contoso-dev2.crm4.dynamics.com", InferredRole.Dev)]       // trailing digits
-    [InlineData("https://contoso-test01.crm4.dynamics.com", InferredRole.Test)]
-    [InlineData("https://contoso-uat-3.crm4.dynamics.com", InferredRole.Uat)]      // digits as their own token
-    [InlineData("https://Contoso-DEV.crm4.dynamics.com", InferredRole.Dev)]        // case
-    public void Infer_UrlKeyword_AnyPosition_TrailingDigits_CaseInsensitive(string url, InferredRole expected)
+    [InlineData("https://dev-contoso.crm4.dynamics.com", EnvironmentRole.Dev)]        // prefix
+    [InlineData("https://contoso-dev-eu.crm4.dynamics.com", EnvironmentRole.Dev)]     // middle
+    [InlineData("https://contoso-crm-dev.crm4.dynamics.com", EnvironmentRole.Dev)]    // suffix after another token
+    [InlineData("https://contoso-dev2.crm4.dynamics.com", EnvironmentRole.Dev)]       // trailing digits
+    [InlineData("https://contoso-test01.crm4.dynamics.com", EnvironmentRole.Test)]
+    [InlineData("https://contoso-uat-3.crm4.dynamics.com", EnvironmentRole.Uat)]      // digits as their own token
+    [InlineData("https://Contoso-DEV.crm4.dynamics.com", EnvironmentRole.Dev)]        // case
+    public void Infer_UrlKeyword_AnyPosition_TrailingDigits_CaseInsensitive(string url, EnvironmentRole expected)
     {
         EnvironmentRoleInference.Infer(url, "Sandbox").Role.Should().Be(expected);
     }
@@ -62,7 +63,7 @@ public class EnvironmentRoleInferenceTests
     public void Infer_TwoKeywords_LastTokenWins()
     {
         // Matches the suffix position provision writes.
-        EnvironmentRoleInference.Infer("https://contoso-test-uat.crm4.dynamics.com", "Sandbox").Role.Should().Be(InferredRole.Uat);
+        EnvironmentRoleInference.Infer("https://contoso-test-uat.crm4.dynamics.com", "Sandbox").Role.Should().Be(EnvironmentRole.Uat);
     }
 
     [Fact]
@@ -72,23 +73,23 @@ public class EnvironmentRoleInferenceTests
         // Dataverse reports as Production is PROD.
         var result = EnvironmentRoleInference.Infer("https://contoso-test.crm4.dynamics.com", "Production");
 
-        result.Role.Should().Be(InferredRole.Prod);
+        result.Role.Should().Be(EnvironmentRole.Prod);
         result.Source.Should().Be("environment type");
     }
 
     [Fact]
     public void Infer_DeveloperType_LosesToUrlKeyword()
     {
-        EnvironmentRoleInference.Infer("https://contoso-test.crm4.dynamics.com", "Developer").Role.Should().Be(InferredRole.Test);
+        EnvironmentRoleInference.Infer("https://contoso-test.crm4.dynamics.com", "Developer").Role.Should().Be(EnvironmentRole.Test);
     }
 
     [Theory]
-    [InlineData("Contoso DEV", InferredRole.Dev)]
-    [InlineData("Contoso (Acceptance)", InferredRole.Uat)]
-    [InlineData("Contoso Test 2", InferredRole.Test)]
-    [InlineData("Contoso - QA", InferredRole.Test)]
-    [InlineData("Contoso [staging]", InferredRole.Uat)]
-    public void Infer_NoUrlKeyword_DisplayNameKeyword_MapsToRole(string displayName, InferredRole expected)
+    [InlineData("Contoso DEV", EnvironmentRole.Dev)]
+    [InlineData("Contoso (Acceptance)", EnvironmentRole.Uat)]
+    [InlineData("Contoso Test 2", EnvironmentRole.Test)]
+    [InlineData("Contoso - QA", EnvironmentRole.Test)]
+    [InlineData("Contoso [staging]", EnvironmentRole.Uat)]
+    public void Infer_NoUrlKeyword_DisplayNameKeyword_MapsToRole(string displayName, EnvironmentRole expected)
     {
         var result = EnvironmentRoleInference.Infer("https://contoso.crm4.dynamics.com", "Sandbox", displayName);
 
@@ -101,7 +102,7 @@ public class EnvironmentRoleInferenceTests
     {
         var result = EnvironmentRoleInference.Infer("https://contoso-dev.crm4.dynamics.com", "Sandbox", "Contoso UAT");
 
-        result.Role.Should().Be(InferredRole.Dev);
+        result.Role.Should().Be(EnvironmentRole.Dev);
         result.Source.Should().Be("URL name");
     }
 
@@ -110,7 +111,7 @@ public class EnvironmentRoleInferenceTests
     {
         var result = EnvironmentRoleInference.Infer("https://contoso.crm4.dynamics.com", "Production");
 
-        result.Role.Should().Be(InferredRole.Prod);
+        result.Role.Should().Be(EnvironmentRole.Prod);
         result.Source.Should().Be("environment type");
     }
 
@@ -119,7 +120,7 @@ public class EnvironmentRoleInferenceTests
     {
         var result = EnvironmentRoleInference.Infer("https://contoso.crm4.dynamics.com", "Developer", "Contoso");
 
-        result.Role.Should().Be(InferredRole.Dev);
+        result.Role.Should().Be(EnvironmentRole.Dev);
         result.Source.Should().Be("environment type");
     }
 
@@ -151,6 +152,6 @@ public class EnvironmentRoleInferenceTests
         var act = () => EnvironmentRoleInference.Infer(url, "Production");
 
         act.Should().NotThrow();
-        act().Role.Should().Be(InferredRole.Prod);
+        act().Role.Should().Be(EnvironmentRole.Prod);
     }
 }

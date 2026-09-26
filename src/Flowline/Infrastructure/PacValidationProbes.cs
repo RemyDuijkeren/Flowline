@@ -1,6 +1,6 @@
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Utils;
-using Flowline.Validation;
 
 namespace Flowline.Infrastructure;
 

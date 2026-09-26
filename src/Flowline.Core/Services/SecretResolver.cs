@@ -2,10 +2,9 @@ using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
-using Flowline.Utils;
 using Spectre.Console;
 
-namespace Flowline.Services;
+namespace Flowline.Core.Services;
 
 public class SecretResolver(IAnsiConsole console)
 {

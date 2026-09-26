@@ -1,10 +1,12 @@
 using Flowline;
 using Flowline.Core;
+using Flowline.Core.Environments;
 using Flowline.Core.Services;
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Logging;
 using Flowline.Services;
-using Flowline.Validation;
+using Flowline.Tests;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -75,7 +77,7 @@ public class FlowlineCommandStandaloneTests
         var connector = new DataverseConnector(console, new HttpClient());
         var profileResolutionService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions());
         return new TestCommand(new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService,
-            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient())));
+            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()), TestValidator.WithRealProbes(console)));
     }
 
     static CommandContext MakeContext(string name = "test-command") =>

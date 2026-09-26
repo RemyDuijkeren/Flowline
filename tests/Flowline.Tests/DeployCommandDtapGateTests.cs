@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Flowline.Commands;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 
 namespace Flowline.Tests;
 

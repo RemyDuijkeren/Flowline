@@ -2,6 +2,7 @@ using System.Diagnostics;
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Core.Environments;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
 using Flowline.Services;
@@ -44,7 +45,7 @@ public class DiffCommandTests : IDisposable
         var capture = new SubprocessCapture(console);
 
         var command = new DiffCommand(new CommandServices(console, runtimeOptions, profileResolutionService,
-            NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient())));
+            NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient()), TestValidator.Create()));
 
         return (command, console);
     }

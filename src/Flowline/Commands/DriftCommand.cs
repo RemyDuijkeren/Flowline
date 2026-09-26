@@ -1,14 +1,15 @@
 using System.ComponentModel;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Console;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Core.OrphanCleanup;
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Flowline.Utils;
-using Flowline.Validation;
 using Spectre.Console;
 using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
@@ -180,7 +181,7 @@ public class DriftCommand(CommandServices services, DataverseConnector dataverse
         var profile = await ProfileResolutionService.ResolveAsync(target, ct);
         var env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{target}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, profile, RuntimeOptions, settings.NoCache, ct));
+            _ => Validator.GetEnvironmentInfoByUrlAsync(target, profile, RuntimeOptions, settings.NoCache, ct));
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"Environment not found — check the URL '{target}' or your PAC login.");
 

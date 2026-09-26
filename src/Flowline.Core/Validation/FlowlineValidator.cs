@@ -4,7 +4,7 @@ using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Spectre.Console;
 
-namespace Flowline.Validation;
+namespace Flowline.Core.Validation;
 
 public sealed class FlowlineValidator
 {
@@ -17,9 +17,6 @@ public sealed class FlowlineValidator
 
     readonly ValidationCacheStore _store;
     readonly ValidationProbes _probes;
-
-    public static FlowlineValidator Default { get; } =
-        new(new ValidationCacheStore(), Infrastructure.PacValidationProbes.Create(new Diagnostics.SubprocessCapture(AnsiConsole.Console)));
 
     public FlowlineValidator(ValidationCacheStore store, ValidationProbes probes)
     {

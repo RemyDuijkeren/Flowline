@@ -1,6 +1,8 @@
 ﻿using Flowline;
+using Flowline.Core.Validation;
+using Flowline.Core.Environments;
 using Flowline.Commands;
-using Flowline.Config;
+using Flowline.Core.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Deploy;
@@ -87,9 +89,12 @@ PostDeployServiceRegistration.RegisterPostDeployServices(services);
 services.AddSingleton<SubprocessCapture>();
 services.AddSingleton<ProjectScaffolder>();
 services.AddSingleton<SolutionCreateService>();
+services.AddSingleton(sp => new FlowlineValidator(
+    new ValidationCacheStore(), PacValidationProbes.Create(sp.GetRequiredService<SubprocessCapture>())));
 services.AddSingleton(sp => new CreateEnvironmentResolver(
     sp.GetRequiredService<IAnsiConsole>(),
     sp.GetRequiredService<ProfileResolutionService>(),
+    sp.GetRequiredService<FlowlineValidator>(),
     ct => PacUtils.GetEnvironmentsAsync(sp.GetRequiredService<SubprocessCapture>(), ct)));
 services.AddSingleton<EnvironmentTargetResolver>();
 

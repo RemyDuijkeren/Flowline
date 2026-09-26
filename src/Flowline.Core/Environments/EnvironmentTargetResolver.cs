@@ -1,12 +1,11 @@
-using Flowline.Commands;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console;
 
-namespace Flowline.Services;
+namespace Flowline.Core.Environments;
 
 // KTD1: the one seam every --env-driven command (push, sync, generate, init, clone, provision)
 // resolves its target through. Turns a role keyword or URL into a canonical environment URL, the role
@@ -85,8 +84,8 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         // than saving it under TestUrl and using it against that role. An uninferred Sandbox falls
         // through to the ask-or-fail path below, which on a role-restricted command can only end in
         // that role or "use once".
-        if (onlyRole is { } gateRole && inference.Role is { } inferredRole && ToEnvironmentRole(inferredRole) != gateRole)
-            throw RoleOnlyRefusal($"'{value}' looks like a {ToEnvironmentRole(inferredRole).UpperLabel()} environment ({inference.Source})", gateRole);
+        if (onlyRole is { } gateRole && inference.Role is { } inferredRole && inferredRole != gateRole)
+            throw RoleOnlyRefusal($"'{value}' looks like a {inferredRole.UpperLabel()} environment ({inference.Source})", gateRole);
 
         return isInteractive
             ? await ResolveNewUrlInteractivelyAsync(value, inference, onlyRole, config, options, cancellationToken)
@@ -104,7 +103,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
             throw new FlowlineException(ExitCode.ValidationFailed, $"Can't tell which role '{url}' belongs to — {hint}");
         }
 
-        return SaveRole(ToEnvironmentRole(inferred), url, inference.Source, config, options);
+        return SaveRole(inferred, url, inference.Source, config, options);
     }
 
     // R6: interactive save — role picker pre-selected on the inferred role (listed first, so a bare
@@ -117,7 +116,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
     async Task<EnvironmentTargetResult> ResolveNewUrlInteractivelyAsync(
         string url, RoleInferenceResult inference, EnvironmentRole? onlyRole, ProjectConfig config, FlowlineRuntimeOptions options, CancellationToken cancellationToken)
     {
-        var inferredRole = inference.Role is { } r ? ToEnvironmentRole(r) : (EnvironmentRole?)null;
+        var inferredRole = inference.Role;
 
         EnvironmentRole[] roles = onlyRole is { } required
             ? [required]
@@ -189,7 +188,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
     // class's own ResolveAsync doesn't apply) — that method only checks for a blank value, so a bare
     // keyword like "dev" would otherwise flow through as if it were a literal URL. One shared guard for
     // both callers, called before ResolveStandaloneEnvironmentUrl.
-    internal static void EnsureUsableStandaloneEnv(string? env)
+    public static void EnsureUsableStandaloneEnv(string? env)
     {
         if (!string.IsNullOrWhiteSpace(env) && IsRoleKeyword(env))
             throw new FlowlineException(ExitCode.ValidationFailed,
@@ -202,15 +201,6 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         role = parsed ?? default;
         return parsed is not null;
     }
-
-    static EnvironmentRole ToEnvironmentRole(InferredRole role) => role switch
-    {
-        InferredRole.Dev => EnvironmentRole.Dev,
-        InferredRole.Test => EnvironmentRole.Test,
-        InferredRole.Uat => EnvironmentRole.Uat,
-        InferredRole.Prod => EnvironmentRole.Prod,
-        _ => throw new ArgumentOutOfRangeException(nameof(role))
-    };
 
     static string NormalizeForCompare(string? url) => (url ?? "").Trim().TrimEnd('/').ToLowerInvariant();
 

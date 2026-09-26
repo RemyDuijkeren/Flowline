@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Flowline.Config;
+namespace Flowline.Core.Config;
 
 public class GenerateConfig
 {

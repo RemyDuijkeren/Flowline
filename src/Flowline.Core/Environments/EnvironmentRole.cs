@@ -1,4 +1,4 @@
-namespace Flowline.Commands;
+namespace Flowline.Core.Environments;
 
 // The four named places a Flowline project addresses (CONCEPTS.md "Environment role"). Its own file
 // so it's reachable from Config and Services without pulling in FlowlineCommand's command-pipeline

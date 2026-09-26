@@ -1,21 +1,23 @@
 using System.ComponentModel;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Console;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Flowline.Core.Updates;
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Infrastructure;
 using Flowline.Services;
 using Flowline.Utils;
-using Flowline.Validation;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Flowline.Commands;
 
-public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, DataverseConnector dataverseConnector, ILoggerFactory loggerFactory, NuGetVersionClient nuGetVersionClient) : AsyncCommand<StatusCommand.Settings>
+public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, DataverseConnector dataverseConnector, ILoggerFactory loggerFactory, NuGetVersionClient nuGetVersionClient, FlowlineValidator validator) : AsyncCommand<StatusCommand.Settings>
 {
     private readonly IAnsiConsole Console = console;
     private readonly SubprocessCapture _capture = capture;
@@ -143,7 +145,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
         // to answer, so the notice must not depend on a config being found or the tool probes succeeding.
         // status stays on FlowlineSettings — no --no-cache, so this is always false.
         UpdateNoticeChecker.PrintNotice(Console, await UpdateNoticeChecker.CheckAsync(
-            Console, FlowlineValidator.Default, nuGetVersionClient, false, cancellationToken));
+            Console, validator, nuGetVersionClient, false, cancellationToken));
 
         try
         {
@@ -153,13 +155,13 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
             // Probes run fresh (noCache: true): status reports what's installed now, not what a
             // 7-day TTL remembers. The re-probe also rewrites the cache other commands read.
-            var dotNet = await FlowlineValidator.Default.EnsureDotNetAsync(runtimeOptions, true, cancellationToken);
+            var dotNet = await validator.EnsureDotNetAsync(runtimeOptions, true, cancellationToken);
             Console.MarkupLine($"[bold].NET SDK[/] version: [green]{dotNet.Version}[/]");
 
-            var pac = await FlowlineValidator.Default.EnsurePacCliAsync(runtimeOptions, true, cancellationToken);
+            var pac = await validator.EnsurePacCliAsync(runtimeOptions, true, cancellationToken);
             Console.MarkupLine($"[bold]Power Platform CLI[/] version: [green]{pac.Version}[/] ({pac.InstallType})");
 
-            var git = await FlowlineValidator.Default.EnsureGitAsync(runtimeOptions, true, cancellationToken);
+            var git = await validator.EnsureGitAsync(runtimeOptions, true, cancellationToken);
             Console.MarkupLine($"[bold]Git[/] version: [green]{git.Version}[/]");
         }
         catch

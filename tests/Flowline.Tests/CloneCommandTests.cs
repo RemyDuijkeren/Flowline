@@ -1,7 +1,8 @@
 using FluentAssertions;
 using Flowline.Commands;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
@@ -876,14 +877,14 @@ public class CloneCommandTests
         };
         var capture = new SubprocessCapture(console);
         var projectScaffolder = new ProjectScaffolder(console, capture);
-        var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService)
+        var createEnvironmentResolver = new CreateEnvironmentResolver(console, profileResolutionService, TestValidator.Create())
         {
             GetEnvironmentInfoByUrlOverride = (_, _, _, _) => Task.FromResult<EnvironmentInfo?>(MakeEnv(envType))
         };
         var environmentTargetResolver = new EnvironmentTargetResolver(console);
 
         var command = new CloneCommand(
-            new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient())),
+            new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, capture, new NuGetVersionClient(new HttpClient()), TestValidator.Create()),
             projectScaffolder, createEnvironmentResolver, environmentTargetResolver);
 
         return (command, console);

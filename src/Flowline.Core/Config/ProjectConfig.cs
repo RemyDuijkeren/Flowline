@@ -1,16 +1,14 @@
 using System.Text.Json;
-using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Console;
-using Flowline.Infrastructure;
-using Flowline.Utils;
+using Flowline.Core.Environments;
 using Spectre.Console;
 
-namespace Flowline.Config;
+namespace Flowline.Core.Config;
 
 public class ProjectConfig
 {
-    internal static readonly string s_configFileName = ".flowline";
+    public static readonly string s_configFileName = ".flowline";
     const int CurrentSchemaVersion = 1;
 
     public int? SchemaVersion { get; set; }
@@ -62,7 +60,7 @@ public class ProjectConfig
     // appended to the first-save line as "(inferred from <reason>)" — EnvironmentTargetResolver's only
     // caller of that parameter; every other call site leaves it null. get()'s value is user-controlled
     // for non-URL callers, so it's escaped before going into markup.
-    internal static string? GetOrUpdateValue(
+    public static string? GetOrUpdateValue(
         string? input,
         Func<string?> get,
         Action<string?> set,

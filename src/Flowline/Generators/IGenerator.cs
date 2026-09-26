@@ -1,4 +1,4 @@
-using Flowline.Config;
+using Flowline.Core.Config;
 
 namespace Flowline.Generators;
 

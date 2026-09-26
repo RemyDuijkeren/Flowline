@@ -1,13 +1,10 @@
-using Flowline;
 using Flowline.Core;
 using Flowline.Core.Console;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console;
 
-[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Flowline.Tests")]
-
-namespace Flowline.Services;
+namespace Flowline.Core.Environments;
 
 public class ProfileResolutionService(
     IAnsiConsole console,

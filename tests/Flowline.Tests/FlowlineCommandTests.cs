@@ -1,11 +1,12 @@
 using Flowline;
 using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Services;
-using Flowline.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -118,7 +119,7 @@ public class FlowlineCommandTests
     static TestCommand MakeCommand(ProfileResolutionService profileResolutionService)
     {
         var console = new TestConsole();
-        return new TestCommand(new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient())));
+        return new TestCommand(new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService, NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()), TestValidator.Create()));
     }
 
     [Fact]
@@ -191,7 +192,7 @@ public class FlowlineCommandTests
             GetEnvironmentByProfileAsync = (_, url, _) =>
                 Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, DisplayName = "Contoso", Type = environmentType })
         };
-        return new FlowlineValidator(new Flowline.Validation.ValidationCacheStore(tempFile), probes);
+        return new FlowlineValidator(new Flowline.Core.Validation.ValidationCacheStore(tempFile), probes);
     }
 
     static TestCommand MakeCommandWithValidator(FlowlineValidator validator)
@@ -266,7 +267,7 @@ public class FlowlineCommandTests
     {
         var command = MakeCommandWithValidator(MakeValidator(null));
         command.ValidatorOverride = new FlowlineValidator(
-            new Flowline.Validation.ValidationCacheStore(Path.Combine(Path.GetTempPath(), $"flowline-validation-cache-{Guid.NewGuid()}.json")),
+            new Flowline.Core.Validation.ValidationCacheStore(Path.Combine(Path.GetTempPath(), $"flowline-validation-cache-{Guid.NewGuid()}.json")),
             new ValidationProbes { GetEnvironmentByProfileAsync = (_, _, _) => Task.FromResult<EnvironmentInfo?>(null) });
         var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
 

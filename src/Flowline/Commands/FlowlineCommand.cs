@@ -1,15 +1,17 @@
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Console;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Core.Diagnostics;
+using Flowline.Core.Updates;
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Infrastructure;
 using Flowline.Logging;
 using Flowline.Services;
 using Flowline.Utils;
-using Flowline.Validation;
 using System.Diagnostics;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
@@ -51,7 +53,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     // the seam that class already exposes through its public constructor. Without this, setup tests can
     // only assert what the machine they run on happens to have installed — and a runner without pac
     // turns them into assertions about nothing.
-    protected virtual FlowlineValidator Validator => FlowlineValidator.Default;
+    protected virtual FlowlineValidator Validator => services.Validator;
 
     // One definition for both ToolVersions construction sites (project setup and standalone setup), which
     // otherwise carried the same expression forty lines apart.

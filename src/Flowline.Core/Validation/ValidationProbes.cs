@@ -2,7 +2,7 @@ using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Spectre.Console;
 
-namespace Flowline.Validation;
+namespace Flowline.Core.Validation;
 
 // KTD3: every probe that shells out (pac, git, dotnet) defaults to a stub that throws, so a caller that
 // forgot to bind it fails loudly instead of silently launching a process. The real bindings are supplied

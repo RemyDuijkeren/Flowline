@@ -1,5 +1,7 @@
 using Flowline.Core;
+using Flowline.Core.Environments;
 using Flowline.Core.Services;
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Services;
 using Microsoft.Extensions.Logging;
@@ -8,9 +10,9 @@ using Spectre.Console;
 namespace Flowline.Commands;
 
 /// <summary>
-/// The six infrastructure dependencies every <see cref="FlowlineCommand{TSettings}"/> needs — bundled so
+/// The infrastructure dependencies every <see cref="FlowlineCommand{TSettings}"/> needs — bundled so
 /// each command constructor declares only its own dependencies plus this one, instead of re-declaring and
-/// forwarding all six to the base.
+/// forwarding all of them to the base.
 /// </summary>
 public sealed class CommandServices(
     IAnsiConsole console,
@@ -18,7 +20,8 @@ public sealed class CommandServices(
     ProfileResolutionService profileResolutionService,
     ILoggerFactory loggerFactory,
     SubprocessCapture capture,
-    NuGetVersionClient nuGetVersionClient)
+    NuGetVersionClient nuGetVersionClient,
+    FlowlineValidator validator)
 {
     public IAnsiConsole Console { get; } = console;
     public FlowlineRuntimeOptions RuntimeOptions { get; } = runtimeOptions;
@@ -26,4 +29,5 @@ public sealed class CommandServices(
     public ILoggerFactory LoggerFactory { get; } = loggerFactory;
     public SubprocessCapture Capture { get; } = capture;
     public NuGetVersionClient NuGetVersionClient { get; } = nuGetVersionClient;
+    public FlowlineValidator Validator { get; } = validator;
 }

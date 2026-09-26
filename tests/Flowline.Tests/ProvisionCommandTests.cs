@@ -2,6 +2,7 @@ using Flowline.Core.Console;
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Core.Models;
 using Flowline.Infrastructure;
 using Spectre.Console.Cli;
 using Spectre.Console.Testing;

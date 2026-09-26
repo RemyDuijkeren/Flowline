@@ -2,8 +2,8 @@ using System.Runtime.CompilerServices;
 using DLaB.EarlyBoundGeneratorV2;
 using DLaB.Log;
 using DLaB.EarlyBoundGeneratorV2.Settings;
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Console;
 using Spectre.Console;
 

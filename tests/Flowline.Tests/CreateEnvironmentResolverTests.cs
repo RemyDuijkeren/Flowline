@@ -1,4 +1,5 @@
 using Flowline.Core;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
 using Flowline.Diagnostics;
@@ -21,7 +22,7 @@ public class CreateEnvironmentResolverTests
         if (interactive) console.Interactive();
         var connector = new DataverseConnector(console, new HttpClient());
         profileResolutionService ??= new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions());
-        return new CreateEnvironmentResolver(console, profileResolutionService);
+        return new CreateEnvironmentResolver(console, profileResolutionService, TestValidator.Create());
     }
 
     static CreateEnvironmentResolver MakeResolverForUrl(string type, out ProfileResolutionService profiles)
@@ -38,7 +39,7 @@ public class CreateEnvironmentResolverTests
             // on a dev machine, absent on a CI runner.
             GetPacProfilesOverride = () => [profile]
         };
-        return new CreateEnvironmentResolver(console, profiles)
+        return new CreateEnvironmentResolver(console, profiles, TestValidator.Create())
         {
             GetEnvironmentInfoByUrlOverride = (_, _, _, _) => Task.FromResult<EnvironmentInfo?>(
                 new EnvironmentInfo { DisplayName = $"Contoso {type}", EnvironmentUrl = DevUrl, Type = type })
@@ -128,7 +129,7 @@ public class CreateEnvironmentResolverTests
         {
             FindBestProfileOverride = _ => new ProfileNotFound(DevUrl)
         };
-        var resolver = new CreateEnvironmentResolver(console, profileResolutionService);
+        var resolver = new CreateEnvironmentResolver(console, profileResolutionService, TestValidator.Create());
 
         var act = () => resolver.ResolveCreateTargetAsync(DevUrl, new FlowlineRuntimeOptions(), CancellationToken.None);
 

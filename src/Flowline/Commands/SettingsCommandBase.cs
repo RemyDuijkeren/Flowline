@@ -1,13 +1,14 @@
-using Flowline.Config;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Configure;
 using Flowline.Core.Console;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Core.Services;
+using Flowline.Core.Validation;
 using Flowline.Diagnostics;
 using Flowline.Infrastructure;
 using Flowline.Services;
-using Flowline.Validation;
 using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Spectre.Console;
@@ -92,7 +93,7 @@ public abstract class SettingsCommandBase<TSettings>(
         var profile = await ProfileResolutionService.ResolveAsync(target, ct);
         var env = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{Markup.Escape(target)}[/]...",
-            _ => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(target, profile, RuntimeOptions, settings.NoCache, ct));
+            _ => Validator.GetEnvironmentInfoByUrlAsync(target, profile, RuntimeOptions, settings.NoCache, ct));
 
         if (env is null)
             throw new FlowlineException(ExitCode.ConnectionFailed,
