@@ -255,8 +255,8 @@ public class FormEventServiceTests : IDisposable
     // registration pass' write is issued, for the exact scenario the bug is about — a stale handler safe to
     // remove now, and a brand-new handler whose library isn't registered on the form until the registration
     // pass runs. No true PushCommand-level integration harness exists (PushCommandTests.cs only covers
-    // static helpers — ExecuteFlowlineAsync depends on the static FlowlineValidator.Default and can't be
-    // exercised with mocks without deeper surgery), so this asserts ordering directly against the shared
+    // static helpers — ExecuteFlowlineAsync runs the full command pipeline and can't be exercised with
+    // mocks without deeper surgery), so this asserts ordering directly against the shared
     // IOrganizationServiceAsync2 mock's call sequence, mirroring exactly how PushCommand.cs sequences the
     // two calls (await CleanupOrphanedAsync(...) then await RegisterAsync(...)).
     [Fact]

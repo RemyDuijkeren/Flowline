@@ -224,18 +224,12 @@ public class ProfileResolutionService(
         if (!string.IsNullOrWhiteSpace(profile.Name))
             return ("--name", profile.Name);
 
-        var index = -1;
-        for (var i = 0; i < allProfiles.Count; i++)
-        {
-            if (allProfiles[i] != profile) continue;
-            index = i;
-            break;
-        }
+        var index = ProfileIndex(profile, allProfiles);
         if (index < 0)
             throw new FlowlineException(ExitCode.NotAuthenticated,
                 "Could not determine profile index for 'pac auth select' — profile not found in loaded auth profiles.");
 
-        return ("--index", (index + 1).ToString());
+        return ("--index", index.ToString());
     }
 
     // A full profile table was tried and dropped here (buried the one useful comparison among
@@ -294,7 +288,7 @@ public class ProfileResolutionService(
         profile.Resource?.TrimEnd('/').Equals(environmentUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true;
 
     // 1-based position in the loaded profile list — matches `pac auth list` numbering and the
-    // --index arg from BuildAuthSelectArgs. Record value-equality, same as BuildAuthSelectArgs. -1 = not found.
+    // --index arg BuildAuthSelectArgs builds from it. Record value-equality. -1 = not found.
     static int ProfileIndex(PacProfile profile, IReadOnlyList<PacProfile> allProfiles)
     {
         for (var i = 0; i < allProfiles.Count; i++)

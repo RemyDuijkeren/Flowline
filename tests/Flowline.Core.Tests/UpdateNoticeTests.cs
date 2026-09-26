@@ -11,8 +11,8 @@ using Xunit;
 namespace Flowline.Core.Tests;
 
 // Seam-level tests for UpdateNoticeChecker — the piece FlowlineCommand.CheckSetupAsync delegates to.
-// Tested in isolation rather than through a full command: FlowlineValidator.Default persists to the
-// user's real cache file on disk, and CheckSetupAsync's other probes (git/dotnet/pac) shell out for real.
+// Tested in isolation rather than through a full command: CheckSetupAsync's other probes (git/dotnet/pac)
+// shell out for real.
 public class UpdateNoticeTests
 {
     // Local fake — Flowline.Tests has no reference to Flowline.Core.Tests, where the shared
