@@ -1,7 +1,7 @@
-using Flowline.Core.Dataverse;
+﻿using Flowline.Core.Dataverse;
 using Flowline.Core.Solutions;
 using Flowline.Presentation;
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using Flowline.Core.Environments;
 using Flowline.Core;
 using Flowline.Core.Configure;

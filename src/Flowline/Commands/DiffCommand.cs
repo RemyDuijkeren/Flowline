@@ -1,6 +1,6 @@
-using Flowline.Core.Solutions;
+﻿using Flowline.Core.Solutions;
 using Flowline.Settings;
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Core;

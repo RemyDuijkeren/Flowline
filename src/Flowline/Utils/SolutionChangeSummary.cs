@@ -1,5 +1,5 @@
-using Flowline.Core.Solutions;
-﻿using System.Text.RegularExpressions;
+﻿using Flowline.Core.Solutions;
+using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using CliWrap;

@@ -1,5 +1,5 @@
-using Flowline.Core.MsBuild;
-﻿using System.Text.Json;
+﻿using Flowline.Core.MsBuild;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Flowline.Core.Configure;

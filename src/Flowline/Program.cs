@@ -1,8 +1,8 @@
-using Flowline.Core.Dataverse;
+﻿using Flowline.Core.Dataverse;
 using Flowline.Core.Solutions;
 using Flowline.Core.Updates;
 using Flowline.Presentation;
-﻿using Flowline;
+using Flowline;
 using Flowline.Core.Validation;
 using Flowline.Core.Environments;
 using Flowline.Commands;
