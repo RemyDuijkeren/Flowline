@@ -39,9 +39,8 @@ public class FlowlineCommandStandaloneTests
         public bool RequiresFlowlineProjectValue { get; set; } = true;
         public string[] ForceSpecifiers { get; set; } = [];
 
-        // Isolates RootFolder resolution (and force validation) from the real git/dotnet/pac probes —
-        // scenarios that only care about which branch RootFolder takes must not also depend on the
-        // ambient test-run working directory happening to satisfy those probes.
+        // Isolates RootFolder resolution (and force validation) from the setup check — scenarios that
+        // only care about which branch RootFolder takes must not also run it.
         public bool SkipSetup { get; set; }
 
         protected override bool IsStandalone(FlowlineSettings settings) => Standalone;
@@ -72,14 +71,24 @@ public class FlowlineCommandStandaloneTests
         public void RunApplyStandaloneToolVersions(ToolCheckResult pac) => ApplyStandaloneToolVersions(pac);
     }
 
-    static TestCommand MakeCommand()
+    // Fixed versions for every tool probe, each call recorded, so setup assertions don't depend on what
+    // the test machine has installed.
+    static ValidationProbes StubProbes(List<string> probed) => new()
+    {
+        CheckPacAsync = (_, _) => { probed.Add("pac"); return Task.FromResult(("2.12.2", "Dotnet Tool (.NET)")); },
+        CheckDotNetAsync = (_, _) => { probed.Add("dotnet"); return Task.FromResult("10.0.401"); },
+        CheckGitAsync = (_, _) => { probed.Add("git"); return Task.FromResult("2.55.0"); },
+        CheckGitRepoAsync = (_, _, _) => { probed.Add("git-repo"); return Task.CompletedTask; },
+    };
+
+    static TestCommand MakeCommand(ValidationProbes? probes = null)
     {
         var console = new TestConsole();
         console.Profile.Capabilities.Interactive = false;
         var connector = new DataverseConnector(console, new HttpClient());
         var profileResolutionService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions());
         return new TestCommand(new CommandServices(console, new FlowlineRuntimeOptions(), profileResolutionService,
-            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()), TestValidator.WithRealProbes(console)));
+            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()), TestValidator.Create(probes ?? StubProbes([]))));
     }
 
     static CommandContext MakeContext(string name = "test-command") =>
@@ -185,35 +194,20 @@ public class FlowlineCommandStandaloneTests
     [Fact]
     public async Task CheckSetupAsync_Standalone_DoesNotRequireAGitRepository()
     {
-        // The real ambient working directory (the test project's build output folder) is not itself a
-        // git repo — confirms the assumption the assertion below relies on.
-        Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), ".git")).Should().BeFalse();
-
-        var command = MakeCommand();
+        var probed = new List<string>();
+        var command = MakeCommand(StubProbes(probed));
         command.Standalone = true;
-        // NoCache no longer lives on FlowlineSettings (it moved to DataverseSettings in U1) — this
-        // TestCommand is deliberately typed FlowlineSettings, so it always resolves noCache=false.
         var settings = new FlowlineSettings();
 
-        // The standalone branch still shells out to `pac` (EnsurePacCliAsync) — a runner with no PAC
-        // CLI installed (CI's ubuntu-latest has none) throws for that unrelated reason. What this test
-        // asserts is narrower: whichever way it fails, it must never be the git-repo message, because
-        // that message can only come from EnsureGitRepoAsync, which standalone must never call.
-        try
-        {
-            await command.RunCheckSetupAsync(settings, CancellationToken.None);
-        }
-        catch (FlowlineException ex)
-        {
-            ex.Message.Should().NotStartWith("No Git repo found");
-            return; // No pac on this runner — the git-repo assertion above is all this case can prove.
-        }
+        await command.RunCheckSetupAsync(settings, CancellationToken.None);
+
+        probed.Should().Equal("pac");
 
         // Telemetry: standalone fills ToolVersions from the one tool it probes, so InvocationLogger
         // clears its null guard. Dotnet and git stay null because standalone never checks them —
         // "not checked", not a placeholder that would read as a real version downstream.
         command.ToolVersionsValue.Should().NotBeNull();
-        command.ToolVersionsValue!.PacVersion.Should().NotBeNullOrWhiteSpace();
+        command.ToolVersionsValue!.PacVersion.Should().Be("2.12.2");
         command.ToolVersionsValue.FlowlineVersion.Should().NotBeNullOrWhiteSpace();
         command.ToolVersionsValue.DotNetVersion.Should().BeNull();
         command.ToolVersionsValue.GitVersion.Should().BeNull();
@@ -248,29 +242,16 @@ public class FlowlineCommandStandaloneTests
     [Fact]
     public async Task CheckSetupAsync_ProjectMode_ProbesGitAndDotnet_UnlikeStandalone()
     {
-        var command = MakeCommand();
-        // Standalone left false (default) — project mode, the unchanged base branch. NoCache no longer
-        // lives on FlowlineSettings (moved to DataverseSettings in U1); this test double stays typed
-        // FlowlineSettings, so noCache always resolves false here.
+        var probed = new List<string>();
+        var command = MakeCommand(StubProbes(probed));
         var settings = new FlowlineSettings();
 
-        try
-        {
-            await command.RunCheckSetupAsync(settings, CancellationToken.None);
-        }
-        catch (FlowlineException)
-        {
-            // A runner missing one of the four tools (CI's ubuntu-latest has no PAC CLI) fails here for
-            // that unrelated reason. Nothing left to assert then — ToolVersions is only assigned once all
-            // four probes complete.
-            return;
-        }
+        await command.RunCheckSetupAsync(settings, CancellationToken.None);
 
-        // Project mode assigns ToolVersions only after git, git-repo, dotnet, and pac have all run, so
-        // non-null git and dotnet entries are what separate this branch from the standalone one asserted
-        // above — that branch probes pac alone and leaves both null.
+        probed.Should().Equal("git", "git-repo", "dotnet", "pac");
         command.ToolVersionsValue.Should().NotBeNull();
-        command.ToolVersionsValue!.GitVersion.Should().NotBeNullOrWhiteSpace();
-        command.ToolVersionsValue.DotNetVersion.Should().NotBeNullOrWhiteSpace();
+        command.ToolVersionsValue!.GitVersion.Should().Be("2.55.0");
+        command.ToolVersionsValue.DotNetVersion.Should().Be("10.0.401");
+        command.ToolVersionsValue.PacVersion.Should().Be("2.12.2");
     }
 }
