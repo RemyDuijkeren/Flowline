@@ -49,7 +49,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     // ── R9: what a missing name does ────────────────────────────────────────
 
     sealed class StateProbe(CommandServices services, DataverseConnector connector)
-        : SettingsStateCommand(services, connector)
+        : SettingsToggleCommand(services, connector)
     {
         public TestConsole Out => (TestConsole)Console;
 
@@ -397,7 +397,7 @@ public class SettingsCommandSurfaceTests : IDisposable
         var probe = MakeStateProbe(interactive: true);
         probe.Out.Input.PushKey(ConsoleKey.Escape);
 
-        var act = () => probe.AskAsync(Reading(enabled: true), new SettingsStateCommand.Settings());
+        var act = () => probe.AskAsync(Reading(enabled: true), new SettingsToggleCommand.Settings());
 
         await act.Should().ThrowAsync<PromptCancelledException>();
     }
@@ -523,7 +523,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     {
         var probe = MakeStateProbe(interactive: true);
         probe.Out.Input.PushKey(ConsoleKey.Enter);
-        var settings = new SettingsStateCommand.Settings();
+        var settings = new SettingsToggleCommand.Settings();
 
         var writes = await probe.AskAsync(Reading(enabled: true), settings);
 
@@ -538,7 +538,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     {
         var probe = MakeStateProbe(interactive: true);
         probe.Out.Input.PushKey(ConsoleKey.Enter);
-        var settings = new SettingsStateCommand.Settings();
+        var settings = new SettingsToggleCommand.Settings();
 
         await probe.AskAsync(Reading(enabled: false), settings);
 
@@ -553,7 +553,7 @@ public class SettingsCommandSurfaceTests : IDisposable
         probe.Out.Input.PushKey(ConsoleKey.DownArrow);
         probe.Out.Input.PushKey(ConsoleKey.DownArrow);
         probe.Out.Input.PushKey(ConsoleKey.Enter);
-        var settings = new SettingsStateCommand.Settings();
+        var settings = new SettingsToggleCommand.Settings();
 
         var writes = await probe.AskAsync(Reading(enabled: true), settings);
 

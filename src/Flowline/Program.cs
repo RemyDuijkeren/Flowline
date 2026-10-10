@@ -534,17 +534,17 @@ namespace Flowline
                 // process flows, actions and whatever category the platform ships next — without the
                 // command list growing with it. One class per flag set, so the parser still rejects
                 // --value on a flow and --on on a variable with no hand-written check (KTD4).
-                settings.AddCommand<SettingsStateCommand>("state")
+                settings.AddCommand<SettingsToggleCommand>("toggle")
                         .WithDescription("Turn a component on or off, or read its state. Covers cloud flows, classic workflows, business rules, business process flows, actions, plugin steps, main forms and public views.")
-                        .WithExample("settings", "state", "prod", "ApprovalFlow", "--off")
-                        .WithExample("settings", "state", "test", "--type", "flow")
-                        .WithExample("settings", "state", "prod", "contoso_AutoNumber", "--on");
+                        .WithExample("settings", "toggle", "prod", "ApprovalFlow", "--off")
+                        .WithExample("settings", "toggle", "test", "--type", "flow")
+                        .WithExample("settings", "toggle", "prod", "contoso_AutoNumber", "--on");
 
-                settings.AddCommand<SettingsValueCommand>("value")
+                settings.AddCommand<SettingsSetCommand>("set")
                         .WithDescription("Set an environment variable's value or bind a connection reference, or read either. Requires a non-empty value.")
-                        .WithExample("settings", "value", "prod", "contoso_ApiUrl", "--value", "https://api.contoso.com")
-                        .WithExample("settings", "value", "test", "--type", "connref")
-                        .WithExample("settings", "value", "test", "contoso_ApiUrl");
+                        .WithExample("settings", "set", "prod", "contoso_ApiUrl", "--value", "https://api.contoso.com")
+                        .WithExample("settings", "set", "test", "--type", "connref")
+                        .WithExample("settings", "set", "test", "contoso_ApiUrl");
             });
 
             // scaffold = write a project template locally; needs no Dataverse connection

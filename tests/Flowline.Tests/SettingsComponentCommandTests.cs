@@ -15,22 +15,22 @@ public class SettingsComponentCommandTests
     // silently address the wrong table.
 
     [Theory]
-    [InlineData(SettingsStateCommand.StateType.Flow, ConfigurableComponentKind.CloudFlow)]
-    [InlineData(SettingsStateCommand.StateType.Workflow, ConfigurableComponentKind.Workflow)]
-    [InlineData(SettingsStateCommand.StateType.Rule, ConfigurableComponentKind.BusinessRule)]
-    [InlineData(SettingsStateCommand.StateType.Bpf, ConfigurableComponentKind.BusinessProcessFlow)]
-    [InlineData(SettingsStateCommand.StateType.Action, ConfigurableComponentKind.Action)]
-    [InlineData(SettingsStateCommand.StateType.Plugin, ConfigurableComponentKind.PluginStep)]
-    [InlineData(SettingsStateCommand.StateType.Form, ConfigurableComponentKind.Form)]
-    [InlineData(SettingsStateCommand.StateType.View, ConfigurableComponentKind.View)]
-    public void StateTypes_MapToTheirKind(SettingsStateCommand.StateType type, ConfigurableComponentKind expected) =>
-        SettingsStateCommand.KindFor(type).Should().Be(expected);
+    [InlineData(SettingsToggleCommand.StateType.Flow, ConfigurableComponentKind.CloudFlow)]
+    [InlineData(SettingsToggleCommand.StateType.Workflow, ConfigurableComponentKind.Workflow)]
+    [InlineData(SettingsToggleCommand.StateType.Rule, ConfigurableComponentKind.BusinessRule)]
+    [InlineData(SettingsToggleCommand.StateType.Bpf, ConfigurableComponentKind.BusinessProcessFlow)]
+    [InlineData(SettingsToggleCommand.StateType.Action, ConfigurableComponentKind.Action)]
+    [InlineData(SettingsToggleCommand.StateType.Plugin, ConfigurableComponentKind.PluginStep)]
+    [InlineData(SettingsToggleCommand.StateType.Form, ConfigurableComponentKind.Form)]
+    [InlineData(SettingsToggleCommand.StateType.View, ConfigurableComponentKind.View)]
+    public void StateTypes_MapToTheirKind(SettingsToggleCommand.StateType type, ConfigurableComponentKind expected) =>
+        SettingsToggleCommand.KindFor(type).Should().Be(expected);
 
     [Theory]
-    [InlineData(SettingsValueCommand.ValueType.EnvVar, ConfigurableComponentKind.EnvironmentVariable)]
-    [InlineData(SettingsValueCommand.ValueType.ConnRef, ConfigurableComponentKind.ConnectionReference)]
-    public void ValueTypes_MapToTheirKind(SettingsValueCommand.ValueType type, ConfigurableComponentKind expected) =>
-        SettingsValueCommand.KindFor(type).Should().Be(expected);
+    [InlineData(SettingsSetCommand.ValueType.EnvVar, ConfigurableComponentKind.EnvironmentVariable)]
+    [InlineData(SettingsSetCommand.ValueType.ConnRef, ConfigurableComponentKind.ConnectionReference)]
+    public void ValueTypes_MapToTheirKind(SettingsSetCommand.ValueType type, ConfigurableComponentKind expected) =>
+        SettingsSetCommand.KindFor(type).Should().Be(expected);
 
     // Every value the parser accepts maps to its own kind, and between them the two commands cover every
     // class the inventory can hold. A type the parser accepts but the map does not would throw at runtime
@@ -38,8 +38,8 @@ public class SettingsComponentCommandTests
     [Fact]
     public void EveryTypeTheParserAccepts_MapsToADistinctKind()
     {
-        var kinds = Enum.GetValues<SettingsStateCommand.StateType>().Select(SettingsStateCommand.KindFor)
-            .Concat(Enum.GetValues<SettingsValueCommand.ValueType>().Select(SettingsValueCommand.KindFor))
+        var kinds = Enum.GetValues<SettingsToggleCommand.StateType>().Select(SettingsToggleCommand.KindFor)
+            .Concat(Enum.GetValues<SettingsSetCommand.ValueType>().Select(SettingsSetCommand.KindFor))
             .ToArray();
 
         kinds.Should().OnlyHaveUniqueItems();
@@ -64,7 +64,7 @@ public class SettingsComponentCommandTests
     [Fact]
     public void OnAndOffTogether_AreRejectedNamingBoth()
     {
-        var error = SettingsStateCommand.ValidateStateFlags(on: true, off: true);
+        var error = SettingsToggleCommand.ValidateStateFlags(on: true, off: true);
 
         error.Should().NotBeNull();
         error.Should().Contain("--on").And.Contain("--off");
@@ -75,7 +75,7 @@ public class SettingsComponentCommandTests
     [InlineData(false, true)]
     [InlineData(false, false)]
     public void AnyOtherCombination_IsAccepted(bool on, bool off) =>
-        SettingsStateCommand.ValidateStateFlags(on, off).Should().BeNull();
+        SettingsToggleCommand.ValidateStateFlags(on, off).Should().BeNull();
 
     // ── Exit codes ───────────────────────────────────────────────────────────
 

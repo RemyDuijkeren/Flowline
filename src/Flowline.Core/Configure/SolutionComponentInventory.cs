@@ -54,7 +54,7 @@ public enum ConfigurableComponentKind
 /// </remarks>
 public static class ConfigurableComponentKinds
 {
-    /// <summary>Classes with an on and an off, which <c>settings state</c> addresses.</summary>
+    /// <summary>Classes with an on and an off, which <c>settings toggle</c> addresses.</summary>
     public static readonly ConfigurableComponentKind[] WithState =
     [
         ConfigurableComponentKind.CloudFlow,
@@ -67,7 +67,7 @@ public static class ConfigurableComponentKinds
         ConfigurableComponentKind.View,
     ];
 
-    /// <summary>Classes with a value, which <c>settings value</c> addresses.</summary>
+    /// <summary>Classes with a value, which <c>settings set</c> addresses.</summary>
     public static readonly ConfigurableComponentKind[] WithValue =
     [
         ConfigurableComponentKind.EnvironmentVariable,

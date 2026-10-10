@@ -89,7 +89,7 @@ public static class SettingsSupport
     /// operation added there and forgotten here only means the hint stays quiet for that one, which is
     /// the failure direction that costs nothing.
     /// </remarks>
-    static readonly string[] s_operations = ["push", "pull", "state", "value"];
+    static readonly string[] s_operations = ["push", "pull", "toggle", "set"];
 
     /// <summary>
     /// The operation names that used to exist, and what each one is now (KTD25).
@@ -101,12 +101,13 @@ public static class SettingsSupport
     /// </remarks>
     static readonly Dictionary<string, (string Operation, string Type)> s_retired = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["flow"] = ("state", "flow"),
-        ["workflow"] = ("state", "workflow"),
-        ["plugin"] = ("state", "plugin"),
-        ["envvar"] = ("value", "envvar"),
-        ["connref"] = ("value", "connref"),
+        ["flow"] = ("toggle", "flow"),
+        ["workflow"] = ("toggle", "workflow"),
+        ["plugin"] = ("toggle", "plugin"),
+        ["envvar"] = ("set", "envvar"),
+        ["connref"] = ("set", "connref"),
     };
+
 
     /// <summary>
     /// Explains a <c>settings</c> invocation that named the environment where the operation belongs
@@ -193,8 +194,8 @@ public static class SettingsSupport
 
         var valid = args[1].ToLowerInvariant() switch
         {
-            "state" => Enum.GetNames<SettingsStateCommand.StateType>(),
-            "value" => Enum.GetNames<SettingsValueCommand.ValueType>(),
+            "toggle" => Enum.GetNames<SettingsToggleCommand.StateType>(),
+            "set" => Enum.GetNames<SettingsSetCommand.ValueType>(),
             _ => null,
         };
 

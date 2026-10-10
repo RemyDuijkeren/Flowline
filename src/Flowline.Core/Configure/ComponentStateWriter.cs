@@ -137,7 +137,7 @@ public static class ComponentStateWriter
         //
         // The three added last are the reason this is a list rather than a pair. Leaving them out of it did
         // not fail loudly: the default arm returns null, which the caller reports as skipped, so
-        // `settings state --type rule <name> --off` said it had refused the write rather than that it could
+        // `settings toggle --type rule <name> --off` said it had refused the write rather than that it could
         // not make one.
         ConfigurableComponentKind.CloudFlow
             or ConfigurableComponentKind.Workflow

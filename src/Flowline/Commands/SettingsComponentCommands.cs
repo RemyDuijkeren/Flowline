@@ -823,13 +823,13 @@ internal static class SettingsComponentNames
 }
 
 /// <summary>Turns anything with an on and an off on or off, or reads its state.</summary>
-public class SettingsStateCommand(
+public class SettingsToggleCommand(
     CommandServices services,
     DataverseConnector dataverseConnector)
-    : SettingsComponentCommandBase<SettingsStateCommand.Settings>(services, dataverseConnector)
+    : SettingsComponentCommandBase<SettingsToggleCommand.Settings>(services, dataverseConnector)
 {
     /// <summary>
-    /// The classes <c>settings state</c> can narrow to (KTD25).
+    /// The classes <c>settings toggle</c> can narrow to (KTD25).
     /// </summary>
     /// <remarks>
     /// An enum rather than a string, so the parser rejects an unknown type and the help lists the valid
@@ -930,12 +930,12 @@ public class SettingsStateCommand(
 }
 
 /// <summary>Sets an environment variable's value or binds a connection reference, or reads it.</summary>
-public class SettingsValueCommand(
+public class SettingsSetCommand(
     CommandServices services,
     DataverseConnector dataverseConnector)
-    : SettingsComponentCommandBase<SettingsValueCommand.Settings>(services, dataverseConnector)
+    : SettingsComponentCommandBase<SettingsSetCommand.Settings>(services, dataverseConnector)
 {
-    /// <inheritdoc cref="SettingsStateCommand.StateType"/>
+    /// <inheritdoc cref="SettingsToggleCommand.StateType"/>
     public enum ValueType { EnvVar, ConnRef }
 
     public sealed class Settings : SettingsComponentSettings

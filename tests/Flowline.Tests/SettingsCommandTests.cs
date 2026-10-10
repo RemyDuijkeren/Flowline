@@ -443,9 +443,9 @@ public class SettingsCommandTests : IDisposable
     [Fact]
     public void AnEnvironmentBeforeTheOperation_IsAnsweredWithTheLineToRun()
     {
-        var hint = SettingsSupport.BuildArgumentOrderHint(["settings", "dev", "state"]);
+        var hint = SettingsSupport.BuildArgumentOrderHint(["settings", "dev", "toggle"]);
 
-        hint.Should().Contain("flowline settings state dev");
+        hint.Should().Contain("flowline settings toggle dev");
     }
 
     // The suggestion has to be runnable, so the rest of the invocation comes with it and a component
@@ -454,17 +454,17 @@ public class SettingsCommandTests : IDisposable
     public void TheSuggestion_CarriesTheRestOfTheInvocation()
     {
         var hint = SettingsSupport.BuildArgumentOrderHint(
-            ["settings", "prod", "state", "Nightly reconciliation", "--off"]);
+            ["settings", "prod", "toggle", "Nightly reconciliation", "--off"]);
 
-        hint.Should().Contain("flowline settings state prod \"Nightly reconciliation\" --off");
+        hint.Should().Contain("flowline settings toggle prod \"Nightly reconciliation\" --off");
     }
 
     // A URL is as valid a target as a role keyword, and is the case a role-only check would miss.
     [Fact]
     public void AUrlBeforeTheOperation_IsRecognisedToo()
     {
-        SettingsSupport.BuildArgumentOrderHint(["settings", "https://contoso.crm4.dynamics.com", "value"])
-            .Should().Contain("flowline settings value https://contoso.crm4.dynamics.com");
+        SettingsSupport.BuildArgumentOrderHint(["settings", "https://contoso.crm4.dynamics.com", "set"])
+            .Should().Contain("flowline settings set https://contoso.crm4.dynamics.com");
     }
 
     // No operation anywhere: say where it belongs and what the operations are.
@@ -474,7 +474,7 @@ public class SettingsCommandTests : IDisposable
         var hint = SettingsSupport.BuildArgumentOrderHint(["settings", "dev"]);
 
         hint.Should().Contain("is an environment, not an operation");
-        hint.Should().Contain("push").And.Contain("state").And.Contain("value");
+        hint.Should().Contain("push").And.Contain("toggle").And.Contain("set");
     }
 
     // Wrong twice over: the environment first and a retired name second. The retired name is the more
@@ -485,7 +485,7 @@ public class SettingsCommandTests : IDisposable
         var hint = SettingsSupport.BuildArgumentOrderHint(
             ["settings", "prod", "flow", "Nightly reconciliation", "--off"]);
 
-        hint.Should().Contain("flowline settings state prod \"Nightly reconciliation\" --off --type flow");
+        hint.Should().Contain("flowline settings toggle prod \"Nightly reconciliation\" --off --type flow");
     }
 
     // A mistyped operation is not this mistake. Spectre's own "unknown command" serves that better than
@@ -502,8 +502,8 @@ public class SettingsCommandTests : IDisposable
     [Fact]
     public void AnOperationInTheRightPlace_GetsNoHint()
     {
-        SettingsSupport.BuildArgumentOrderHint(["settings", "state", "dev"]).Should().BeNull();
-        SettingsSupport.BuildArgumentOrderHint(["settings", "value", "dev"]).Should().BeNull();
+        SettingsSupport.BuildArgumentOrderHint(["settings", "toggle", "dev"]).Should().BeNull();
+        SettingsSupport.BuildArgumentOrderHint(["settings", "set", "dev"]).Should().BeNull();
         SettingsSupport.BuildArgumentOrderHint(["settings", "push", "prod"]).Should().BeNull();
     }
 
@@ -517,29 +517,29 @@ public class SettingsCommandTests : IDisposable
     // Every retired name the hint knows maps to an operation and a type the parser accepts, so the line
     // it suggests is one that runs.
     [Theory]
-    [InlineData("flow", "state", SettingsStateCommand.StateType.Flow)]
-    [InlineData("workflow", "state", SettingsStateCommand.StateType.Workflow)]
-    [InlineData("plugin", "state", SettingsStateCommand.StateType.Plugin)]
+    [InlineData("flow", "toggle", SettingsToggleCommand.StateType.Flow)]
+    [InlineData("workflow", "toggle", SettingsToggleCommand.StateType.Workflow)]
+    [InlineData("plugin", "toggle", SettingsToggleCommand.StateType.Plugin)]
     public void EveryRetiredStateName_SuggestsATypeTheParserAccepts(
-        string retired, string operation, SettingsStateCommand.StateType type)
+        string retired, string operation, SettingsToggleCommand.StateType type)
     {
         SettingsSupport.BuildArgumentOrderHint(["settings", retired, "dev"])
             .Should().Contain($"flowline settings {operation} dev --type {retired}");
 
-        var routes = () => SettingsStateCommand.KindFor(type);
+        var routes = () => SettingsToggleCommand.KindFor(type);
         routes.Should().NotThrow();
     }
 
     [Theory]
-    [InlineData("envvar", SettingsValueCommand.ValueType.EnvVar)]
-    [InlineData("connref", SettingsValueCommand.ValueType.ConnRef)]
+    [InlineData("envvar", SettingsSetCommand.ValueType.EnvVar)]
+    [InlineData("connref", SettingsSetCommand.ValueType.ConnRef)]
     public void EveryRetiredValueName_SuggestsATypeTheParserAccepts(
-        string retired, SettingsValueCommand.ValueType type)
+        string retired, SettingsSetCommand.ValueType type)
     {
         SettingsSupport.BuildArgumentOrderHint(["settings", retired, "dev"])
-            .Should().Contain($"flowline settings value dev --type {retired}");
+            .Should().Contain($"flowline settings set dev --type {retired}");
 
-        var routes = () => SettingsValueCommand.KindFor(type);
+        var routes = () => SettingsSetCommand.KindFor(type);
         routes.Should().NotThrow();
     }
 
@@ -548,8 +548,8 @@ public class SettingsCommandTests : IDisposable
     // The parser answers with "Failed to convert 'bogus' to Nullable`1", which leaks a CLR type name and
     // capitalises values the user types in lower case.
     [Theory]
-    [InlineData("state", "flow, workflow, rule, bpf, action, plugin")]
-    [InlineData("value", "envvar, connref")]
+    [InlineData("toggle", "flow, workflow, rule, bpf, action, plugin")]
+    [InlineData("set", "envvar, connref")]
     public void AnUnknownType_IsAnsweredWithTheValidOnes(string operation, string expected)
     {
         var hint = SettingsSupport.BuildTypeValueHint(["settings", operation, "dev", "--type", "bogus"]);
@@ -561,18 +561,18 @@ public class SettingsCommandTests : IDisposable
     [Fact]
     public void AnUnknownType_IsRecognisedInTheEqualsSpellingToo()
     {
-        SettingsSupport.BuildTypeValueHint(["settings", "state", "dev", "--type=bogus"])
+        SettingsSupport.BuildTypeValueHint(["settings", "toggle", "dev", "--type=bogus"])
             .Should().Contain("bogus");
     }
 
     // A type the parser does accept is not this mistake, whatever else went wrong, and neither is an
     // operation that has no --type at all.
     [Theory]
-    [InlineData("settings|state|dev|--type|flow")]
-    [InlineData("settings|state|dev|--type|PLUGIN")]
-    [InlineData("settings|value|dev|--type|connref")]
+    [InlineData("settings|toggle|dev|--type|flow")]
+    [InlineData("settings|toggle|dev|--type|PLUGIN")]
+    [InlineData("settings|set|dev|--type|connref")]
     [InlineData("settings|pull|dev|--type|flow")]
-    [InlineData("settings|state|dev")]
+    [InlineData("settings|toggle|dev")]
     public void AValidOrIrrelevantType_GetsNoHint(string invocation)
     {
         SettingsSupport.BuildTypeValueHint(invocation.Split('|')).Should().BeNull();
