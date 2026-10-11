@@ -136,20 +136,29 @@ public abstract class SettingsComponentCommandBase<TSettings>(
                 return (int)ExitCode.Success;
             }
 
+            var (shown, hidden) = SettingsComponentOutcomes.WithoutReleaseOnly(kinds, candidates);
+            var hiddenNote = hidden == 0 ? null
+                : $"Forms and views not shown ({hidden}). Pass --type form or --type view to list them.";
+
             // No name in an unattended run is an inventory question, not a malformed invocation: the
             // answer is the list, and a run that prints what was asked for succeeded.
             if (!IsInteractive())
             {
-                ListCandidates(kinds, candidates);
+                ListCandidates(kinds, shown);
+                if (hiddenNote is not null) Console.Info(hiddenNote);
                 return (int)ExitCode.Success;
             }
+
+            // Above the picker rather than below it: the note is what explains a search for a view
+            // that finds nothing.
+            if (hiddenNote is not null) Console.Info(hiddenNote);
 
             // The picked component itself, not just its name. Picking resolves it by definition, and
             // resolving it again by name can fail as ambiguous — two components sharing a name is
             // reachable both across classes ("Account - set name" is a business rule and a classic
             // workflow in a real solution) and within one, and either way it told someone who had just
             // pointed at one row to go and rename something in Dataverse.
-            var picked = await PickAsync(kinds, candidates, cancellationToken);
+            var picked = await PickAsync(kinds, shown, cancellationToken);
             name = picked.Name;
             resolved = picked;
         }
@@ -502,6 +511,30 @@ internal static class SettingsComponentOutcomes
         IsValueKind(outcome.Component.Kind)
             ? outcome.PriorValue is { Length: > 0 } value ? value : "unset"
             : outcome.WasSuspended ? "suspended" : outcome.PriorEnabled == true ? "on" : "off";
+
+    /// <summary>
+    /// Leaves forms and views out of a list <c>--type</c> did not narrow.
+    /// </summary>
+    /// <remarks>
+    /// They are switched at a release, not day to day, and in a real solution they outnumber the flows and
+    /// rules someone opened the list for. Left out rather than ordered last: a group is one contiguous
+    /// block, and a group mixing rules with views cannot sink its views below it. A name typed in full
+    /// still resolves them, since that path never builds this list. When nothing else is in the
+    /// solution, nothing is left out, so the list is never empty only because of this.
+    /// </remarks>
+    /// <returns>The components to list, and how many were left out.</returns>
+    public static (InventoryComponent[] Shown, int Hidden) WithoutReleaseOnly(
+        IReadOnlyCollection<ConfigurableComponentKind> kinds, IReadOnlyList<InventoryComponent> candidates)
+    {
+        if (kinds.Count == 1) return (candidates.ToArray(), 0);
+
+        var shown = candidates.Where(c => !IsReleaseOnly(c.Kind)).ToArray();
+
+        return shown.Length == 0 ? (candidates.ToArray(), 0) : (shown, candidates.Count - shown.Length);
+    }
+
+    static bool IsReleaseOnly(ConfigurableComponentKind kind) =>
+        kind is ConfigurableComponentKind.Form or ConfigurableComponentKind.View;
 
     /// <summary>
     /// The order a list of candidates is offered in: the ones worth acting on first (R9c).

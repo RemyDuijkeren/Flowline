@@ -178,6 +178,45 @@ public class SettingsComponentCommandTests
         bool suspended = false, string? value = null) =>
         new(kind, name, Guid.NewGuid(), enabled, value, Suspended: suspended);
 
+    // ── Forms and views left out of an unnarrowed list ───────────────────────
+
+    // Switched at a release, not day to day, and in a real solution they outnumber what is.
+    [Fact]
+    public void AnUnnarrowedList_LeavesOutFormsAndViews()
+    {
+        var (shown, hidden) = SettingsComponentOutcomes.WithoutReleaseOnly(ConfigurableComponentKinds.WithState,
+        [
+            Component(ConfigurableComponentKind.CloudFlow, "ApprovalFlow", enabled: true),
+            Component(ConfigurableComponentKind.Form, "account.Account", enabled: true),
+            Component(ConfigurableComponentKind.View, "account.Active Accounts", enabled: true),
+        ]);
+
+        shown.Select(c => c.Name).Should().Equal("ApprovalFlow");
+        hidden.Should().Be(2);
+    }
+
+    [Fact]
+    public void ANarrowedList_KeepsWhatTheTypeAskedFor()
+    {
+        var (shown, hidden) = SettingsComponentOutcomes.WithoutReleaseOnly([ConfigurableComponentKind.View],
+            [Component(ConfigurableComponentKind.View, "account.Active Accounts", enabled: true)]);
+
+        shown.Should().HaveCount(1);
+        hidden.Should().Be(0);
+    }
+
+    // Nothing but forms and views: leaving them out would answer "nothing here" about a solution that
+    // has components.
+    [Fact]
+    public void AListOfOnlyFormsAndViews_IsNotEmptied()
+    {
+        var (shown, hidden) = SettingsComponentOutcomes.WithoutReleaseOnly(ConfigurableComponentKinds.WithState,
+            [Component(ConfigurableComponentKind.Form, "account.Account", enabled: true)]);
+
+        shown.Should().HaveCount(1);
+        hidden.Should().Be(0);
+    }
+
     [Fact]
     public void APickerLabel_EndsWithTheAddressableName()
     {
