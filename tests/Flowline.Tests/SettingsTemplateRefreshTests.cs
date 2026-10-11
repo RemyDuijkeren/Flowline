@@ -53,7 +53,7 @@ public class SettingsTemplateReportTests
 }
 
 /// <summary>
-/// The shared template lands beside the .cdsproj, not under the unpacked source `sync`'s uncommitted-changes
+/// The shared template lands beside the .cdsproj, not under the unpacked source `pull`'s uncommitted-changes
 /// gate scans — proving the write can never trip that gate regardless of where it runs relative to it.
 /// </summary>
 public class SettingsTemplateLocationTests

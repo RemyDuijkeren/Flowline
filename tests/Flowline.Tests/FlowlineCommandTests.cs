@@ -182,7 +182,7 @@ public class FlowlineCommandTests
     }
 
     // ── GetAndCheckEnvironmentAsync (U3): the non-persisting sibling of GetAndCheckEnvironmentInfoAsync,
-    // used by push/sync/generate/init once EnvironmentTargetResolver has already resolved the URL. ──
+    // used by push/pull/generate/init once EnvironmentTargetResolver has already resolved the URL. ──
 
     const string EnvUrl = "https://contoso-dev.crm4.dynamics.com";
 
@@ -252,7 +252,7 @@ public class FlowlineCommandTests
     [Fact]
     public async Task GetAndCheckEnvironmentAsync_DevOnlyTrue_RoleNull_ProductionType_Throws()
     {
-        // Push/sync's "use this URL once" result also carries Role:null, but push/sync are DEV-only
+        // Push/pull's "use this URL once" result also carries Role:null, but push/pull are DEV-only
         // commands — devOnly:true must still refuse Production even without a role to check.
         var command = MakeCommandWithValidator(MakeValidator("Production"));
         var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };

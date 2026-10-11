@@ -5,7 +5,7 @@ using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
-// R10/AE11: proves the actual production configuration (StrictParsing, the pull/sync alias, root
+// R10/AE11: proves the actual production configuration (StrictParsing, root
 // examples) rather than a hand-written mirror that could drift from it — every app here is built
 // through CliConfiguration.Configure, the same method Program.cs calls.
 public class ProgramParsingTests
@@ -76,18 +76,16 @@ public class ProgramParsingTests
            .WithMessage("*Could not resolve type*ProvisionCommand*");
     }
 
-    // -- AE11: sync is a permanent alias of pull, and help renders the primary name --
+    // -- sync is no longer an alias of pull: the name is kept free for a later command --
 
     [Fact]
-    public void SyncHelp_RendersPullInTheHeaderAndUsageLine()
+    public void Sync_IsNotACommand()
     {
-        var app = BuildRealApp(out var console);
+        var app = BuildRealApp(out _);
 
-        app.Run(["sync", "--help"]);
+        var act = () => app.Run(["sync"]);
 
-        var output = console.Output;
-        output.Should().Contain("flowline pull [OPTIONS]");
-        output.Should().NotContain("flowline sync [OPTIONS]");
+        act.Should().Throw<CommandParseException>().WithMessage("*Unknown command 'sync'*");
     }
 
     [Fact]

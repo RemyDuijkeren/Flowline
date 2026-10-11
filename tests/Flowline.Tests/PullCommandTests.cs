@@ -28,7 +28,7 @@ public class PullCommandTests
     {
         PullCommand.Settings? captured = null;
         var app = new CommandApp();
-        app.Configure(c => c.AddCommand<CapturingPullSettingsCommand>("sync").WithAlias("pull"));
+        app.Configure(c => c.AddCommand<CapturingPullSettingsCommand>("pull"));
         CapturingPullSettingsCommand.OnExecute = s => captured = s;
 
         var exitCode = app.Run(["pull", "--env", "dev"]);
@@ -54,7 +54,7 @@ public class PullCommandTests
     {
         var settings = new PullCommand.Settings { Force = ["delete-orphans"] };
 
-        var act = () => FlowlineSettings.ValidateForce(settings.Force, PullCommand.ValidSpecifiers, "sync");
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, PullCommand.ValidSpecifiers, "pull");
 
         act.Should().Throw<FlowlineException>()
             .Where(e => e.ExitCode == ExitCode.ValidationFailed
@@ -66,7 +66,7 @@ public class PullCommandTests
     {
         var settings = new PullCommand.Settings { Force = ["dirty"] };
 
-        var act = () => FlowlineSettings.ValidateForce(settings.Force, PullCommand.ValidSpecifiers, "sync");
+        var act = () => FlowlineSettings.ValidateForce(settings.Force, PullCommand.ValidSpecifiers, "pull");
 
         act.Should().NotThrow();
     }

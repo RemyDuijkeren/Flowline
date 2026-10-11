@@ -3,7 +3,7 @@
 ## Goal
 
 Exercise the Flowline CLI against live Dataverse and real project folders, not the unit suite. Cover
-the `clone -> init -> push -> sync -> sln add -> deploy` matrix including real project-structure
+the `clone -> init -> push -> pull -> sln add -> deploy` matrix including real project-structure
 flexibility (moved, renamed, multi-project), and judge every command as both a human and an AI agent
 would consume it.
 
@@ -116,7 +116,7 @@ exists, so a new-publisher test must pick a *fresh* prefix or it silently exerci
   **not** poll for "log idle": the import and publish waits are silent for minutes and an idle-detector
   fires a false "done". A foreground timeout that kills the CLI mid-publish leaves the import committed
   but post-import cleanup unrun.
-- Long `clone` and `sync` exports also take minutes. Background them.
+- Long `clone` and `pull` exports also take minutes. Background them.
 - **Verify out-of-band with `pac env fetch`**, raw FetchXML against a target, bypassing Flowline
   entirely: `pac env fetch --environment <url> --xml "<fetch><entity name='customapi'><attribute
   name='uniquename'/></entity></fetch>"`. Use it to confirm a component really exists or is really
@@ -124,7 +124,7 @@ exists, so a new-publisher test must pick a *fresh* prefix or it silently exerci
   - Watch the `like` escape: `!` is **not** a FetchXML escape character. `value='av!_%'` matches
     nothing and reads as "none exist". Use `value='av_%'` or `[_]`. Be suspicious of any
     "No results returned." that confirms what you expected.
-- Commit between test phases so `sync`'s dirty-check behaves predictably.
+- Commit between test phases so `pull`'s dirty-check behaves predictably.
 
 ## Bug-fix policy
 
@@ -184,7 +184,7 @@ against an already-cloned, pushed or synced folder) where relevant.
   never derive one, never hang.
 - **Duplicate-name refusal** before any write.
 - **`✓ DEV set to <env>`** written to `.flowline` only after create, scaffold and build all succeed, and
-  the created solution recorded too, so a later push or sync can resolve it.
+  the created solution recorded too, so a later push or pull can resolve it.
 - **Post-create failure reporting**: if scaffold or build fails after the records exist in Dataverse,
   the created publisher and solution identifiers are reported for manual cleanup, not silently dropped.
 - Interactive pickers (environment, publisher, name).
@@ -213,9 +213,9 @@ against an already-cloned, pushed or synced folder) where relevant.
   orphan by definition, and `--force delete-orphans` would delete a live sibling. Deliberate, not a
   bug, but it makes standalone the cheapest way to manufacture an orphan on demand for testing.
 
-### `sync`
+### `pull`
 
-- Clean tree: full sync, diff and drift summary correct.
+- Clean tree: full pull, diff and drift summary correct.
 - Dirty tree: rejects naming `Solution/src/...`, message **plain text, not raw Spectre markup**.
 - `--bump patch|minor|major|none`, verify the version actually changes.
 - `--no-build`.
@@ -235,7 +235,7 @@ against an already-cloned, pushed or synced folder) where relevant.
 ### `deploy`
 
 - Invalid target name: clean validation error, not an opaque MSAL/AADSTS stack trace.
-- `dev` as a target: rejected ("use sync, not deploy"), **regardless of `--dry-run`**. Use
+- `dev` as a target: rejected ("use 'push' to push changes there, not 'deploy'"), **regardless of `--dry-run`**. Use
   `flowline drift dev` as the DEV-target preview instead.
 - Dirty git tree: rejects before contacting any environment. Scope of the dirty check is
   `Solution/src/` only, so dirtying `Plugins/` or `Backend/` does not trigger it.

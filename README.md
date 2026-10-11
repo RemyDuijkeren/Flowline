@@ -71,7 +71,7 @@ flowline clone ContosoSales --env https://contoso.crm4.dynamics.com
 
 # Daily dev loop
 flowline push          # push code assets to DEV
-flowline pull          # pull Dataverse changes back to source (alias: sync)
+flowline pull          # pull Dataverse changes back to source
 git commit -m "feat: add validation"
 
 # Promote
@@ -157,7 +157,7 @@ export function onChangeCreditlimit(executionContext) { ... }
 | [`clone [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#clone)               | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively |
 | [`init [name]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init)                     | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo; run with no name to be prompted |
 | [`push [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#push)                 | Build and sync code assets to DEV; or push standalone with `--plugin-file` / `--webresources` |
-| [`pull`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#pull)                            | Pull the current solution state from DEV into source control (alias: `sync`)                 |
+| [`pull`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#pull)                            | Pull the current solution state from DEV into source control                                |
 | [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#deploy)               | Pack from the repo and import into `test`, `uat`, `prod`, or a URL; or deploy a pre-built zip standalone with `--path`  |
 | [`provision [dev\|test\|uat]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#provision) | Provision a DEV, TEST or UAT environment by copying from production                          |
 | [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/10-Generate-Early-Bound-Types)         | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)          |

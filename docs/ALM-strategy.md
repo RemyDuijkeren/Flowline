@@ -656,7 +656,7 @@ stands in for a mechanism of its own rather than plugging into B, C, or D. Its c
 | `init` | §4 — create an empty unmanaged solution and publisher in a DEV environment, then scaffold the repo. Greenfield entry point. |
 | `clone` | §4 — initialize a project from an existing Dataverse solution: unpack solution XML, scaffold the Plugins and WebResources projects. |
 | `push` | §4 steps 3–5 — build and register the plugin assembly and web resources directly into DEV, reading `[Step]` attributes to create or update registrations. Skips pack and import. |
-| `sync` | §4 steps 7–8 and §5 point 2 — bump the version in DEV, then export and unpack to source-controlled XML. |
+| `pull` | §4 steps 7–8 and §5 point 2 — bump the version in DEV, then export and unpack to source-controlled XML. |
 | `deploy` | §4 steps 14–16 — pack from the repo and import into test, uat, prod, or a URL. |
 | `provision` | §2 — create a DEV, TEST, or UAT environment by copying from production. |
 | `drift` | §9 — compare committed source against a live environment and report components present there but not declared in source. Read-only; same comparison `deploy` runs, without the deletion. |
@@ -683,7 +683,7 @@ How the product answers §9's three costs, verified against the source:
   (`Utils/PacUtils.cs:257`), so results remain valid for Managed Environment enforcement — a
   constraint to preserve deliberately if rule-exclusion options are ever added. Sync-time checking
   is not offered; per §4 that is the right default, with an opt-in flag the reasonable extension.
-- **Versioning — bump point 2 (§5).** `sync` writes the new version to the DEV solution *before*
+- **Versioning — bump point 2 (§5).** `pull` writes the new version to the DEV solution *before*
   exporting, so the downloaded XML already carries it (`Commands/SyncCommand.cs:99`). `--bump`
   takes `patch` (default), `minor`, `major`, or `none`; `patch` increments the **build** segment and
   zeroes revision (`BumpVersion`, `Commands/SyncCommand.cs:188`), leaving `revision` unused and free

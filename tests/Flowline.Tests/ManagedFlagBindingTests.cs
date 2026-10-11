@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Flowline.Tests;
 
-// Regression coverage for the --managed FlagValue<bool> binding on clone/sync.
+// Regression coverage for the --managed FlagValue<bool> binding on clone/pull.
 // [CommandOption("--managed")] (no value placeholder, no [DefaultValue]) left
 // settings.IncludeManaged null when the flag was passed bare, causing an NRE at
 // `settings.IncludeManaged.IsSet` — see CloneCommand.FindUnmanagedSourceAsync.
@@ -129,7 +129,7 @@ public class ManagedFlagBindingTests
         Assert.EndsWith("(saved to .flowline)", description.Description);
     }
 
-    // R12: clone's --managed persists to .flowline too, same wording rule as sync's.
+    // R12: clone's --managed persists to .flowline too, same wording rule as pull's.
     [Fact]
     public void Clone_ManagedOption_DescriptionEndsWithSavedToFlowline()
     {

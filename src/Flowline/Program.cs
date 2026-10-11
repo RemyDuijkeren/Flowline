@@ -399,7 +399,7 @@ namespace Flowline
 
     // U11/R10/R21/R23/R24: command registration, root examples and strict parsing all live here —
     // ProgramParsingTests builds a CommandApp through this same method, so a test proving the parser's
-    // behavior (strict parsing, the pull/sync alias, root examples) proves the real production
+    // behavior (strict parsing, root examples) proves the real production
     // configuration rather than a hand-written mirror that can drift from it.
     internal static class CliConfiguration
     {
@@ -436,10 +436,9 @@ namespace Flowline
                 .WithExample("push", "ContosoCustomizations", "--scope", "webresources")
                 .WithExample("push", "ContosoCustomizations", "--plugin-file", "./bin/Release/Plugins.dll", "--webresources", "./dist");
 
-            // Pull changes to local repo (export solution and unpack). KD9: pull is the primary name, sync a permanent alias.
+            // Pull changes to local repo (export solution and unpack). No sync alias: the name is kept free for a later command.
             config.AddCommand<PullCommand>("pull")
-                  .WithDescription("Export the solution from DEV, bump the patch version, unpack it to source-controlled XML, and write CHANGES.md and the context docs. Run after testing in DEV, with a clean working tree. DEV only, via --env dev (default) or a DEV URL. Alias: sync")
-                  .WithAlias("sync")
+                  .WithDescription("Export the solution from DEV, bump the patch version, unpack it to source-controlled XML, and write CHANGES.md and the context docs. Run after testing in DEV, with a clean working tree. DEV only, via --env dev (default) or a DEV URL.")
                   .WithExample("pull")
                   .WithExample("pull", "--managed", "--bump", "minor")
                   .WithExample("pull", "--env", "https://contoso-dev.crm4.dynamics.com");

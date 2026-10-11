@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - **`settings state` is renamed `settings toggle`, and `settings value` is renamed `settings set`.** Arguments and flags are unchanged. No aliases.
+- **The `sync` alias for `pull` is removed.** Use `flowline pull`.
 
 ### Added
 

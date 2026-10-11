@@ -66,7 +66,7 @@ routine post-deploy step.
    to the user before anything mutating. It ends with `Air push complete`; nothing was written.
 3. `flowline push` → deterministic sync to DEV, including orphan cleanup. A second run says
    `Nothing to push — already up to date.`
-4. `flowline pull` (alias `flowline sync`) after any Maker Portal change; commit the result.
+4. `flowline pull` after any Maker Portal change; commit the result.
 5. Promote: `flowline deploy test` → `flowline deploy prod`, DTAP-gated. `flowline deploy <env> --dry-run`
    runs every pre-flight (DTAP gate, git-clean, drift, pack, solution checker, orphan report) plus a
    labeled backup, then stops before importing; it ends with `Dry run complete`.
