@@ -34,6 +34,14 @@ hung process, not an error. Same rule elsewhere:
 [ProfileResolutionService.cs:52](../../../src/Flowline/Services/ProfileResolutionService.cs#L52),
 [SecretResolver.cs:29](../../../src/Flowline/Services/SecretResolver.cs#L29).
 
+**Environment: positional when required, a flag when it has a default.** A command with no safe
+default environment takes it as the positional `<target>` (`deploy`, `drift`, `settings push`,
+`settings toggle`, `settings set`). A command that defaults to one takes `-e|--env` from
+`EnvironmentSettings` (`push`, `pull`, `generate` default to DEV). Never a required `--env`: a flag
+nobody may omit is a positional argument in disguise. Existing exceptions: `clone` takes `-e` but
+defaults only when one environment is configured, and `settings pull` takes an optional `[target]`
+that prompts at a terminal and fails in a script.
+
 ## 2. Confirmations go through `ConfirmGated`
 
 Never hand-roll `console.Confirm(...)` for a hazard.
@@ -187,6 +195,7 @@ When changing a command, walk this:
 
 - [ ] Every prompt reachable only behind `IsInteractive()`, with a flag that bypasses it
 - [ ] Non-interactive + missing input → immediate error naming the flag, never a hang
+- [ ] Environment is positional `<target>` when required, `-e|--env` when it has a default
 - [ ] Hazard confirmations via `ConfirmGated`/`ConfirmGatedAsync`, with an actionable `nonInteractiveMessage`
 - [ ] New `--force` specifier registered in the command's valid list
 - [ ] Writes have `--dry-run`, and dry-run precedence is respected
