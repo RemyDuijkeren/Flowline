@@ -70,7 +70,7 @@ purpose: `-f|--force <SPECIFIER>`, repeatable, `all` for everything the command 
 - New hazard → new specifier, added to that command's `ValidForceSpecifiers` override
   ([PushCommand.cs:79-81](../../../src/Flowline/Commands/PushCommand.cs#L79-L81),
   [DeployCommand.cs:95-96](../../../src/Flowline/Commands/DeployCommand.cs#L95-L96),
-  [SyncCommand.cs:38-39](../../../src/Flowline/Commands/SyncCommand.cs#L38-L39),
+  [PullCommand.cs:42-43](../../../src/Flowline/Commands/PullCommand.cs#L42-L43),
   [ProvisionCommand.cs:43-44](../../../src/Flowline/Commands/ProvisionCommand.cs#L43-L44), whose
   `overwrite` specifier gates an existing target instead of the removed `--allow-overwrite` flag;
   config-only commands reuse `FlowlineSettings.ConfigOnlyValidSpecifiers`). The base command validates it for you
@@ -164,9 +164,9 @@ Agents retry. Reconciling commands (`push`, `clone`, `provision`) must converge:
 makes Dataverse match source again and reports the unchanged parts with `console.Skip(...)` —
 never a duplicate step registration, duplicate web resource, or second assembly.
 
-Deliberate exceptions exist and stay that way: `sync` bumps the build version every run
-([Program.cs:176](../../../src/Flowline/Program.cs#L176)) — that's the point of the command, not
-a defect. For a state-advancing command, make the advance visible in output so a retrying agent
+Deliberate exceptions exist and stay that way: `pull` bumps the patch version every run
+([PullCommand.cs:30-33](../../../src/Flowline/Commands/PullCommand.cs#L30-L33); `--bump none` skips it) — that's the
+point of the command, not a defect. For a state-advancing command, make the advance visible in output so a retrying agent
 can tell it moved, and don't gate it behind an "already done" check.
 
 When a step genuinely can't be repeated, the error names the recovery command.
