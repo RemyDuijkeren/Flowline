@@ -91,4 +91,4 @@ is actually in the solution: `generate` only emits what the solution contains, p
 ## Full reference
 
 Generator auth details, CI setup, and the separate-models-project layout:
-**[10 — Generate Early Bound Types](https://github.com/RemyDuijkeren/Flowline/wiki/10-Generate-Early-Bound-Types)**.
+**[11 — Generate Early Bound Types](https://github.com/RemyDuijkeren/Flowline/wiki/11-Generate-Early-Bound-Types)**.

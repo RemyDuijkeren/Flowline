@@ -497,7 +497,7 @@ flowchart TD
 - `README.md` (modify)
 - `CHANGELOG.md` (modify)
 - `docs/folder-structure.md` (modify — drop the "planned" marker on the settings file)
-- `../Flowline.wiki/04-Command-Reference.md`, `../Flowline.wiki/11-AI-Agents.md` (modify)
+- `../Flowline.wiki/04-Command-Reference.md`, `../Flowline.wiki/12-AI-Agents.md` (modify)
 - `plugin/skills/flowline/SKILL.md` (modify)
 
 **Approach:**

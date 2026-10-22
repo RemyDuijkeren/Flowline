@@ -486,18 +486,18 @@ U1, U7, U8, U9 and U10 have no upstream dependency and can run as one parallel l
 - **Goal:** The published wiki matches the shipped surface, with the export page renamed.
 - **Requirements:** R31 (wiki half), R20. Instantiates KD9, KD10.
 - **Dependencies:** U12.
-- **Files:** in `../Flowline.wiki/`: `07-Sync.md` renamed to `07-Pull.md`, `Home.md`, `01-Getting-Started.md`, `02-Project-Configuration.md`, `03-Authentication.md`, `04-Command-Reference.md`, `05-Push-Plugins-and-Custom-APIs.md`, `06-Push-WebResources.md`, `08-Deploy.md`, `09-WebResources-Project.md`, `10-Generate-Early-Bound-Types.md`, `11-AI-Agents.md`, `12-Philosophy.md`, `14-Migration-from-spkl.md`, `15-Migration-from-Daxif.md`, `16-Migration-from-ALM-Accelerator.md`, `17-Migration-from-PACX.md`, `AGENTS.md` (rename carve-out).
+- **Files:** in `../Flowline.wiki/`: `07-Sync.md` renamed to `07-Pull.md`, `Home.md`, `01-Getting-Started.md`, `02-Project-Configuration.md`, `03-Authentication.md`, `04-Command-Reference.md`, `05-Push-Plugins-and-Custom-APIs.md`, `06-Push-WebResources.md`, `08-Deploy.md`, `10-WebResources-Project.md`, `11-Generate-Early-Bound-Types.md`, `12-AI-Agents.md`, `14-Philosophy.md`, `16-Migration-from-spkl.md`, `17-Migration-from-Daxif.md`, `18-Migration-from-ALM-Accelerator.md`, `19-Migration-from-PACX.md`, `AGENTS.md` (rename carve-out).
 - **Approach:**
   1. Read `../Flowline.wiki/AGENTS.md` first; it governs audience and page shape.
   2. Rename the page with `git mv`, retitle it "Pull", update the two inbound links (`Home.md:29`, `04-Command-Reference.md:140`) and any prose naming the page.
   3. `04-Command-Reference.md`: global flags table per R30; `pull` section; `--env` on push, pull, generate, init with the DEV-only rule; clone section per R9; `--plugin-file`; provision per R16 and R17; drift exit codes per R18; diff positionals; scaffold plugins; deploy target list; the publish sentence per R31.
   4. `03-Authentication.md`: "How Flowline selects a profile" rewritten to the second diagram's order.
-  5. `11-AI-Agents.md`: exit rows 14 (reserved), 17 (adds declined confirmation and provision overwrite), 22 (adds drift), 130 (Ctrl+C only); command table and rules with `pull` and `--env`; force vocabulary adds `overwrite`.
+  5. `12-AI-Agents.md`: exit rows 14 (reserved), 17 (adds declined confirmation and provision overwrite), 22 (adds drift), 130 (Ctrl+C only); command table and rules with `pull` and `--env`; force vocabulary adds `overwrite`.
   6. `08-Deploy.md`: `pac solution pack` line in Artifacts; DevBlock message quoting `pull`. `07-Pull.md`: the no-bump pull as dry run.
   7. Every other page: `--dev` to `--env`, `sync` to `pull` where it names the command.
   8. `AGENTS.md` Pages section: add that `07-Sync` was renamed on this date as a deliberate exception.
 - **Test expectation:** none, documentation. Replacement verification: grep the wiki for `[[07-Sync`, `--dev`, `--pluginFile`, `--allow-overwrite`, `--from`, `--prod`; every `[[NN-` link resolves to an existing file.
-- **Verification:** Grep clean; `/verify-doc-claims` on `04-Command-Reference.md` and `11-AI-Agents.md` against the built CLI.
+- **Verification:** Grep clean; `/verify-doc-claims` on `04-Command-Reference.md` and `12-AI-Agents.md` against the built CLI.
 
 ---
 
@@ -511,7 +511,7 @@ U1, U7, U8, U9 and U10 have no upstream dependency and can run as one parallel l
 | Removed-flag grep | `--dev`, `--pluginFile`, `--allow-overwrite`, `--from`, `--to`, `--prod`, `--uat`, `--test` absent from `src/`, `plugin/`, `README.md`, wiki; CHANGELOG history exempt | U11, U12, U13 |
 | Command-name grep | `flowline sync` absent as a primary reference outside CHANGELOG history | U11, U12, U13 |
 | Wiki links | every `[[NN-...]]` target exists; `[[07-Sync` absent | U13 |
-| Doc claims | `/verify-doc-claims` on `04-Command-Reference.md`, `11-AI-Agents.md`, `plugin/skills/flowline/SKILL.md`, `.claude/skills/cli-for-agents/SKILL.md` | U12, U13 |
+| Doc claims | `/verify-doc-claims` on `04-Command-Reference.md`, `12-AI-Agents.md`, `plugin/skills/flowline/SKILL.md`, `.claude/skills/cli-for-agents/SKILL.md` | U12, U13 |
 | CI | `.github/workflows/ci.yml` green on the branch | final |
 
 Run the CLI from a Release build when checking messages and exit codes; a Debug build propagates exceptions and hides the rendered error.

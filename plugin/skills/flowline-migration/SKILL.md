@@ -5,7 +5,7 @@ description: Migrates a Dataverse project off spkl, Daxif, PACX, or ALM Accelera
 
 # Flowline migration — spkl / Daxif / PACX / ALM Accelerator
 
-<!-- Paired with Flowline.wiki/14-Migration-from-spkl.md through 17-Migration-from-PACX.md (KTD7) — an edit to either side should prompt a check of the other. -->
+<!-- Paired with Flowline.wiki/16-Migration-from-spkl.md through 19-Migration-from-PACX.md (KTD7) — an edit to either side should prompt a check of the other. -->
 
 ## Detect
 
@@ -26,7 +26,7 @@ On a match, proactively offer: *"This looks like a `<tool>` project — want me 
 
 Every guide follows the same two-phase strategy: **Phase 1 (standalone)** replaces the old tool for plugin push, web resource push, and type generation with no project restructuring — run `flowline push <Solution> --plugin-file <dll|nupkg> --env <url>` / `--webresources <folder>` from a folder with no `.flowline`, always with `--dry-run` first. **Phase 2 (project)** runs `flowline clone` (the solution already exists in Dataverse, which is the normal migration case) or `flowline init` (only if it doesn't) to adopt the `.flowline` config and folder convention, then replaces the old tool's registration syntax with Flowline attributes. Don't skip straight to Phase 2 — confirm Phase 1 is stable first, per each guide's own recommendation.
 
-### From spkl (`Flowline.wiki/14-Migration-from-spkl.md`)
+### From spkl (`Flowline.wiki/16-Migration-from-spkl.md`)
 
 - Replace `[CrmPluginRegistration(...)]` with `[Step]`/`[Filter]`/`[PreImage]`/`[PostImage]`. Stage and message come from the **class name** (e.g. `AccountPreUpdatePlugin`), not attribute arguments; use `[Handles]` if the class can't be renamed.
 - `[CrmPluginRegistration("dev1_MyApi")]` (links an existing Custom API) becomes `[CustomApi]` (Flowline creates and manages the record). Pin `UniqueName` if the live name doesn't match Flowline's class-name convention.
@@ -34,28 +34,28 @@ Every guide follows the same two-phase strategy: **Phase 1 (standalone)** replac
 - `spkl earlybound` → `flowline generate`; `spkl unpack` → `flowline clone`/`pull`; `spkl import` → `flowline deploy`.
 - No equivalent for `spkl instrument` (reverse-engineering existing registrations) or `SecureConfiguration` — see the wiki guide's "Known gaps" for workarounds.
 
-### From Daxif (`Flowline.wiki/15-Migration-from-Daxif.md`)
+### From Daxif (`Flowline.wiki/17-Migration-from-Daxif.md`)
 
 - Replace the fluent `RegisterPluginStep<T>(...)` calls in the `Plugin` base class constructor with `[Step]`/`[Filter]`/`[PreImage]`/`[PostImage]` attributes on a plain `IPlugin` class — Flowline detects any `IPlugin` implementor, including through a custom base class.
 - `CustomAPI` base class → `[CustomApi]` + `[Input]`/`[Output]`.
 - Web resource naming convention (`{prefix}_{solution}/{path}`) is the same, but Daxif's folder already contains the full prefixed path while Flowline derives it from `WebResources/dist/`. Watch the case-sensitivity note in the wiki guide — Flowline lowercases the solution name.
 - `.fsx` scripts (`PluginSyncDev.fsx`, `SolutionExportDev.fsx`, etc.) map to `flowline push`/`pull`/`deploy`/`generate` calls — see the wiki guide's script-mapping table.
-- No equivalent for Daxif's data migration module, per-step enable/disable, or TypeScript generation via XrmDefinitelyTyped.
+- No equivalent for Daxif's data migration module or TypeScript generation via XrmDefinitelyTyped.
 
-### From ALM Accelerator (`Flowline.wiki/16-Migration-from-ALM-Accelerator.md`)
+### From ALM Accelerator (`Flowline.wiki/18-Migration-from-ALM-Accelerator.md`)
 
 - **Read this before guiding:** ALM Accelerator assumed a shared DEV environment with PR-gated promotion; Flowline assumes the team owns DEV and DEV is truth. If the user's team does *not* own DEV (shared maker environment, ISV/AppSource model), Flowline is not the right fit — say so and stop, don't force the migration.
 - ALM Accelerator didn't define its own plugin registration attributes — it deployed whatever assembly existed. If the project also uses spkl/Daxif/PACX attributes underneath, run that tool's migration guide for the attribute replacement step first.
 - `flowline clone` replaces the canvas-app export → ADO branch commit flow in one command; `flowline deploy {env}` replaces the pipeline's pack + import stages.
-- No equivalent for per-environment deployment settings (connection references, env vars) or Solution Checker integration — both need manual or CI-side handling; see the wiki guide's "Known gaps".
+- Per-environment deployment settings (connection references, env vars) map to `flowline settings push <target>`, run after `deploy`.
 - No generated CI/CD templates yet — the wiki guide has GitHub Actions and Azure Pipelines starting points to adapt.
 
-### From PACX (`Flowline.wiki/17-Migration-from-PACX.md`)
+### From PACX (`Flowline.wiki/19-Migration-from-PACX.md`)
 
 - PACX covers much more than Flowline (tables, views, relationships, data) — this migration only replaces the **overlap**: plugin push, web resource push, auth, project setup. Keep PACX for everything else.
 - `pacx plugin step register` (manual, per step) is replaced entirely by Flowline reading `[Step]`/`[Filter]`/`[PreImage]`/`[PostImage]` attributes from the compiled assembly in one pass.
 - Web resources: if an existing file path already starts with `{publisherprefix}_/`, Flowline skips its auto-prefix and reproduces PACX's naming exactly — mirror the PACX folder structure inside `dist/` to keep existing Dataverse names unchanged.
-- `.wr.pacx` external references: the Dataverse-duplicate-prevention side is automatic in Flowline; the local shared-file side is a build-tool concern (bundle/copy shared sources into each solution's `dist/`).
+- `.wr.pacx` external references: Flowline doesn't push a web resource another solution owns. Declare it with `// flowline:depends` and keep the file out of `dist/`.
 - `.pacxproj` → `.flowline`, created by `flowline clone`/`init`.
 
 ## Verify

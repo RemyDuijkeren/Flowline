@@ -35,7 +35,7 @@ public class TelemetryDisclosureTests : IDisposable
         var text = writer.ToString();
         text.TrimStart().Should().StartWith("!", "it is a heads-up the reader may want to act on, not neutral detail");
         text.Should().Contain("log file", "the claim that the local log is the payload is the verifiable one");
-        text.Should().Contain("wiki/18-Telemetry", "a one-off notice cannot carry the whole story");
+        text.Should().Contain("wiki/13-Telemetry", "a one-off notice cannot carry the whole story");
         text.Should().NotContain("anonym", "a salted hash is pseudonymisation, not anonymisation");
         text.Should().NotContain("—", "em dashes are out of house style");
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries)

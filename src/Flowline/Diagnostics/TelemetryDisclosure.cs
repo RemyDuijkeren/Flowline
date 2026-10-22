@@ -21,7 +21,7 @@ public static class TelemetryDisclosure
     public const string Text = """
         ! Flowline CLI collects usage data in order to help us improve your experience. Data is not
           shared and identifying values are hashed first. The local log file shows exactly what was
-          sent. To turn this off: https://github.com/RemyDuijkeren/Flowline/wiki/18-Telemetry
+          sent. To turn this off: https://github.com/RemyDuijkeren/Flowline/wiki/13-Telemetry
         """;
 
     const string Yellow = "\u001b[33m";

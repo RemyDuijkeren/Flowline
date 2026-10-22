@@ -517,7 +517,7 @@ flowchart TB
 - `CONCEPTS.md`
 - `STRATEGY.md`
 - `../Flowline.wiki/04-Command-Reference.md`
-- `../Flowline.wiki/13-Planned-Features.md`
+- `../Flowline.wiki/15-Planned-Features.md`
 - `../Flowline.wiki/Home.md`
 
 **Approach:**
