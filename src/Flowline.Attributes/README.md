@@ -1,27 +1,20 @@
 # Flowline.Attributes
-
-<table>
-<tr>
-<td>
+![Flowline CLI](https://raw.githubusercontent.com/RemyDuijkeren/Flowline/master/docs/Flowline-icon-128.png)
 
 Source-only NuGet package that provides attributes for registering Dataverse plugin steps and Custom APIs with the [Flowline CLI](https://github.com/RemyDuijkeren/Flowline).
 
 Run `flowline push` and Flowline inspects your plugin assembly and automatically creates or updates all registrations in Dataverse — no Plugin Registration Tool needed.
 
+[📖 Documentation](https://github.com/RemyDuijkeren/Flowline/wiki) · [Changelog](https://github.com/RemyDuijkeren/Flowline/blob/master/CHANGELOG.md)
 
 [![Docs](https://img.shields.io/badge/docs-wiki-blue?logo=readthedocs&logoColor=white)](https://github.com/RemyDuijkeren/Flowline/wiki)
-[![CI](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)
+[![CI](https://img.shields.io/github/actions/workflow/status/RemyDuijkeren/Flowline/ci.yml?branch=master&label=CI&logo=githubactions&logoColor=white)](https://github.com/RemyDuijkeren/Flowline/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
 [![NuGet downloads](https://img.shields.io/nuget/dt/Flowline.Attributes.svg)](https://www.nuget.org/packages/Flowline.Attributes)
+[![Donate](https://img.shields.io/badge/-buy_me_a_coffee-gray?logo=buy-me-a-coffee)](https://buymeacoffee.com/remyduijkeren)
+[![ALM: Flowline](https://img.shields.io/badge/ALM-Flowline-4729B2?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii0zLjA0IC0yIDI4IDI4Ij48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMy42MiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj48cGF0aCBkPSJNMi42NiAyMi4xNVY1QTMuMjEgMy4yMSAwIDAgMSA1Ljg3IDEuNzlIMTcuNDYiLz48cGF0aCBkPSJNMi42NiAxNC4yNUEzLjQgMy40IDAgMCAxIDYuMDYgMTAuODVIMTciLz48L2c+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTE2Ljk0IDcuMjUgMjEuOTIgMTAuODUgMTYuOTQgMTQuNDVaIi8+PC9zdmc+Cg==)](https://github.com/RemyDuijkeren/Flowline)
 
-</td>
-<td width="120" align="right" valign="top">
-
-![Flowline CLI](https://raw.githubusercontent.com/RemyDuijkeren/Flowline/master/docs/Flowline-icon.png)
-
-</td>
-</tr>
-</table>
+---
 
 ## Installation
 
