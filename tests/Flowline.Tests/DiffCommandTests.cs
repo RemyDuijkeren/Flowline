@@ -711,7 +711,7 @@ public class DiffCommandTests : IDisposable
     {
         public static DiffCommand.Settings? Captured;
 
-        protected override int Execute(CommandContext context, DiffCommand.Settings settings, CancellationToken cancellationToken)
+        public override int Execute(CommandContext context, DiffCommand.Settings settings, CancellationToken cancellationToken)
         {
             Captured = settings;
             return 0;

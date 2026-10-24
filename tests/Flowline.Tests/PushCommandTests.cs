@@ -940,7 +940,7 @@ public class PushCommandTests : IDisposable
 
     sealed class NoOpPushSettingsCommand : Command<PushCommand.Settings>
     {
-        protected override int Execute(CommandContext context, PushCommand.Settings settings, CancellationToken cancellationToken) => 0;
+        public override int Execute(CommandContext context, PushCommand.Settings settings, CancellationToken cancellationToken) => 0;
     }
 
     static CommandApp BuildPushParseProbe()
@@ -999,7 +999,7 @@ public class PushCommandTests : IDisposable
     {
         public static Action<PushCommand.Settings>? OnExecute;
 
-        protected override int Execute(CommandContext context, PushCommand.Settings settings, CancellationToken cancellationToken)
+        public override int Execute(CommandContext context, PushCommand.Settings settings, CancellationToken cancellationToken)
         {
             OnExecute?.Invoke(settings);
             return 0;

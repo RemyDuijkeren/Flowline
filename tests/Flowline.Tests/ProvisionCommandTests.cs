@@ -272,7 +272,7 @@ public class ProvisionCommandTests
     sealed class ProvisionProbeCommand : Command<ProvisionCommand.Settings>
     {
         public static ProvisionCommand.Settings? Captured;
-        protected override int Execute(CommandContext context, ProvisionCommand.Settings settings, CancellationToken cancellationToken)
+        public override int Execute(CommandContext context, ProvisionCommand.Settings settings, CancellationToken cancellationToken)
         {
             Captured = settings;
             return 0;

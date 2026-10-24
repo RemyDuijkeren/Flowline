@@ -20,7 +20,7 @@ public class GenerateCommandParseTests
     {
         public static Action<GenerateCommand.Settings>? OnExecute;
 
-        protected override int Execute(CommandContext context, GenerateCommand.Settings settings, CancellationToken cancellationToken)
+        public override int Execute(CommandContext context, GenerateCommand.Settings settings, CancellationToken cancellationToken)
         {
             OnExecute?.Invoke(settings);
             return 0;

@@ -68,7 +68,7 @@ public class FlowlineSettingsTests
 
     sealed class NoOpPushSettingsCommand : Command<PushCommand.Settings>
     {
-        protected override int Execute(CommandContext context, PushCommand.Settings settings, CancellationToken cancellationToken) => 0;
+        public override int Execute(CommandContext context, PushCommand.Settings settings, CancellationToken cancellationToken) => 0;
     }
 
     [Fact]

@@ -69,7 +69,7 @@ public class InitCommandTests
     {
         public static InitCommand.Settings? Captured;
 
-        protected override int Execute(CommandContext context, InitCommand.Settings settings, CancellationToken cancellationToken)
+        public override int Execute(CommandContext context, InitCommand.Settings settings, CancellationToken cancellationToken)
         {
             Captured = settings;
             return 0;
@@ -481,7 +481,7 @@ public class InitCommandTests
     // command with this Settings shape; the flag names themselves are covered above.
     sealed class NoOpInitSettingsCommand : Command<InitCommand.Settings>
     {
-        protected override int Execute(CommandContext context, InitCommand.Settings settings, CancellationToken cancellationToken) => 0;
+        public override int Execute(CommandContext context, InitCommand.Settings settings, CancellationToken cancellationToken) => 0;
     }
 
     [Fact]

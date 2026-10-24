@@ -16,7 +16,7 @@ public class PullCommandTests
     {
         public static Action<PullCommand.Settings>? OnExecute;
 
-        protected override int Execute(CommandContext context, PullCommand.Settings settings, CancellationToken cancellationToken)
+        public override int Execute(CommandContext context, PullCommand.Settings settings, CancellationToken cancellationToken)
         {
             OnExecute?.Invoke(settings);
             return 0;

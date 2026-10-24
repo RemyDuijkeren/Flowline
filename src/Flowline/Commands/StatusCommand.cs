@@ -136,7 +136,7 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
         return line.Length > 120 ? line[..119].TrimEnd() + "\u2026" : line;
     }
 
-    protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         ValidateForce(settings);
 

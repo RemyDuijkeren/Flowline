@@ -60,7 +60,7 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
         public string? ClientSecret { get; set; }
     }
 
-    protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         if (settings.ClientId != null && string.IsNullOrWhiteSpace(settings.ClientId))
             throw new FlowlineException(ExitCode.ValidationFailed, "--client-id must not be empty");

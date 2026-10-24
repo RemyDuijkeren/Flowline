@@ -905,7 +905,7 @@ public class CloneCommandTests
     {
         public static CloneCommand.Settings? Captured;
 
-        protected override int Execute(CommandContext context, CloneCommand.Settings settings, CancellationToken cancellationToken)
+        public override int Execute(CommandContext context, CloneCommand.Settings settings, CancellationToken cancellationToken)
         {
             Captured = settings;
             return 0;

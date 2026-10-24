@@ -16,7 +16,7 @@ public class ManagedFlagBindingTests
     {
         public static CloneCommand.Settings? Captured;
 
-        protected override int Execute(CommandContext context, CloneCommand.Settings settings, CancellationToken cancellationToken)
+        public override int Execute(CommandContext context, CloneCommand.Settings settings, CancellationToken cancellationToken)
         {
             Captured = settings;
             return 0;
@@ -27,7 +27,7 @@ public class ManagedFlagBindingTests
     {
         public static PullCommand.Settings? Captured;
 
-        protected override int Execute(CommandContext context, PullCommand.Settings settings, CancellationToken cancellationToken)
+        public override int Execute(CommandContext context, PullCommand.Settings settings, CancellationToken cancellationToken)
         {
             Captured = settings;
             return 0;

@@ -113,7 +113,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         return null;
     }
 
-    protected override async Task<int> ExecuteAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
+    public override async Task<int> ExecuteAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
         RuntimeOptions.CommandName = context.Name;
         InitializeRuntimeOptions(settings);
