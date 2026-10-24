@@ -1,8 +1,7 @@
 ﻿# Flowline
 ![Flowline CLI](https://raw.githubusercontent.com/RemyDuijkeren/Flowline/master/docs/Flowline-icon-128.png)
 
-**Flowline** is a Dataverse ALM CLI — structured workflow, Git-tracked solutions,
-and a fast push to DEV without the enterprise overhead.
+**Flowline** is a Dataverse ALM CLI for Dynamics 365 and Power Apps. PAC CLI gives you the primitives, Flowline gives you the workflow.
 
 [About](#about) · [📖 Documentation](https://github.com/RemyDuijkeren/Flowline/wiki) · [Changelog](https://github.com/RemyDuijkeren/Flowline/blob/master/CHANGELOG.md)
 
@@ -16,8 +15,6 @@ and a fast push to DEV without the enterprise overhead.
 ---
 
 ## About
-
-**PAC CLI gives you the primitives — Flowline gives you the workflow.**
 
 A professional Git-based workflow for plugin developers and solution architects, without the overhead of Power Platform Pipelines or managed solutions. `clone → push → pull → deploy`, from the inner dev loop to production, in one tool.
 

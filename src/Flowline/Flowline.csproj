@@ -11,8 +11,8 @@
 
     <PropertyGroup Label="PackageProperties">
       <PackageId>Flowline</PackageId>
-      <Description>Flowline is your lightweight, flexible alternative to rigid Power Platform Pipelines.</Description>
-      <PackageTags>Dataverse Dynamics PowerApps PowerPlatform Pipeline Deploy CLI</PackageTags>
+      <Description>Flowline is a Dataverse ALM CLI for Dynamics 365 and Power Apps. PAC CLI gives you the primitives, Flowline gives you the workflow.</Description>
+      <PackageTags>Dataverse Dynamics Dynamics365 PowerApps PowerPlatform ALM Pipeline Deploy CLI</PackageTags>
     </PropertyGroup>
 
     <ItemGroup>
