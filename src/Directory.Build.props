@@ -11,14 +11,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="../../docs/Flowline-icon.png" Pack="true" PackagePath="" Visible="false"/>
+    <None Include="../../docs/Flowline-icon-128.png" Pack="true" PackagePath="" Visible="false"/>
   </ItemGroup>
 
   <PropertyGroup Label="PackageMetadata">
     <Authors>Remy van Duijkeren (@RemyDuijkeren)</Authors>
     <Copyright>Copyright (c) Remy van Duijkeren 2026</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageIcon>Flowline-icon.png</PackageIcon>
+    <PackageIcon>Flowline-icon-128.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/RemyDuijkeren/Flowline</PackageProjectUrl>
     <RepositoryUrl>https://github.com/RemyDuijkeren/Flowline.git</RepositoryUrl>
