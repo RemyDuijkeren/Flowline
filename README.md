@@ -1,11 +1,10 @@
 ﻿# Flowline
-
-<table>
-<tr>
-<td>
+![Flowline CLI](https://raw.githubusercontent.com/RemyDuijkeren/Flowline/master/docs/Flowline-icon-128.png)
 
 **Flowline** is a Dataverse ALM CLI — structured workflow, Git-tracked solutions,
 and a fast push to DEV without the enterprise overhead.
+
+[About](#about) · [Documentation](https://github.com/RemyDuijkeren/Flowline/wiki) · [Changelog](https://github.com/RemyDuijkeren/Flowline/blob/master/CHANGELOG.md)
 
 [![Docs](https://img.shields.io/badge/docs-wiki-blue?logo=readthedocs&logoColor=white)](https://github.com/RemyDuijkeren/Flowline/wiki)
 [![CI](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)](https://github.com/RemyDuijkeren/Flowline/workflows/CI/badge.svg)
@@ -13,16 +12,9 @@ and a fast push to DEV without the enterprise overhead.
 [![NuGet downloads](https://img.shields.io/nuget/dt/Flowline.svg)](https://www.nuget.org/packages/Flowline)
 [![Donate](https://img.shields.io/badge/-buy_me_a_coffee-gray?logo=buy-me-a-coffee)](https://buymeacoffee.com/remyduijkeren)
 
-</td>
-<td width="120" align="right" valign="top">
-
-![Flowline CLI](https://raw.githubusercontent.com/RemyDuijkeren/Flowline/master/docs/Flowline-icon.png)
-
-</td>
-</tr>
-</table>
-
 ---
+
+## About
 
 **PAC CLI gives you the primitives — Flowline gives you the workflow.**
 
@@ -152,21 +144,21 @@ export function onChangeCreditlimit(executionContext) { ... }
 
 ## Commands
 
-| Command                                                                                                       | What it does                                                                                 |
-|---------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
-| [`clone [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#clone)               | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively |
-| [`init [name]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init)                     | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo; run with no name to be prompted |
-| [`push [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#push)                 | Build and sync code assets to DEV; or push standalone with `--plugin-file` / `--webresources` |
-| [`pull`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#pull)                            | Pull the current solution state from DEV into source control                                |
-| [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#deploy)               | Pack from the repo and import into `test`, `uat`, `prod`, or a URL; or deploy a pre-built zip standalone with `--path`  |
-| [`provision [dev\|test\|uat]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#provision) | Provision a DEV, TEST or UAT environment by copying from production                          |
-| [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/11-Generate-Early-Bound-Types)         | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)          |
-| [`drift <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#drift)                 | Compare committed source, or a pre-built zip with `--path`, against a live environment; read-only. Exits 0 unless `--exit-code` is passed. Use `diff` for the git-history axis |
-| [`diff [from] [to]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#diff)                | Report which solution components changed between two git refs (positional, or a range like `A..B`); no Dataverse connection, no auth, no network. The git-axis counterpart to `drift` |
-| [`settings <operation>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#settings)       | Read or change one environment's configuration. `push` applies a settings file and `pull` writes one; `toggle` switches one component on or off and `set` sets one value or binding, without touching the file |
-| [`scaffold <webresources\|plugins>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#scaffold) | Write a project template into this folder and add it to the nearest solution file. No Dataverse, no auth, no network. Alias: `new` |
-| [`status`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#status)                        | Show environment info, Flowline version, and PAC CLI status                                  |
-| [`sln add <path>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#sln-add)               | Add a `.cdsproj` to the solution file — `dotnet sln add` refuses those. Runs standalone      |
+| Command                                                                                                            | What it does                                                                                                                                                                                                   |
+|--------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`clone [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#clone)                    | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively                                                                                                    |
+| [`init [name]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init)                          | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo; run with no name to be prompted                                                                                     |
+| [`push [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#push)                      | Build and sync code assets to DEV; or push standalone with `--plugin-file` / `--webresources`                                                                                                                  |
+| [`pull`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#pull)                                 | Pull the current solution state from DEV into source control                                                                                                                                                   |
+| [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#deploy)                    | Pack from the repo and import into `test`, `uat`, `prod`, or a URL; or deploy a pre-built zip standalone with `--path`                                                                                         |
+| [`provision [dev\|test\|uat]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#provision)      | Provision a DEV, TEST or UAT environment by copying from production                                                                                                                                            |
+| [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/11-Generate-Early-Bound-Types)              | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)                                                                                                                            |
+| [`drift <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#drift)                      | Compare committed source, or a pre-built zip with `--path`, against a live environment; read-only. Exits 0 unless `--exit-code` is passed. Use `diff` for the git-history axis                                 |
+| [`diff [from] [to]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#diff)                     | Report which solution components changed between two git refs (positional, or a range like `A..B`); no Dataverse connection, no auth, no network. The git-axis counterpart to `drift`                          |
+| [`settings <operation>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#settings)             | Read or change one environment's configuration. `push` applies a settings file and `pull` writes one; `toggle` switches one component on or off and `set` sets one value or binding, without touching the file |
+| [`scaffold <webresources\|plugins>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#scaffold) | Write a project template into this folder and add it to the nearest solution file. No Dataverse, no auth, no network. Alias: `new`                                                                             |
+| [`status`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#status)                             | Show environment info, Flowline version, and PAC CLI status                                                                                                                                                    |
+| [`sln add <path>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#sln-add)                    | Add a `.cdsproj` to the solution file — `dotnet sln add` refuses those. Runs standalone                                                                                                                        |
 
 ---
 
