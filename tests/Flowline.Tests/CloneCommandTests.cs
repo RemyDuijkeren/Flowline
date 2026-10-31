@@ -1152,6 +1152,22 @@ public class CloneCommandTests
         console.Output.Should().NotContain("More than one environment is configured");
     }
 
+    // A non-URL saved under the only configured role fails naming the key, like every other command,
+    // instead of reaching the PAC profile lookup as if it were a URL.
+    [Fact]
+    public async Task ResolveSourceUrlAsync_OneRoleConfiguredWithANonUrl_ThrowsValidationFailedNamingTheKey()
+    {
+        var (command, _) = MakeCloneCommand();
+        var settings = MakeSettings();
+        var config = new ProjectConfig { UatUrl = "staging" };
+
+        var act = () => command.ResolveSourceUrlAsync(settings, config, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Which.Message.Should().Contain("UatUrl");
+    }
+
     [Fact]
     public async Task ResolveSourceUrlAsync_ZeroConfiguredNoEnv_ThrowsNamingEnv()
     {

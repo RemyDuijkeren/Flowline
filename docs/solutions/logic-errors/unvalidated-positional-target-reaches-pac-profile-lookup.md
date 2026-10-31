@@ -41,22 +41,16 @@ Commands that take the environment as a positional `<target>` resolve a role key
 
 ## Solution
 
-Reject the token before any profile lookup, with exit 15 (`ValidationFailed`), and say what a target is. All four settings verbs route through one role check, so the guard lives there (`src/Flowline/Commands/SettingsCommandBase.cs:70-83`):
+Reject the token before any profile lookup, with exit 15 (`ValidationFailed`), and say what a target is. The check is defined once in Core (`EnvironmentTarget.Check` in `src/Flowline.Core/Environments/EnvironmentTarget.cs`), and every command with a positional target calls it. The settings verbs pass their own message so a swapped order can be answered (`src/Flowline/Commands/SettingsCommandBase.cs`):
 
 ```csharp
-var role = DriftCommand.TryResolveRole(target);
-
-if (standalone && role is not null)
-    throw new FlowlineException(ExitCode.ConfigInvalid, SettingsSupport.BuildStandaloneRoleError(target));
-
-if (role is null && !SettingsSupport.IsEnvironmentTarget(target))
-    throw new FlowlineException(ExitCode.ValidationFailed,
-        SettingsSupport.BuildNotAnEnvironmentError(target, name, args ?? []));
+EnvironmentTarget.Check(target, standalone,
+    () => SettingsSupport.BuildNotAnEnvironmentError(target, name, args ?? []));
 ```
 
-The predicate is a role or an absolute `http`/`https` URI (`src/Flowline/Commands/SettingsSupport.cs:234-237`). A bare host with no scheme is rejected, the same rule `--env` applies.
+The predicate is a role or an absolute `http`/`https` URI (`EnvironmentTarget.IsTarget` and `IsUrl`, same file). A bare host with no scheme is rejected, the same rule `--env` applies.
 
-When the second positional is itself a role or URL, the two were swapped, so the message prints the caller's own invocation with the two exchanged (`src/Flowline/Commands/SettingsSupport.cs:249-266`). The tokens are found by value, not position, because an option may precede the positionals, and any `--value` is shown as `<value>` so a secret never lands in a log:
+When the second positional is itself a role or URL, the two were swapped, so the message prints the caller's own invocation with the two exchanged (`SettingsSupport.BuildNotAnEnvironmentError` in `src/Flowline/Commands/SettingsSupport.cs`). The tokens are found by value, not position, because an option may precede the positionals, and any `--value` is shown as `<value>` so a secret never lands in a log:
 
 ```text
 Error: 'ApprovalFlow' isn't an environment, and 'prod' is. The environment comes first:
@@ -66,7 +60,7 @@ Error: 'ApprovalFlow' isn't an environment, and 'prod' is. The environment comes
 Otherwise:
 
 ```text
-Error: 'ApprovalFlow' isn't a role (dev, test, uat, prod) or a URL. Put the environment first: flowline settings <operation> <dev|test|uat|prod|url>
+Error: 'ApprovalFlow' isn't a role (dev, test, uat, prod) or a URL. Pass a role or the environment's full https:// URL: flowline settings <operation> <dev|test|uat|prod|url>
 ```
 
 Tests: `tests/Flowline.Tests/SettingsCommandTests.cs` (swapped line), `tests/Flowline.Tests/SettingsCommandSurfaceTests.cs` (exit 15 through the role check) and `tests/Flowline.Core.Tests/EnvironmentTargetTests.cs` (the shared rule).

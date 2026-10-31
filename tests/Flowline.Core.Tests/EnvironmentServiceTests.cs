@@ -91,6 +91,20 @@ public class EnvironmentServiceTests
         (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
     }
 
+    // The refusal names the .flowline key to fix, because the role's URL came from there.
+    [Theory]
+    [InlineData(EnvironmentRole.Uat, "Production", "UatUrl")]
+    [InlineData(EnvironmentRole.Prod, "Sandbox", "ProdUrl")]
+    public async Task CheckByUrl_RoleTypeMismatch_NamesTheFlowlineKey(EnvironmentRole role, string type, string key)
+    {
+        var (service, _) = MakeService(type);
+
+        var act = () => service.CheckByUrlAsync(EnvUrl, role, CancellationToken.None, s_profile);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Which.Message.Should().Contain(key).And.Contain(".flowline");
+    }
+
     [Fact]
     public async Task CheckByUrl_NotFound_ThrowsConnectionFailedNamingTheUrl()
     {

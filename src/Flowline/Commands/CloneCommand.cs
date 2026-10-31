@@ -135,7 +135,7 @@ public class CloneCommand(CommandServices services,
         {
             case 1:
                 var onlyRole = configuredRoles[0];
-                return (config.GetUrl(onlyRole)!, onlyRole);
+                return (EnvironmentTarget.RequireRoleUrl(config, onlyRole), onlyRole);
 
             case > 1 when !IsInteractive():
                 throw new FlowlineException(ExitCode.ValidationFailed,
@@ -143,7 +143,7 @@ public class CloneCommand(CommandServices services,
 
             case > 1:
                 var pickedRole = await PickConfiguredRoleAsync(configuredRoles, cancellationToken);
-                return (config.GetUrl(pickedRole)!, pickedRole);
+                return (EnvironmentTarget.RequireRoleUrl(config, pickedRole), pickedRole);
 
             default:
                 throw new FlowlineException(ExitCode.NotFound, "No environment configured — pass --env <url> to say which one to clone from.");

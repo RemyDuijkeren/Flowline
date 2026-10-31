@@ -252,7 +252,7 @@ public static class SettingsSupport
         }
 
         return EnvironmentTarget.NotATarget(target,
-            $"Put the environment first: flowline settings <operation> {EnvironmentTarget.TargetPlaceholder}");
+            $"Pass a role or the environment's full https:// URL: flowline settings <operation> {EnvironmentTarget.TargetPlaceholder}");
     }
 
     /// <summary>The message a scripted write with no component name earns.</summary>

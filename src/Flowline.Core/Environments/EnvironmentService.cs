@@ -55,10 +55,16 @@ public sealed class EnvironmentService(
             throw new FlowlineException(ExitCode.ConnectionFailed,
                 $"{(role is { } nf ? $"{nf.Label()} environment" : "Environment")} not found at {url}. Check the URL or your PAC login.");
 
+        // A role names the .flowline key that holds this URL, so the refusal can say which one to fix. A
+        // DEV-only command handed a URL that belongs to no role has no key to name.
         switch (skipTypeGuard ? EnvironmentTypeMismatch.None : EnvironmentTarget.CheckType(role, env.Type, devOnly))
         {
             case EnvironmentTypeMismatch.NotProduction:
-                throw new FlowlineException(ExitCode.ValidationFailed, "That environment isn't Production type — verify the URL in .flowline points to a Production environment.");
+                throw new FlowlineException(ExitCode.ValidationFailed,
+                    $"{EnvironmentRole.Prod.ConfigKey()} in .flowline points to a {env.Type} environment, but PROD must be a Production environment. Point it at your Production environment.");
+            case EnvironmentTypeMismatch.Production when role is { } typed:
+                throw new FlowlineException(ExitCode.ValidationFailed,
+                    $"{typed.ConfigKey()} in .flowline points to a Production environment, but {typed.UpperLabel()} must not. Point it at a sandbox.");
             case EnvironmentTypeMismatch.Production:
                 throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
         }

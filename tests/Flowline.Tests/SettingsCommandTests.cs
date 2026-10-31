@@ -610,7 +610,7 @@ public class SettingsCommandTests : IDisposable
             "ApprovalFlow", name, ["settings", "toggle", "ApprovalFlow", "--off"]);
 
         message.Should().StartWith("'ApprovalFlow' isn't a role (dev, test, uat, prod) or a URL.")
-            .And.Contain("flowline settings <operation> <dev|test|uat|prod|url>")
+            .And.Contain("Pass a role or the environment's full https:// URL")
             .And.NotContain("comes first");
     }
 
