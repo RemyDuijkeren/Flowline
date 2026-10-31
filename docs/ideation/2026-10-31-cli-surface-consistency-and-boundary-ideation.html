@@ -100,7 +100,7 @@
 <nav class="jump" aria-label="Ranked ideas">
 <ol>
 <li><a href="#i1">Write the boundary rule down and run every command through it</a> (implemented)</li>
-<li><a href="#i2">One spelling for the solution name: <code>--solution-name</code></a></li>
+<li><a href="#i2">One spelling for the solution name: <code>--solution-name</code></a> (step 1 implemented)</li>
 <li><a href="#i3">Make the written contract match the code</a></li>
 <li><a href="#i4">One test that enforces the surface rules over the real command tree</a></li>
 <li><a href="#i5">Rename <code>settings push</code>/<code>pull</code> before the verbs set</a></li>
@@ -141,16 +141,38 @@
 
 <article class="idea" id="i2">
 <h3>2. One spelling for the solution name: <code>--solution-name</code></h3>
-<div class="chips"><span>Axis A</span><span>Confidence 70%</span><span>Complexity Medium</span></div>
+<div class="chips"><span>Axis A</span><span>Confidence 70%</span><span>Complexity Medium</span><span class="keep">Step 1 implemented</span></div>
+<p class="implemented"><strong>Step 1 implemented 2026-10-31</strong> in commit <code>46db17d</code>: inside a project, the settings commands now accept a <code>--solution-name</code> that matches the project and reject a different one, the same check push and generate use. Step 2, replacing the <code>[solution]</code> positional on push and generate with <code>--solution-name</code>, is still open and waits for a breaking release.</p>
 <dl>
 <dt>Description</dt>
-<dd>Outside a project, <code>push</code> and <code>generate</code> take the solution as an optional positional <code>[solution]</code>. The settings commands take the same thing as <code>--solution-name</code>. Inside a project, push and generate accept the positional and check it against <code>.flowline</code>. Settings refuses the flag outright. Use the settings shape on push and generate: <code>--solution-name</code>, accepted only without a project. The old positional then fails as an unexpected argument. Keep a positional only on <code>clone</code> and <code>init</code>, where it names the thing being cloned or created.</dd>
+<dd>Outside a project, <code>push</code> and <code>generate</code> take the solution as an optional positional <code>[solution]</code>. The settings commands take the same thing as <code>--solution-name</code>. Inside a project, push and generate accept the positional and check it against <code>.flowline</code>. Settings refuses the flag outright. Use the settings shape on push and generate: <code>--solution-name</code>, accepted outside a project, or inside one when it matches the project. The old positional then fails as an unexpected argument. Keep a positional only on <code>clone</code> and <code>init</code>, where it names the thing being cloned or created.</dd>
+<dt>Why a flag on push and generate</dt>
+<dd>
+<p>A positional fits a value that is the thing the command acts on, which the command can't run without. A flag fits a detail that usually comes from somewhere else. That is C1 ("required input is positional, optional input with a default is a flag") applied to the solution instead of the environment.</p>
+<ul class="tight">
+<li><strong>The name is almost never needed.</strong> In the normal workflow the project supplies it. The positional only matters stand-alone, so it is a default case, and C1 makes those flags.</li>
+<li><strong>The first word after the verb means something else elsewhere.</strong> On <code>deploy prod</code>, <code>drift test</code> and <code>settings push test</code> it is the environment. On push it is the solution, so <code>flowline push test</code> means "a solution called test", not "push to test". A flag says what the word is: <code>flowline push --solution-name ContosoSales --plugin-file ./Plugins.dll --env https://contoso-dev.crm4.dynamics.com</code>.</li>
+<li><strong>Settings can only use the flag.</strong> Its two positional slots hold the environment and the component name (<code>settings toggle prod ApprovalFlow</code>). One spelling everywhere is only possible if push and generate move to settings' spelling.</li>
+<li><strong>Push already labels every other input.</strong> Stand-alone push takes a solution, a DLL or nupkg, a web resource folder and a URL, and only the solution has no flag.</li>
+<li><strong>It keeps the slot free</strong> for a required positional push or generate might need later.</li>
+</ul>
+</dd>
+<dt>Why a positional on clone and init</dt>
+<dd>
+<ul class="tight">
+<li><strong>The solution is the object of the verb:</strong> "clone ContosoSales", "init MySolution", the same shape as <code>git clone &lt;repo&gt;</code> and <code>dotnet new &lt;template&gt;</code>.</li>
+<li><strong>Nothing else can supply it on the first run.</strong> These commands create the project, so there is no <code>.flowline</code> to read a default from. It is required input, so C1 makes it positional. The picker when it is left out is a terminal convenience; unattended runs must pass it.</li>
+<li><strong>No other value competes for the slot.</strong> Both take the environment as <code>--env</code>.</li>
+<li><strong>One caveat:</strong> clone is safe to re-run, and on a re-run inside a project a missing name falls back to the one in <code>.flowline</code> (<code>CloneCommand.cs:109-110</code>). The positional still fits, because the first run is what clone is for and a re-run is a repair. Init has no such fallback.</li>
+</ul>
+<p>The rule for the vocabulary table (idea 4): the solution is positional only on commands that create or clone it, where nothing else can supply it. Everywhere else it is <code>--solution-name</code>.</p>
+</dd>
 <dt>Basis</dt>
 <dd><code>direct:</code> push validates a passed solution against config (<code>PushCommand.cs:97</code>), and generate does the same (<code>GenerateCommand.cs:122</code>). Settings: "--solution-name only applies outside a Flowline project. Inside one the solution comes from the project …" (<code>SettingsSupport.cs:77</code>). C1 says optional input is a flag, so the settings shape is the one that already follows the rule.</dd>
 <dt>Rationale</dt>
-<dd>This is the most likely guessed-wrong argument for an agent moving between commands, and the only one that differs in behaviour as well as spelling. It also leaves room for a later rule: no command accepts a solution name inside a project.</dd>
+<dd>This is the most likely guessed-wrong argument for an agent moving between commands, and the only one that differs in behaviour as well as spelling.</dd>
 <dt>Downsides</dt>
-<dd>Breaking for stand-alone users: <code>push ContosoCustomizations</code> is a registered help example (<code>Program.cs:436</code>), and the README and wiki use the positional. Stand-alone mode is the progressive-adoption path (STRATEGY.md:31), so the break lands on new users. A one-release error that names the new flag softens it.</dd>
+<dd>Breaking for stand-alone users: <code>push ContosoCustomizations</code> is a registered help example (<code>Program.cs:436</code>), and the README and wiki use the positional. Stand-alone mode is the progressive-adoption path (STRATEGY.md:31), so the break lands on new users. KD5 rules out a transition alias, so the only mitigation is an error that names the new flag.</dd>
 </dl>
 </article>
 
