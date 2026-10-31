@@ -22,6 +22,15 @@ public class SolutionNameSettingsTests
             .Should().Contain("flowline generate --solution-name Contoso -o ./Models");
     }
 
+    // The rest of the line is repeated back, so a secret in it must not be.
+    [Fact]
+    public void AClientSecret_IsNotRepeated()
+    {
+        var hint = SolutionNameSettings.BuildPositionalHint(["generate", "Contoso", "--client-secret", "s3cr3t"]);
+
+        hint.Should().Contain("--client-secret ***").And.NotContain("s3cr3t");
+    }
+
     // 'push dev' reads as "push to dev", so an environment gets --env, not --solution-name.
     [Theory]
     [InlineData("dev")]

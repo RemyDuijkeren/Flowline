@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Flowline.Commands;
+using Flowline.Diagnostics;
 using Spectre.Console.Cli;
 
 namespace Flowline.Settings;
@@ -38,10 +39,12 @@ public class SolutionNameSettings : EnvironmentSettings
 
         var word = args[1];
         var flag = SettingsSupport.LooksLikeTarget(word) ? "--env" : "--solution-name";
-        var rest = new[] { flag, word }.Concat(args.Skip(2)).Select(SettingsSupport.Quote);
+        // The line is repeated back to the console, so a --client-secret value in it is masked.
+        var rest = SubprocessCapture.RedactSensitiveArgs(
+            string.Join(' ', new[] { flag, word }.Concat(args.Skip(2)).Select(SettingsSupport.Quote)));
 
         return flag == "--env"
-            ? $"'{word}' is an environment, and {verb} takes it as a flag. Try: flowline {verb} {string.Join(' ', rest)}"
-            : $"The solution name is a flag on {verb}. Try: flowline {verb} {string.Join(' ', rest)}";
+            ? $"'{word}' is an environment, and {verb} takes it as a flag. Try: flowline {verb} {rest}"
+            : $"The solution name is a flag on {verb}. Try: flowline {verb} {rest}";
     }
 }
