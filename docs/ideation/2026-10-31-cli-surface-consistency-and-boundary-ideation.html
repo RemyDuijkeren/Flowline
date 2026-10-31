@@ -102,7 +102,7 @@
 <li><a href="#i1">Write the boundary rule down and run every command through it</a> (implemented)</li>
 <li><a href="#i2">One spelling for the solution name: <code>--solution-name</code></a> (implemented)</li>
 <li><a href="#i3">Make the written contract match the code</a> (implemented)</li>
-<li><a href="#i4">One test that enforces the surface rules over the real command tree</a></li>
+<li><a href="#i4">One test that enforces the surface rules over the real command tree</a> (skipped)</li>
 <li><a href="#i5">Name the settings verbs for what they do, and require a component name for writes</a> (implemented)</li>
 </ol>
 </nav>
@@ -141,7 +141,7 @@
 <article class="idea" id="i2">
 <h3>2. One spelling for the solution name: <code>--solution-name</code></h3>
 <div class="chips"><span>Axis A</span><span>Confidence 70%</span><span>Complexity Medium</span><span class="keep">Implemented</span></div>
-<p class="implemented"><strong>Step 1 implemented 2026-10-31</strong> in commit <code>46db17d</code>: inside a project, the settings commands now accept a <code>--solution-name</code> that matches the project and reject a different one, the same check push and generate use. Step 2 implemented 2026-10-31 in commit <code>0052ada</code>: push and generate take <code>-n|--solution-name</code> and no positional, the settings commands gain <code>-n</code>, and clone and init show their positional as <code>[solution-name]</code>. No alias: <code>push Contoso</code> fails naming <code>--solution-name Contoso</code>, or <code>--env</code> when the word is an environment.</p>
+<p class="implemented"><strong>Step 1 implemented 2026-10-31</strong> in commit <code>46db17d</code>: inside a project, the settings commands now accept a <code>--solution-name</code> that matches the project and reject a different one, the same check push and generate use. Step 2 implemented 2026-10-31 in commit <code>0052ada</code>: push and generate take <code>-n|--solution-name</code> and no positional, the settings commands gain <code>-n</code>, and clone and init show their positional as <code>[solution-name]</code>. No alias: <code>push Contoso</code> fails naming <code>--solution-name Contoso</code>, or <code>--env</code> when the word is an environment. Commit <code>80c2cbb</code> masks a <code>--client-secret</code> echoed in that hint. Plan: <code>docs/plans/2026-10-31-1223-feat-solution-name-flag-plan.md</code>.</p>
 <dl>
 <dt>Description</dt>
 <dd>Outside a project, <code>push</code> and <code>generate</code> take the solution as an optional positional <code>[solution]</code>. The settings commands take the same thing as <code>--solution-name</code>. Inside a project, push and generate accept the positional and check it against <code>.flowline</code>. Settings refuses the flag outright. Use the settings shape on push and generate: <code>--solution-name</code>, accepted outside a project, or inside one when it matches the project. The old positional then fails as an unexpected argument. Keep a positional only on <code>clone</code> and <code>init</code>, where it names the thing being cloned or created.</dd>
@@ -201,7 +201,8 @@
 
 <article class="idea" id="i4">
 <h3>4. One test that enforces the surface rules over the real command tree</h3>
-<div class="chips"><span>Axis B</span><span>Confidence 75%</span><span>Complexity Medium</span></div>
+<div class="chips"><span>Axis B</span><span>Confidence 75%</span><span>Complexity Medium</span><span>Skipped</span></div>
+<p class="implemented"><strong>Skipped 2026-10-31:</strong> not going to be built. The surface rules stay enforced by review against the cli-for-agents skill, not by a test.</p>
 <dl>
 <dt>Description</dt>
 <dd>Walk the registered command tree from the same configuration the CLI uses and assert the decided rules instead of remembering them:
@@ -226,7 +227,7 @@ Known deviations go in a named allow-list with their decision ID, so the list on
 <h3>5. Name the settings verbs for what they do, and require a component name for writes</h3>
 <div class="chips"><span>Axis C</span><span>Confidence 70%</span><span>Complexity Medium</span><span class="keep">Implemented</span></div>
 <p class="implemented"><strong>Decided 2026-10-31:</strong> rename <code>settings push</code>/<code>pull</code> to <code>settings apply</code>/<code>capture</code> (option A over separate top-level commands and over keeping push/pull), keep the component name positional, and make writes require it (option N1 over a <code>--component</code> flag). Breaking is accepted for a better long-term surface.</p>
-<p class="implemented"><strong>Implemented 2026-10-31</strong> in the commits "rename settings push to apply and settings pull to capture" and "require the component name for a scripted toggle or set write". The old verbs fail as unknown commands, with no redirect hint. The swapped order, unverified above, did not fail clearly: the component name reached the PAC profile lookup as a URL and exited 4 with advice to authenticate against it. The commit "reject a target that is neither a role nor a URL before any auth lookup" makes it exit 15 with the corrected line.</p>
+<p class="implemented"><strong>Implemented 2026-10-31</strong> in the commits "rename settings push to apply and settings pull to capture" and "require the component name for a scripted toggle or set write". The old verbs fail as unknown commands, with no redirect hint. The swapped order, unverified above, did not fail clearly: the component name reached the PAC profile lookup as a URL and exited 4 with advice to authenticate against it. The commit "reject a target that is neither a role nor a URL before any auth lookup" makes it exit 15 with the corrected line. Plan: <code>docs/plans/2026-10-31-1454-feat-settings-apply-capture-plan.md</code>.</p>
 <dl>
 <dt>Description</dt>
 <dd>
@@ -257,7 +258,7 @@ flowline settings set     &lt;target&gt; [name] [--type ...] [--value &lt;value&
 
 <section id="rejection-summary">
 <h2>Rejection Summary</h2>
-<p>39 raw ideas from 5 frames, merged to 21 candidates, 5 survivors (a sixth was withdrawn after review, R17). Some rows below are sub-ideas folded out of a survivor rather than separate candidates. A separate verifier checked every basis against the repo.</p>
+<p>39 raw ideas from 5 frames, merged to 21 candidates, 5 survivors (a sixth was withdrawn after review, R17). Four were implemented and idea 4 was skipped. Some rows below are sub-ideas folded out of a survivor rather than separate candidates. A separate verifier checked every basis against the repo.</p>
 <div class="table-wrap"><table>
 <thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
 <tbody>
@@ -268,12 +269,12 @@ flowline settings set     &lt;target&gt; [name] [--type ...] [--value &lt;value&
 <tr><td>R5</td><td>Move every output to <code>-o|--output</code></td><td>Lossy: <code>-o</code> is a folder on generate and scaffold, while diff's <code>--write</code> and settings pull write files, and bare <code>--write</code> means CHANGES.md. Swaps one inconsistency for another.</td></tr>
 <tr><td>R6</td><td>Drop <code>[solution]</code> from push and generate entirely</td><td>Refuted: stand-alone mode needs it (STRATEGY.md:31). Replaced by idea 2.</td></tr>
 <tr><td>R7</td><td>Offline commands stop inheriting <code>--force</code></td><td>Reopens C7 ("diff, scaffold, sln add stay on the base") without new evidence. The real defect, the empty "Use one of: ." message, is in idea 3.</td></tr>
-<tr><td>R8</td><td>Delete or justify the <code>new</code> alias</td><td>P11 endorsed it. Covered by the alias allow-list in idea 4.</td></tr>
+<tr><td>R8</td><td>Delete or justify the <code>new</code> alias</td><td>P11 endorsed it.</td></tr>
 <tr><td>R9</td><td><code>--json</code> on drift and diff</td><td>Reopens G6 with no named consumer.</td></tr>
 <tr><td>R10</td><td><code>flowline-&lt;verb&gt;</code> extensions on PATH</td><td>No command currently fails the boundary test, so there is nothing to host. Speculative.</td></tr>
 <tr><td>R11</td><td><code>flowline pac -- &lt;args&gt;</code> passthrough</td><td>Would bypass the DEV-only guards and the force vocabulary; G1/G2 already send users to PAC directly.</td></tr>
 <tr><td>R12</td><td>Ship <code>settings</code> as a separate extension</td><td>Too expensive for the value; cuts against the single-CLI, progressive-adoption posture.</td></tr>
-<tr><td>R13</td><td>Three command kinds with their own grammar, grouped in help</td><td>Restates C1 as a taxonomy. The one rule it would enforce is already enforced by C1 and idea 4.</td></tr>
+<tr><td>R13</td><td>Three command kinds with their own grammar, grouped in help</td><td>Restates C1 as a taxonomy. The one rule it would enforce is already enforced by C1.</td></tr>
 <tr><td>R14</td><td>Drop <code>init --publisher-name</code></td><td>Below the meeting floor; nobody has hit it.</td></tr>
 <tr><td>R15</td><td>Expose the provision unmanaged guard as its own check</td><td>Not grounded in a user need.</td></tr>
 <tr><td>R16</td><td>Treat generate backends as Terraform-style providers</td><td>Duplicates the withdrawn xrmcontext3 idea (R17) at higher cost. The premise that <code>--client-id</code> is xrmcontext3-only was refuted (<code>GenerateCommand.cs:196-203</code>).</td></tr>
