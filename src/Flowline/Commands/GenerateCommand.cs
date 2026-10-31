@@ -48,7 +48,7 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
         public string? Output { get; set; }
 
         [CommandOption("--generator")]
-        [Description("Model builder generator to use (pac|xrmcontext3|xrmcontext|ebg), default: pac (saved to .flowline)")]
+        [Description("Model builder generator to use (pac|xrmcontext3|xrmcontext|ebg; xrmcontext is XrmContext v4, in preview), default: pac (saved to .flowline)")]
         public GeneratorType? Generator { get; set; }
 
         [CommandOption("--client-id <ID>")]
@@ -370,7 +370,7 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
                     throw new FlowlineException(ExitCode.NotAuthenticated,
                         "xrmcontext3 uses ADAL browser OAuth for UNIVERSAL profiles — not available in non-interactive/CI mode. " +
                         "Pass --client-id <CLIENT_ID> --client-secret <SECRET> to authenticate as a service principal. " +
-                        "Alternatively, upgrade to XrmContext v4 using --generator xrmcontext which produces a different output layout.");
+                        "XrmContext v4 is in preview and not released yet.");
                 xrmContextAuth = new XrmContextAuth.BrowserOAuth(DataverseConnector.PacCliAppId);
             }
             else if (effectiveProfile.IsServicePrincipal)
