@@ -103,7 +103,7 @@
 <li><a href="#i2">One spelling for the solution name: <code>--solution-name</code></a> (step 1 implemented)</li>
 <li><a href="#i3">Make the written contract match the code</a> (implemented)</li>
 <li><a href="#i4">One test that enforces the surface rules over the real command tree</a></li>
-<li><a href="#i5">Rename <code>settings push</code>/<code>pull</code> before the verbs set</a></li>
+<li><a href="#i5">Name the settings verbs for what they do, and require a component name for writes</a> (decided)</li>
 <li><a href="#i6">Retire the <code>xrmcontext3</code> generator backend</a></li>
 </ol>
 </nav>
@@ -224,17 +224,32 @@ Known deviations go in a named allow-list with their decision ID, so the list on
 </article>
 
 <article class="idea" id="i5">
-<h3>5. Rename <code>settings push</code>/<code>pull</code> before the verbs set</h3>
-<div class="chips"><span>Axis C</span><span>Confidence 55%</span><span>Complexity Medium</span></div>
+<h3>5. Name the settings verbs for what they do, and require a component name for writes</h3>
+<div class="chips"><span>Axis C</span><span>Confidence 70%</span><span>Complexity Medium</span><span class="keep">Decided: apply/capture, positional name</span></div>
+<p class="implemented"><strong>Decided 2026-10-31:</strong> rename <code>settings push</code>/<code>pull</code> to <code>settings apply</code>/<code>capture</code> (option A over separate top-level commands and over keeping push/pull), keep the component name positional, and make writes require it (option N1 over a <code>--component</code> flag). Breaking is accepted for a better long-term surface. Not implemented yet.</p>
 <dl>
 <dt>Description</dt>
-<dd>Root <code>push</code> registers code assets into DEV and root <code>pull</code> exports the solution from DEV. <code>settings push</code> applies a settings file to any environment and <code>settings pull</code> writes one from any environment. Same verbs, different objects, different environment rules. Rename the settings pair after what it does, the way KTD25 already named <code>toggle</code> and <code>set</code>: <code>settings apply</code> and <code>settings capture</code>. Each verb then appears once in the tree with one meaning. <code>--settings-file</code> is still an input on one and an output on the other, but "apply a file" and "capture to a file" make that direction obvious.</dd>
+<dd>
+<p>The target surface:</p>
+<pre><code>flowline settings apply   &lt;target&gt; [--settings-file &lt;path&gt;] [--dry-run]
+flowline settings capture [target] [--from &lt;zip|folder&gt;] [--settings-file &lt;path&gt;]
+flowline settings toggle  &lt;target&gt; [name] [--type ...] [--on|--off]
+flowline settings set     &lt;target&gt; [name] [--type ...] [--value &lt;value&gt;]</code></pre>
+<ul class="tight">
+<li><strong>Rename</strong> <code>settings push</code> to <code>settings apply</code> and <code>settings pull</code> to <code>settings capture</code>. No alias (KD5). Arguments and flags stay as they are.</li>
+<li><strong>Component name stays positional</strong> on <code>toggle</code> and <code>set</code>. Given: act on that component. Left out with no <code>--on</code>, <code>--off</code> or <code>--value</code>: list them (scripts) or pick one (terminal), as today.</li>
+<li><strong>Writes require the name.</strong> Left out with <code>--on</code>, <code>--off</code> or <code>--value</code> in a script: fail, naming the positional, for example "Name the component to turn off: <code>settings toggle prod &lt;name&gt; --off</code>". At a terminal the picker still runs, then writes the picked component.</li>
+</ul>
+</dd>
 <dt>Basis</dt>
-<dd><code>direct:</code> "Two component operations, named for what they do rather than for what they address (KTD25)" (<code>Program.cs:531-532</code>). P10 deferred the settings grammar; it shipped afterwards (commit <code>d0cddbe</code>), so this does not reopen a decision.</dd>
+<dd><code>direct:</code> the help already uses these words: "Apply a settings file to an environment" (<code>Program.cs:518</code>), "Environment to capture" (<code>SettingsPullCommand.cs:31</code>). <code>toggle</code> and <code>set</code> are "named for what they do rather than for what they address (KTD25)" (<code>Program.cs:531-532</code>). An unattended write with no name lists the components and exits 0, dropping <code>--off</code> or <code>--value</code> without a word (<code>SettingsComponentCommands.cs:142-149</code>).</dd>
 <dt>Rationale</dt>
-<dd>An agent that learns <code>pull</code> as "DEV only, clean tree" carries that to <code>settings pull test</code> and gets it wrong. The settings branch is still pre-1.0 and has had one rename already, so a second costs little now and more later.</dd>
+<dd>
+<p><strong>Verbs.</strong> All four settings verbs then follow one rule, and each verb appears once in the command tree. <code>apply</code> fits what the command does: the file is the truth and a re-run converges, the meaning <code>kubectl apply</code> made familiar. <code>capture</code> carries none of root <code>pull</code>'s DEV-only, clean-tree, version-bump expectations. Separate top-level commands were rejected: at the root <code>apply</code> loses its object, <code>set</code> reads as a config editor (G3), and the root help would mix the delivery loop with environment administration.</p>
+<p><strong>Name.</strong> The component is what the verb acts on, and leaving it out changes the scope to "all, read-only" rather than filling in a default, so C1 makes it positional where it is required. A <code>--component</code> flag was the runner-up: it labels the input and makes order irrelevant, but lengthens the common form. Making writes require the name fixes a real defect where a script thinks it turned something off and nothing changed.</p>
+</dd>
 <dt>Downsides</dt>
-<dd>Breaking, and the second rename of this branch in two months. Push/pull pairs well with git and PAC habits; apply/capture is clearer but less familiar. Leaving the names and adding one line to the branch description is the cheap fallback.</dd>
+<dd>Breaks released commands (<code>settings push</code>/<code>pull</code> shipped in 0.19.0), about 22 doc lines (wiki 09-Settings has 11, 12-AI-Agents 4), and users' scripts. It is the second rename of this branch in two months; shipping it in the same release as the toggle/set rename, still under Unreleased Breaking, keeps it to one breaking settings release. Two positionals of different kinds remain; a swapped order should fail because the component name is neither a role nor a URL, which is unverified.</dd>
 </dl>
 </article>
 
