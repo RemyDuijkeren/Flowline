@@ -78,7 +78,7 @@ public class ManagedFlagBindingTests
     // Regression: clone's positional was declared REQUIRED ("<solution>"), so Spectre rejected
     // `flowline clone` with no args at parse time — before ExecuteFlowlineAsync ran. That made the
     // interactive pick-or-create path (ShouldPickOrCreate keys off an empty settings.Solution)
-    // unreachable via the CLI. The arg must be optional ("[solution]") so a bare invocation binds
+    // unreachable via the CLI. The arg must be optional ("[solution-name]") so a bare invocation binds
     // with a null Solution and reaches the gate. Goes through real Spectre binding, which the direct
     // ShouldPickOrCreate/PickOrCreateAsync unit tests bypass (that's why the dead path shipped green).
     [Fact]

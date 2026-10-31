@@ -105,7 +105,7 @@ Declare parameters on the class with `[Input(name, FieldType, …)]` and `[Outpu
 `push` also runs standalone against a loose assembly — no `.flowline`, no repo, no project layout. Useful for checking a build from CI, someone else's DLL, or a solution you haven't cloned:
 
 ```
-flowline push ContosoSales --plugin-file ./bin/Release/MyPlugins.dll --env https://contoso-dev.crm4.dynamics.com --dry-run
+flowline push --solution-name ContosoSales --plugin-file ./bin/Release/MyPlugins.dll --env https://contoso-dev.crm4.dynamics.com --dry-run
 ```
 
 Three differences from project mode:

@@ -20,7 +20,7 @@ No `.flowline`? Route in this order:
 1. **Migration candidate** — `spkl.json`, a Daxif `_Config.fsx`/`*.daxif`, a `.pacxproj`, or an ALM
    Accelerator pipeline: defer to the `flowline-migration` skill. Don't offer `clone`/`init`.
 2. **Plugin-DLL-only task** (register a compiled assembly, no project wanted): standalone mode —
-   `flowline push <SolutionName> --plugin-file <dll|nupkg> --env <url>`, or `--webresources <folder>`.
+   `flowline push --solution-name <SolutionName> --plugin-file <dll|nupkg> --env <url>`, or `--webresources <folder>`.
    No `clone`, no `.flowline`. The solution must already exist in the environment.
 3. **The solution already exists in Dataverse** → `flowline clone <SolutionName> --env <url>`. Bare
    `flowline clone` picks interactively (environment, then one of its unmanaged solutions). Clone only
