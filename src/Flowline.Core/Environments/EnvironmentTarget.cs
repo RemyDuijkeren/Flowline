@@ -27,6 +27,26 @@ public static class EnvironmentTarget
     /// <summary>A role keyword or an absolute http(s) URL: the kind of thing a target accepts.</summary>
     public static bool IsTarget(string value) => EnvironmentRoles.TryParse(value) is not null || IsUrl(value);
 
+    /// <summary>
+    /// Reads a role out of a positional target, or fails before anything resolves it.
+    /// </summary>
+    /// <remarks>
+    /// A role has nothing to resolve against outside a project. Anything that is neither a role nor an
+    /// http(s) URL fails with <paramref name="notATarget"/>'s message, which carries the caller's fix line.
+    /// </remarks>
+    public static EnvironmentRole? Check(string target, bool standalone, Func<string> notATarget)
+    {
+        var role = EnvironmentRoles.TryParse(target);
+
+        if (standalone && role is not null)
+            throw new FlowlineException(ExitCode.ConfigInvalid, StandaloneRole(target));
+
+        if (role is null && !IsUrl(target))
+            throw new FlowlineException(ExitCode.ValidationFailed, notATarget());
+
+        return role;
+    }
+
     /// <summary>The message for a target that is neither a role nor a URL, ending with the caller's fix.</summary>
     public static string NotATarget(string value, string fix) =>
         $"'{value}' isn't a role ({s_roleList}) or a URL. {fix}";

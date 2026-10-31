@@ -62,9 +62,9 @@ public abstract class SettingsCommandBase<TSettings>(
     /// The component operations pass their name and the invocation, so a swapped order is answered with
     /// the line to run.
     /// </remarks>
-    protected EnvironmentRole? ResolveRoleOrThrow(
+    protected static EnvironmentRole? ResolveRoleOrThrow(
         string target, bool standalone, string? name = null, IReadOnlyList<string>? args = null) =>
-        Environments.CheckTarget(target, standalone,
+        EnvironmentTarget.Check(target, standalone,
             () => SettingsSupport.BuildNotAnEnvironmentError(target, name, args ?? []));
 
     /// <summary>

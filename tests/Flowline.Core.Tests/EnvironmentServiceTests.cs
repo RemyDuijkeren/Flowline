@@ -148,48 +148,6 @@ public class EnvironmentServiceTests
             .Which.Message.Should().Contain("UatUrl");
     }
 
-    // ── Check a target ───────────────────────────────────────────────────────
-
-    [Fact]
-    public void CheckTarget_NotARoleOrUrl_ThrowsValidationFailedWithTheCallersMessage()
-    {
-        var (service, _) = MakeService("Sandbox");
-
-        var act = () => service.CheckTarget("staging", standalone: false, () => "caller's message");
-
-        act.Should().Throw<FlowlineException>()
-           .Where(e => e.ExitCode == ExitCode.ValidationFailed)
-           .Which.Message.Should().Be("caller's message");
-    }
-
-    [Fact]
-    public void CheckTarget_RoleInStandaloneMode_ThrowsConfigInvalid()
-    {
-        var (service, _) = MakeService("Sandbox");
-
-        var act = () => service.CheckTarget("prod", standalone: true, () => "unused");
-
-        act.Should().Throw<FlowlineException>()
-           .Where(e => e.ExitCode == ExitCode.ConfigInvalid)
-           .Which.Message.Should().Contain("'prod'");
-    }
-
-    [Fact]
-    public void CheckTarget_RoleInAProject_ReturnsTheRole()
-    {
-        var (service, _) = MakeService("Sandbox");
-
-        service.CheckTarget("PROD", standalone: false, () => "unused").Should().Be(EnvironmentRole.Prod);
-    }
-
-    [Fact]
-    public void CheckTarget_Url_ReturnsNoRole()
-    {
-        var (service, _) = MakeService("Sandbox");
-
-        service.CheckTarget(EnvUrl, standalone: true, () => "unused").Should().BeNull();
-    }
-
     // ── Resolve a role or a URL ──────────────────────────────────────────────
 
     [Fact]

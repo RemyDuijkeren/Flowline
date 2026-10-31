@@ -32,6 +32,36 @@ public class EnvironmentTargetTests
     public void IsUrl_RoleKeyword_ReturnsFalse() =>
         EnvironmentTarget.IsUrl("prod").Should().BeFalse();
 
+    // ── Checking a positional target ─────────────────────────────────────────
+
+    [Fact]
+    public void Check_NotARoleOrUrl_ThrowsValidationFailedWithTheCallersMessage()
+    {
+        var act = () => EnvironmentTarget.Check("staging", standalone: false, () => "caller's message");
+
+        act.Should().Throw<FlowlineException>()
+           .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+           .Which.Message.Should().Be("caller's message");
+    }
+
+    [Fact]
+    public void Check_RoleInStandaloneMode_ThrowsConfigInvalid()
+    {
+        var act = () => EnvironmentTarget.Check("prod", standalone: true, () => "unused");
+
+        act.Should().Throw<FlowlineException>()
+           .Where(e => e.ExitCode == ExitCode.ConfigInvalid)
+           .Which.Message.Should().Contain("'prod'");
+    }
+
+    [Fact]
+    public void Check_RoleInAProject_ReturnsTheRole() =>
+        EnvironmentTarget.Check("PROD", standalone: false, () => "unused").Should().Be(EnvironmentRole.Prod);
+
+    [Fact]
+    public void Check_Url_ReturnsNoRole() =>
+        EnvironmentTarget.Check("https://contoso.crm4.dynamics.com", standalone: true, () => "unused").Should().BeNull();
+
     // ── Messages ─────────────────────────────────────────────────────────────
 
     [Fact]

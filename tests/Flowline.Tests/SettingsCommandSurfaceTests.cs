@@ -74,7 +74,7 @@ public class SettingsCommandSurfaceTests : IDisposable
             ExecuteFlowlineAsync(new CommandContext(args, new NoRemainingArguments(), "toggle", null), settings,
                 CancellationToken.None);
 
-        public EnvironmentRole? ResolveRole(
+        public static EnvironmentRole? ResolveRole(
             string target, bool standalone, string? name, IReadOnlyList<string> args) =>
             ResolveRoleOrThrow(target, standalone, name, args);
     }
@@ -677,7 +677,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     [Fact]
     public void ATargetThatIsNotAnEnvironment_FailsAsInvalidInput()
     {
-        var act = () => MakeStateProbe(interactive: false).ResolveRole(
+        var act = () => StateProbe.ResolveRole(
             "ApprovalFlow", standalone: false, "prod", ["settings", "toggle", "ApprovalFlow", "prod", "--off"]);
 
         act.Should().Throw<FlowlineException>()
@@ -689,7 +689,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     [Fact]
     public void ARoleOutsideAProject_StillGetsTheStandaloneAnswer()
     {
-        var act = () => MakeStateProbe(interactive: false).ResolveRole("prod", standalone: true, null, ["settings", "toggle", "prod"]);
+        var act = () => StateProbe.ResolveRole("prod", standalone: true, null, ["settings", "toggle", "prod"]);
 
         act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
     }
@@ -697,8 +697,8 @@ public class SettingsCommandSurfaceTests : IDisposable
     [Fact]
     public void ARoleOrAUrl_ResolvesAsBefore()
     {
-        MakeStateProbe(interactive: false).ResolveRole("prod", standalone: false, null, []).Should().Be(EnvironmentRole.Prod);
-        MakeStateProbe(interactive: false).ResolveRole("https://contoso.crm4.dynamics.com", standalone: true, null, []).Should().BeNull();
+        StateProbe.ResolveRole("prod", standalone: false, null, []).Should().Be(EnvironmentRole.Prod);
+        StateProbe.ResolveRole("https://contoso.crm4.dynamics.com", standalone: true, null, []).Should().BeNull();
     }
 
     // ── A scripted write with no name ────────────────────────────────────────

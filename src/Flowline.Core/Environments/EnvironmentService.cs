@@ -10,9 +10,9 @@ namespace Flowline.Core.Environments;
 /// Checks and looks up the environment a command is pointed at: the one place every command does this.
 /// </summary>
 /// <remarks>
-/// It holds no project state. The caller passes the config and whether it runs stand-alone, so one
-/// instance serves every command. The rules it applies (what a target is, which type a role may point at)
-/// live in <see cref="EnvironmentTarget"/>.
+/// It holds no project state. The caller passes the config, so one instance serves every command. The
+/// rules it applies (what a target is, which type a role may point at) live in <see cref="EnvironmentTarget"/>,
+/// and so does the check a positional target gets before any lookup.
 /// </remarks>
 public sealed class EnvironmentService(
     IAnsiConsole console,
@@ -20,26 +20,6 @@ public sealed class EnvironmentService(
     FlowlineValidator validator,
     FlowlineRuntimeOptions options)
 {
-    /// <summary>
-    /// Reads a role out of a positional target, or fails before anything resolves it.
-    /// </summary>
-    /// <remarks>
-    /// A role has nothing to resolve against outside a project. Anything that is neither a role nor an
-    /// http(s) URL fails with <paramref name="notATarget"/>'s message, which carries the caller's fix line.
-    /// </remarks>
-    public EnvironmentRole? CheckTarget(string target, bool standalone, Func<string> notATarget)
-    {
-        var role = EnvironmentRoles.TryParse(target);
-
-        if (standalone && role is not null)
-            throw new FlowlineException(ExitCode.ConfigInvalid, EnvironmentTarget.StandaloneRole(target));
-
-        if (role is null && !EnvironmentTarget.IsUrl(target))
-            throw new FlowlineException(ExitCode.ValidationFailed, notATarget());
-
-        return role;
-    }
-
     /// <summary>Looks up a role through its saved URL, or a URL as given.</summary>
     public Task<(EnvironmentInfo Info, PacProfile Profile)> ResolveAsync(
         ProjectConfig config, string target, EnvironmentRole? role, CancellationToken cancellationToken) =>

@@ -111,14 +111,14 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
     {
         var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
         var standalone = IsStandalone(settings);
-        var targetUrl = ResolveTargetUrl(settings, standalone);
+        var (targetUrl, targetRole) = ResolveTarget(settings.Target, Config, standalone);
 
         // U3/KTD2: standalone only, and hoisted this high only because standalone builds its
         // ProjectSolution from this manifest instead of Config, and `sln` is consumed below (target
         // validation, artifact path) before the `usingExplicitArtifact` branch that used to own this read.
         // Deliberately NOT hoisted for --path inside a project (R2: that route must behave exactly as it
         // does today). Hoisting it there too would move a corrupt-zip failure ahead of ValidateTargetAsync,
-        // so the `Target: <env>` line and its round-trip would stop happening first — a visible reordering
+        // so the environment check line and its round-trip would stop happening first — a visible reordering
         // of project-mode output, which the Goal Capsule puts out of scope. That route keeps reading the
         // manifest at its original point below; each route still parses the zip exactly once.
         var artifactManifest = standalone
@@ -158,7 +158,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
             await ValidateGitCleanAsync(deploymentInputPaths, cancellationToken);
         }
 
-        var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(targetUrl, sln, settings, cancellationToken);
+        var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(targetUrl, targetRole, sln, settings, cancellationToken);
 
         // Resolve the DTAP gate's version cheaply (artifact manifest, cache entry, or local Solution.xml) so the
         // gate keeps failing fast before any expensive work — packing itself is deferred past the gate below.
@@ -383,52 +383,21 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         }
     }
 
-    private string ResolveTargetUrl(Settings settings, bool standalone) => ResolveTargetUrl(settings.Target, Config, standalone);
-
-    // R15: `standalone` only reshapes the "can't resolve" message below — a role keyword resolves the
-    // same way either way, since Config is `new ProjectConfig()` (all URLs empty) in standalone, so
-    // every role keyword falls through to that throw there. Default false keeps every existing
-    // project-mode call site (and test) unchanged.
-    internal static string ResolveTargetUrl(string target, ProjectConfig config, bool standalone = false)
+    // Resolved at the top of the run, before the git-clean check and the artifact read, so an unusable
+    // target is reported first. The role travels on to the environment check, which applies the
+    // environment-type guard to it; a URL carries no role, so it gets none.
+    internal static (string Url, EnvironmentRole? Role) ResolveTarget(string target, ProjectConfig config, bool standalone = false)
     {
-        var url = target.ToLowerInvariant() switch
-        {
-            "prod" => config.ProdUrl,
-            "uat"  => config.UatUrl,
-            "test" => config.TestUrl,
-            "dev"  => config.DevUrl,
-            _      => target
-        };
+        var role = EnvironmentTarget.Check(target, standalone,
+            () => EnvironmentTarget.NotATarget(target, $"Run: flowline deploy {EnvironmentTarget.TargetPlaceholder}"));
 
-        if (string.IsNullOrWhiteSpace(url))
-            throw new FlowlineException(ExitCode.ConfigInvalid,
-                standalone
-                    ? $"Can't resolve '{target}' — no config here to check (standalone mode). Pass an explicit URL instead."
-                    : $"Can't resolve '{target}' — provide an explicit URL or check your .flowline config.");
-
-        // Anything that isn't prod/uat/test/dev falls through as a literal URL above — reject garbage here
-        // rather than letting it reach MSAL as a token scope, which fails with an opaque AADSTS error.
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed) ||
-            (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
-            throw new FlowlineException(ExitCode.ValidationFailed,
-                $"'{target}' isn't a known target (prod, uat, test, dev) or a valid URL.");
-
-        return url;
+        return (role is { } r ? EnvironmentTarget.RequireRoleUrl(config, r) : target, role);
     }
 
     private async Task<(EnvironmentInfo TargetEnv, bool ExistingSolution, PacProfile Profile)> ValidateTargetAsync(
-        string targetUrl, ProjectSolution sln, Settings settings, CancellationToken ct)
+        string targetUrl, EnvironmentRole? targetRole, ProjectSolution sln, Settings settings, CancellationToken ct)
     {
-        var profile = await ProfileResolutionService.ResolveAsync(targetUrl, ct);
-        var targetEnv = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Checking [bold]{targetUrl}[/]...",
-            _ => Validator.GetEnvironmentInfoByUrlAsync(targetUrl, profile, RuntimeOptions, settings.NoCache, ct));
-
-        if (targetEnv == null)
-            throw new FlowlineException(ExitCode.ConnectionFailed,
-                "Target environment not found — check the URL or your PAC login.");
-
-        Console.MarkupLine($"[green]Target: [bold]{targetEnv.DisplayName}[/] ({targetEnv.EnvironmentUrl})[/]");
+        var (targetEnv, profile) = await Environments.CheckByUrlAsync(targetUrl, targetRole, ct);
 
         var existingSolution = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.UniqueName}[/]...",

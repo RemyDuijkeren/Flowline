@@ -56,7 +56,7 @@ public class DriftCommand(CommandServices services, DataverseConnector dataverse
         // Checked before the artifact read below, so an unusable target is reported ahead of a bad zip,
         // the same order deploy uses. A role outside a project has no .flowline to resolve from, and a
         // word that is neither a role nor a URL fails here instead of at the PAC profile lookup.
-        var role = Environments.CheckTarget(settings.Target, standalone,
+        var role = EnvironmentTarget.Check(settings.Target, standalone,
             () => EnvironmentTarget.NotATarget(settings.Target, $"Run: flowline drift {EnvironmentTarget.TargetPlaceholder}"));
 
         // R5/R7: when an artifact is named, it is the only identity source — read (and validated) before
