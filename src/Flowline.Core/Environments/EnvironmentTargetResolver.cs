@@ -33,10 +33,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         // Role keyword (R5): resolves straight from .flowline, never touches Dataverse.
         if (TryParseRole(value, out var keywordRole))
         {
-            var configuredUrl = config.GetUrl(keywordRole);
-            if (string.IsNullOrWhiteSpace(configuredUrl))
-                throw new FlowlineException(ExitCode.ConfigInvalid,
-                    $"{keywordRole.ConfigKey()} isn't set in .flowline — add it, or pass --env <url>.");
+            var configuredUrl = EnvironmentTarget.RequireRoleUrl(config, keywordRole, "pass --env <url>");
 
             if (onlyRole is { } required && keywordRole != required)
                 throw RoleOnlyRefusal($"'{value}' targets {keywordRole.UpperLabel()}", required);
@@ -52,15 +49,14 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
             if (onlyRole is { } required && matchedRole != required)
                 throw RoleOnlyRefusal($"'{value}' is your {matchedRole.Value.UpperLabel()} environment", required);
 
-            return new EnvironmentTargetResult(config.GetUrl(matchedRole.Value)!, matchedRole, Saved: false);
+            return new EnvironmentTargetResult(EnvironmentTarget.RequireRoleUrl(config, matchedRole.Value), matchedRole, Saved: false);
         }
 
         // Neither a keyword nor a URL — fail before spending a network round-trip on something like a
         // typo'd role keyword ('staging'), which Uri.TryCreate can't tell apart from garbage input.
-        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        if (!EnvironmentTarget.IsUrl(value))
             throw new FlowlineException(ExitCode.ValidationFailed,
-                $"'{value}' isn't a role (dev, test, uat, prod) or a URL — pass --env <dev|test|uat|prod|url>.");
+                EnvironmentTarget.NotATarget(value, $"Pass --env {EnvironmentTarget.TargetPlaceholder}."));
 
         // A URL Flowline hasn't seen — read its type through the profile-less lookup (KTD2: never
         // pac's GetPartsFromEnvUrl, which exits the process on a regex miss) so the role gate below

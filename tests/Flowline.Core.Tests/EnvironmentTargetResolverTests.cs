@@ -259,7 +259,39 @@ public class EnvironmentTargetResolverTests
         var act = () => resolver.ResolveAsync("staging", config, onlyRole: null, isInteractive: false,
             new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
 
-        (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Which.Message.Should().Contain("'staging'").And.Contain("--env <dev|test|uat|prod|url>");
+    }
+
+    // ── A role whose saved value isn't a URL fails before any lookup ──────────
+
+    [Fact]
+    public async Task ResolveAsync_Keyword_SavedValueIsNotAUrl_ThrowsValidationFailed_NamingKey_NoEnvInfoCall()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig { UatUrl = "not-a-url" };
+
+        var act = () => resolver.ResolveAsync("uat", config, onlyRole: null, isInteractive: false,
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Which.Message.Should().Contain("UatUrl").And.Contain("not-a-url");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ValueMatchesASavedNonUrl_ThrowsValidationFailed_NamingKey_NoEnvInfoCall()
+    {
+        var (resolver, _) = MakeResolver();
+        var config = new ProjectConfig { DevUrl = "contoso-dev" };
+
+        var act = () => resolver.ResolveAsync("contoso-dev", config, onlyRole: null, isInteractive: false,
+            new FlowlineRuntimeOptions(), NotCalled(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Which.Message.Should().Contain("DevUrl");
     }
 
     // ── Gate: DEV-only commands refuse anything but DEV, before connecting ─────
