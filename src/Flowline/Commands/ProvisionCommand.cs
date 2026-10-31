@@ -57,22 +57,16 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
             (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, RuntimeOptions, settings.NoCache, ct), cancellationToken);
         var (prodEnv, _) = await Environments.CheckByUrlAsync(source.Url, EnvironmentRole.Prod, cancellationToken);
 
+        // The positional only takes dev, test or uat, so it always names a role.
+        var environmentRole = EnvironmentRoles.TryParse(settings.Role.ToString())!.Value;
+
         // Prepare the target environment name and url
-        var suffix = string.IsNullOrWhiteSpace(settings.Suffix)
-            ? settings.Role switch { Role.Dev => "Dev", Role.Uat => "UAT", _ => "Test" }
-            : settings.Suffix;
+        var suffix = string.IsNullOrWhiteSpace(settings.Suffix) ? environmentRole.Label() : settings.Suffix;
         var targetDisplayName = $"{prodEnv.DisplayName} {suffix}";
         EnvironmentUrlParts urlParts = PacUtils.GetPartsFromEnvUrl(prodEnv.EnvironmentUrl!);
         var targetUrl = $"https://{urlParts.Organization}-{suffix.ToLower()}.{urlParts.Host}/";
         Logger.LogInformation("source={ProdUrl} target={TargetUrl} role={Role}", prodEnv.EnvironmentUrl, targetUrl, settings.Role);
 
-        var environmentRole = settings.Role switch
-        {
-            Role.Dev  => EnvironmentRole.Dev,
-            Role.Test => EnvironmentRole.Test,
-            Role.Uat  => EnvironmentRole.Uat,
-            _ => throw new ArgumentOutOfRangeException(nameof(settings.Role))
-        };
         string? url = Config.GetOrUpdateUrl(environmentRole, targetUrl, RuntimeOptions);
 
         if (url == null)
@@ -162,7 +156,7 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
             return (int)ExitCode.ValidationFailed;
         }
 
-        string copyType = ResolveCopyType(settings.Role, settings.CopyType) == CopyType.Full ? "FullCopy" : "MinimalCopy";
+        string copyType = ResolveCopyType(environmentRole, settings.CopyType) == CopyType.Full ? "FullCopy" : "MinimalCopy";
         Logger.LogInformation("Copying {CopyType} from {Source} to {Target}", copyType, prodEnv.EnvironmentUrl, targetEnv.EnvironmentUrl);
 
         var (cmdNameCopy, prefixArgsCopy, _) = await PacUtils.GetBestPacCommandAsync(cancellationToken);
@@ -206,8 +200,8 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
         $"'{targetDisplayName}' already exists — overwrite it with a fresh copy from prod?";
 
     // R17: an explicit --copy always wins; otherwise test/uat default to a full copy and dev to minimal.
-    internal static CopyType ResolveCopyType(Role role, CopyType? copyType) =>
-        copyType ?? (role is Role.Test or Role.Uat ? CopyType.Full : CopyType.Minimal);
+    internal static CopyType ResolveCopyType(EnvironmentRole role, CopyType? copyType) =>
+        copyType ?? (role is EnvironmentRole.Test or EnvironmentRole.Uat ? CopyType.Full : CopyType.Minimal);
 
     internal static IReadOnlyList<(SolutionInfo Target, string Reason)> FindProblematicSolutions(
         IEnumerable<SolutionInfo> targetSolutions,

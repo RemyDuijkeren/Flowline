@@ -86,6 +86,16 @@ public class EnvironmentTargetTests
         message.Should().Contain("Pass the environment URL instead");
     }
 
+    // provision names a new environment "<prod name> <label>" and builds its URL from the label, so these
+    // must not drift.
+    [Theory]
+    [InlineData(EnvironmentRole.Dev, "Dev")]
+    [InlineData(EnvironmentRole.Test, "Test")]
+    [InlineData(EnvironmentRole.Uat, "UAT")]
+    [InlineData(EnvironmentRole.Prod, "Prod")]
+    public void Label_IsTheMixedCaseRoleName(EnvironmentRole role, string expected) =>
+        role.Label().Should().Be(expected);
+
     // ── Which environment type a role may point at ───────────────────────────
 
     [Theory]

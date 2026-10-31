@@ -2,6 +2,7 @@ using Flowline.Core.Console;
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Core.Environments;
 using Flowline.Core.Models;
 using Flowline.Settings;
 using Spectre.Console.Cli;
@@ -190,13 +191,13 @@ public class ProvisionCommandTests
     }
 
     [Theory]
-    [InlineData(Role.Dev, null, CopyType.Minimal)]
-    [InlineData(Role.Test, null, CopyType.Full)]
-    [InlineData(Role.Uat, null, CopyType.Full)]
-    [InlineData(Role.Test, CopyType.Minimal, CopyType.Minimal)]
-    [InlineData(Role.Uat, CopyType.Minimal, CopyType.Minimal)]
-    [InlineData(Role.Dev, CopyType.Full, CopyType.Full)]
-    public void ResolveCopyType_ExplicitCopyWinsOtherwiseRoleDefault(Role role, CopyType? requested, CopyType expected)
+    [InlineData(EnvironmentRole.Dev, null, CopyType.Minimal)]
+    [InlineData(EnvironmentRole.Test, null, CopyType.Full)]
+    [InlineData(EnvironmentRole.Uat, null, CopyType.Full)]
+    [InlineData(EnvironmentRole.Test, CopyType.Minimal, CopyType.Minimal)]
+    [InlineData(EnvironmentRole.Uat, CopyType.Minimal, CopyType.Minimal)]
+    [InlineData(EnvironmentRole.Dev, CopyType.Full, CopyType.Full)]
+    public void ResolveCopyType_ExplicitCopyWinsOtherwiseRoleDefault(EnvironmentRole role, CopyType? requested, CopyType expected)
     {
         ProvisionCommand.ResolveCopyType(role, requested).Should().Be(expected);
     }
