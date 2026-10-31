@@ -50,7 +50,10 @@ Flowline/
     ├── .codex-plugin/plugin.json      ← Codex manifest (name+version+description — the safe convention, not a documented hard requirement)
     └── skills/
         ├── flowline/SKILL.md
-        └── flowline-migration/SKILL.md
+        ├── flowline-generate/SKILL.md
+        ├── flowline-migration/SKILL.md
+        ├── flowline-plugins/SKILL.md
+        └── flowline-webresources/SKILL.md
 ```
 
 ## Why This Matters

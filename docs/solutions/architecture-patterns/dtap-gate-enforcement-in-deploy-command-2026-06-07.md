@@ -63,13 +63,13 @@ internal sealed record DtapGateDecision(DtapGateOutcome Outcome, string? Predece
 ### `ReadLocalSolutionVersion` — read version from source XML
 
 ```csharp
-internal static string ReadLocalSolutionVersion(string packageFolderPath)
-// Reads: packageFolderPath/src/Other/Solution.xml
+internal static string ReadLocalSolutionVersion(string dataverseSolutionFolder)
+// Reads: <dataverseSolutionFolder>/src/Other/Solution.xml
 // XPath: ImportExportXml/SolutionManifest/Version
 // Throws FlowlineException if file missing or version empty/absent
 ```
 
-Only called when `Outcome == Check` — avoids XML parsing when the gate will be skipped.
+Called at the start of the packed route to get the gate version (a cache hit or `--path` reads the version from the cache entry or artifact manifest instead). Takes the Dataverse solution folder, not the package folder.
 
 ### Gate wiring in `ExecuteFlowlineAsync`
 
@@ -80,7 +80,7 @@ var dtapDecision = ResolveDtapGate(Config!, targetUrl);
 
 if (dtapDecision.Outcome == DtapGateOutcome.DevBlock)
 {
-    Console.Error("Dev is a development environment — use 'sync' to push changes there, not 'deploy'.");
+    Console.Error("Dev is a development environment — use 'push' to push changes there, not 'deploy'.");
     return (int)ExitCode.ValidationFailed;  // non-bypassable
 }
 
@@ -107,6 +107,8 @@ if (dtapDecision.Outcome == DtapGateOutcome.Check)
 
 **Update (2026-07-10):** the wiring above has drifted, though `ResolveDtapGate`/`ReadLocalSolutionVersion` and the outcomes/order they drive are unchanged. The gate is no longer inline in `ExecuteFlowlineAsync` — it's extracted into its own `ValidateDtapGateAsync(sln, slnFolder, targetUrl, settings, ct)` helper, called from `ExecuteFlowlineAsync` right after the managed/unmanaged type guard, exactly where the diagram above already says it runs. `Console.Error(...); return (int)ExitCode...;` has been replaced by `throw new FlowlineException(ExitCode.ValidationFailed, "...")` for every branch — same outcome, different mechanism, matching the same change already made to the managed/unmanaged type guard (see that doc's own 2026-07-10 update). The predecessor lookup also now passes `bypassCache: true` to `GetSolutionInfoAsync`, and the version-mismatch message reads "... in {label} environment is v..." (adds the word "environment") rather than "... in {label} is v...".
 
+**Update (2026-11-01):** the version rule is now an exact match (`DtapVersionMatches`), not predecessor >= local: a predecessor at a different version, older or newer, blocks. Message: "... in {label} environment is v{x} — v{local} hasn't been verified there. Promote v{local} through {label} first, or use --skip-dtap-check." (`DeployCommand.cs:486-488`). The local version is read once at the start of the packed route (or from the artifact cache or `--path` manifest) and passed to the gate. Role targets are resolved first by `ResolveTarget`/`CheckTargetAsync`, which applies `EnvironmentService`'s environment-type guard (`EnvironmentTarget.CheckType`).
+
 ### `--skip-dtap-check` flag
 
 Declared on `DeployCommand.Settings`, not `FlowlineSettings` — DTAP gate is deploy-only:
@@ -124,7 +126,7 @@ Bypasses the existence and version checks but still reads local `Solution.xml` (
 
 **Skipping tiers is silent without enforcement.** Prod receives a version that never passed UAT or Test. Bugs that UAT would have caught reach production.
 
-**Dev is the wrong target for `deploy`.** `sync` exports from a live Dev environment and unpacks to source XML. `deploy` packs from source XML and imports to a target. Running `deploy dev` would import the current source state into Dev, overwriting any live in-progress work.
+**Dev is the wrong target for `deploy`.** `pull` exports from a live Dev environment and unpacks to source XML. `deploy` packs from source XML and imports to a target. Running `deploy dev` would import the current source state into Dev, overwriting any live in-progress work.
 
 **Nearest-predecessor, not strict immediate predecessor.** Teams with a two-environment setup (Prod + Test, no UAT) get enforcement without needing placeholder UAT entries. The gate finds the nearest configured tier below the target.
 
@@ -134,7 +136,7 @@ Bypasses the existence and version checks but still reads local `Solution.xml` (
 
 - New deploy-adjacent commands that target specific DTAP tiers — wire `ResolveDtapGate` before any network call to the target.
 - Any command that should distinguish Dev from other tiers — the `DevBlock` outcome is reusable.
-- Adding a new tier alias (e.g., `staging`) — add it to the URL switch in `ExecuteFlowlineAsync` and extend the predecessor chain in `ResolveDtapGate`.
+- Adding a new tier alias (e.g., `staging`) — add it to `EnvironmentRole` (see flowline-add-environment) and extend the predecessor lists in `ResolveDtapGate`.
 - Teams that skip a tier in config get correct behaviour automatically via `FirstConfigured` — no special case needed.
 
 Do not add `--skip-dtap-check` to `sync`, `push`, or other commands. The gate is deploy-specific.
@@ -152,7 +154,7 @@ Error: 'MySolution' hasn't been deployed to UAT yet — promote there first, or 
 
 ```
 flowline deploy prod
-Error: 'MySolution' in UAT is v1.1.0.0 — promote v1.2.0.0 there first, or use --skip-dtap-check.
+Error: 'MySolution' in UAT environment is v1.1.0.0 — v1.2.0.0 hasn't been verified there. Promote v1.2.0.0 through UAT first, or use --skip-dtap-check.
 ```
 
 **Gate passes — predecessor version current:**
@@ -168,7 +170,7 @@ Packing MySolution...
 
 ```
 flowline deploy dev
-Error: Dev is a development environment — use 'sync' to push changes there, not 'deploy'.
+Error: Dev is a development environment — use 'push' to push changes there, not 'deploy'.
 ```
 
 **Hotfix bypass:**

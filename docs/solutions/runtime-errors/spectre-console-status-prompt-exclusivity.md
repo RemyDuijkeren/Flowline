@@ -81,20 +81,20 @@ Resolve the profile *before* opening the spinner, so any prompt happens on the p
 // Resolved before opening the status spinner — ProfileResolutionService.ResolveAsync can prompt
 // interactively on an ambiguous match, and Spectre.Console throws if a prompt runs while a
 // Status/Live display is active ("Trying to run one or more interactive functions concurrently").
-var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(url, cancellationToken);
-EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
-    $"Checking {label.ToLower()} [bold]{url}[/]...",
-    ctx => FlowlineValidator.Default.GetEnvironmentInfoByUrlAsync(url, profile, settings, cancellationToken));
+var profile = resolvedProfile ?? await profiles.ResolveAsync(url, cancellationToken);
+var env = await console.Status().FlowlineSpinner().StartAsync(
+    $"Checking ...",
+    _ => validator.GetEnvironmentInfoByUrlAsync(url, profile, options, options.NoCache, cancellationToken));
 ```
 
 The same fix applies to `ConnectToDataverseAsync`:
 
 ```csharp
-// Resolved before opening the status spinner — see the comment in GetAndCheckEnvironmentInfoAsync.
+// Resolved before opening the status spinner — see the comment in EnvironmentService.CheckByUrlAsync.
 var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
 ```
 
-This matches the pattern already used correctly elsewhere in the same codebase — `DeployCommand.ValidateTargetAsync` resolves the profile before opening its own status spinner, and `DriftCommand`'s raw-URL branch and `PushCommand`/`GenerateCommand`'s standalone paths do the same.
+This matches the pattern already used correctly elsewhere in the same codebase — `DeployCommand.ValidateTargetAsync` gets its profile from `EnvironmentService.CheckByUrlAsync` (resolved before the spinner) before opening its own spinner for the solution lookup, and `DriftCommand`'s raw-URL branch and `PushCommand`/`GenerateCommand`'s standalone paths do the same.
 
 ## Why This Works
 

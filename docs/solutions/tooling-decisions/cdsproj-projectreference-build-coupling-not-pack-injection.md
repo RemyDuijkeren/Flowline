@@ -85,7 +85,7 @@ output hashes to B ≠ A), then extract the packed zip and hash the `.dll` insid
 B. The reference-then-build cycle validates assembly identity (name/version/culture/public-key-token)
 and requires the old file to still physically exist; it does not overwrite it with what was just
 built. Getting a fresh build into the zip still requires the normal loop — register/push the new
-build to Dataverse, then resync (`pac solution unpack` / `flowline sync`) so `src/PluginAssemblies/`
+build to Dataverse, then resync (`pac solution unpack` / `flowline pull`) so `src/PluginAssemblies/`
 itself is updated — or use `pac solution pack --map` (see below) to point the pack step directly at
 the build output. This is why the Contoso flow *looks* like it refreshes the binary on every build:
 in practice, each build is preceded by a resync from an org where the just-registered plugin already
@@ -171,7 +171,7 @@ the mapped build-output path instead of the unpacked folder — this is what act
 build into the zip without a registration/resync round-trip first. It operates on a raw `pac solution
 pack` invocation, not on the `.cdsproj`'s own `dotnet build`/`ProjectReference` graph — there is no
 evidence the `Microsoft.PowerApps.MSBuild.Solution` SDK's `dotnet build` path exposes an equivalent
-hook. Flowline doesn't use this mechanism at all: `push`/`sync` register plugins directly against
+hook. Flowline doesn't use this mechanism at all: `push`/`pull` register plugins directly against
 Dataverse via the Web API and pull the result back down, bypassing the packed-zip path entirely.
 
 ### A cross-TFM reference fails restore; bypass with SkipGetTargetFrameworkProperties

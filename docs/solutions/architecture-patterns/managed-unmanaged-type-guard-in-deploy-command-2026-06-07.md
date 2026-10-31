@@ -50,7 +50,7 @@ The guard runs in `ExecuteFlowlineAsync` after the target environment is confirm
 1. Assert repo clean
 2. Resolve target URL
 3. Resolve solution name
-4. Validate target environment              ← targetEnv confirmed
+4. Validate target environment (EnvironmentService.CheckByUrlAsync, incl. environment-type guard for role targets) ← targetEnv confirmed
 5. [GUARD] Check existing solution type     ← inserted here
 6. DTAP promotion gate
 7. Local drift check
@@ -63,7 +63,7 @@ The guard runs in `ExecuteFlowlineAsync` after the target environment is confirm
 ```csharp
 var existingSolution = await Console.Status().FlowlineSpinner().StartAsync(
     $"Checking [bold]{sln.Name}[/]...",
-    _ => FlowlineValidator.Default.GetSolutionInfoAsync(targetUrl, sln.Name, includeManaged: true, settings, cancellationToken));
+    _ => Validator.GetSolutionInfoAsync(targetUrl, sln.UniqueName, includeManaged: true, RuntimeOptions, settings.NoCache, ct, bypassCache: true));
 
 if (existingSolution != null)
 {
@@ -96,7 +96,7 @@ The guard itself also moved: it now lives inside a dedicated `ValidateTargetAsyn
 
 **Silent success is worse than loud failure.** The pack-and-import sequence completes without error. The developer sees "Deployed! Your solution is live." The environment corruption is invisible until someone tries to customize the solution and discovers it is managed.
 
-**The guard's cost is near zero.** `FlowlineValidator.GetSolutionInfoAsync` has a 4-hour TTL cache. In the typical deploy path the DTAP gate's predecessor check has already warmed the cache for the target environment. The type check adds one fast lookup.
+**The guard's cost is one lookup.** The call passes `bypassCache: true` (`DeployCommand.cs:412`) so the type check never reads a stale 4-hour cache entry; the same lookup also supplies the "already exists" fact that decides managed Upgrade import.
 
 **Established pattern in `ProvisionCommand`.** `FindProblematicSolutions` applies the same principle to environment provisioning — it blocks copy operations when the target has unmanaged solutions that would be permanently lost. The DeployCommand guard is the per-solution equivalent of that environment-level guard.
 
@@ -114,7 +114,7 @@ Do not add a bypass flag. The constraint is absolute in Dataverse.
 
 ```
 flowline deploy prod --managed
-Error: 'MySolution' is unmanaged in Production — importing managed is irreversible. Remove the unmanaged solution first, or deploy unmanaged.
+Error: 'MySolution' is unmanaged in Production — importing managed is irreversible. Deploy solution as unmanaged.
 ```
 
 **Unmanaged import over existing managed — blocked:**
@@ -150,8 +150,8 @@ Done! Your solution is live.
 
 ## Related
 
-- `src/Flowline/Commands/DeployCommand.cs` — implementation (lines ~76–92)
-- `src/Flowline/Validation/FlowlineValidator.cs` — `GetSolutionInfoAsync`, note the `includeManaged` parameter and its effect on the cache key
+- `src/Flowline/Commands/DeployCommand.cs` — implementation (`ValidateTargetAsync`, ~lines 404-425)
+- `src/Flowline.Core/Validation/FlowlineValidator.cs` — `GetSolutionInfoAsync`, note the `includeManaged` parameter and its effect on the cache key
 - `docs/solutions/best-practices/provision-safety-guard-unmanaged-solutions-2026-05-18.md` — same guard principle applied to `ProvisionCommand` (environment provisioning)
 - `docs/solutions/architecture-patterns/dtap-gate-enforcement-in-deploy-command-2026-06-07.md` — complementary guard in `DeployCommand` (version/tier promotion enforcement)
 - [orphan-cleanup-two-phase-deploy-pipeline.md](orphan-cleanup-two-phase-deploy-pipeline.md) — reuses this guard's "does the solution already exist in target" check to decide whether a managed deploy's import runs as a Dataverse Upgrade (2026-07-10 update)

@@ -59,16 +59,16 @@ Maintainers, conversely, do need the full story to debug and extend the system.
 
 ---
 
-**CI/CD auth — before (Getting-Started.md had a full section):**
+**CI/CD auth — before (01-Getting-Started.md had a full section):**
 ```yaml
 - run: pac auth create --kind ServicePrincipal --applicationId $CLIENT_ID ...
 - run: flowline deploy prod
 ```
 
-**After:** Brief "Authenticate" blurb in Getting-Started links to `[[Authentication]]`, which covers CI/CD. Duplication removed.
+**After:** Brief "Authenticate" blurb in Getting-Started links to `[[03-Authentication]]`, which covers CI/CD. Duplication removed.
 
 ## Related
 
 - `docs/auth.md` — internal auth implementation reference (developer-facing, contains implementation details)
-- `Flowline.wiki/Authentication.md` — public auth page (user-facing, no implementation details)
+- `Flowline.wiki/03-Authentication.md` — public auth page (user-facing, no implementation details)
 - [ai-agent-consumable-cli-contract](../architecture-patterns/ai-agent-consumable-cli-contract-2026-06-07.md) — related pattern: stable public surface vs internal variance

@@ -48,7 +48,7 @@ tags:
 
 Add a `RetrieveAllAsync` extension method on `IOrganizationServiceAsync2` that drives the `MoreRecords` / `PagingCookie` loop and returns a flat `List<Entity>`.
 
-**`src/Flowline.Core/Services/DataverseExtensions.cs`**
+**`src/Flowline.Core/Dataverse/DataverseExtensions.cs`**
 
 ```csharp
 public static async Task<List<Entity>> RetrieveAllAsync(
@@ -89,13 +89,13 @@ var entities = await service.RetrieveAllAsync(query, cancellationToken);
 
 | File | Method | Query target |
 |------|--------|-------------|
-| `src/Flowline.Core/Services/GenerateReader.cs` | `GetSolutionEntityLogicalNamesAsync` | `solutioncomponent` (entities in solution) |
-| `src/Flowline.Core/Services/GenerateReader.cs` | `GetSolutionCustomApiMessageNamesAsync` | `customapi` joined to `solutioncomponent` |
-| `src/Flowline.Core/Services/WebResourceReader.cs` | `GetWebResourcesForSolutionAsync` | `webresource` joined to `solutioncomponent` |
-| `src/Flowline.Core/Services/OrphanCleanupService.cs` | `QuerySolutionComponentsAsync` | `solutioncomponent` (S_old query for orphan diff) |
-| `src/Flowline.Core/Services/OrphanCleanupService.cs` | `GetCrossSolutionMembershipAsync` | `solutioncomponent` (cross-solution membership check) |
-| `src/Flowline.Core/Services/OrphanCleanupService.cs` | `GetStillPresentAsync` | `solutioncomponent` (post-import re-check of deferred components) |
-| `src/Flowline.Core/Services/OrphanCleanupService.cs` | `IdentifyEntityDetectedTypesAsync` (renamed from `IdentifyCustomApiEntityTypesAsync`) | `customapi`, `customapirequestparameter`, `customapiresponseproperty`, `bot`, `connectionreference` |
+| `src/Flowline/Generators/GenerateReader.cs` | `GetSolutionEntityLogicalNamesAsync` | `solutioncomponent` (entities in solution) |
+| `src/Flowline/Generators/GenerateReader.cs` | `GetSolutionCustomApiMessageNamesAsync` | `customapi` joined to `solutioncomponent` |
+| `src/Flowline.Core/WebResources/WebResourceReader.cs` | `GetWebResourcesForSolutionAsync` | `webresource` joined to `solutioncomponent` |
+| `src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs` | `QuerySolutionComponentsAsync` | `solutioncomponent` (S_old query for orphan diff) |
+| `src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs` | `GetCrossSolutionMembershipAsync` | `solutioncomponent` (cross-solution membership check) |
+| `src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs` | `GetStillPresentAsync` | `solutioncomponent` (post-import re-check of deferred components) |
+| `src/Flowline.Core/OrphanCleanup/EntityDetectionHelper.cs` | `DetectByTableAsync` (formerly `IdentifyEntityDetectedTypesAsync`) | `customapi`, `customapirequestparameter`, `customapiresponseproperty`, `bot`, `connectionreference` |
 
 ### Call sites that don't need paging
 
@@ -103,7 +103,7 @@ var entities = await service.RetrieveAllAsync(query, cancellationToken);
 |------|--------|---------------|
 | `WebResourceReader` | `GetOwnershipAsync` | Queries `solutioncomponent` for a single `webresourceid` — always a small, bounded set |
 | `WebResourceReader` | `GetGlobalWebResourcesByNameAsync` | Input is a list of local orphan filenames you control — always bounded |
-| `PluginReader` | All methods | Scoped to a specific assembly — steps, types, and images for one assembly are always far below 5000 |
+| `PluginReader` | Most methods | Scoped to a specific assembly — steps, types, and images for one assembly are always far below 5000. The registered Custom API query is publisher-wide by `uniquename` prefix, not assembly-scoped |
 
 ## Why This Works
 

@@ -30,7 +30,7 @@ tags:
 
 `flowline push` could silently overwrite and adopt a web resource owned by a different, unrelated solution — publishing someone else's content with the local file's, and permanently attaching the record to the pushing solution.
 
-The failure path: a local file whose CRM name doesn't exist in the *current* solution but does exist in Dataverse under *another* solution is a "global orphan." `WebResourceReader.LoadSnapshotAsync` collects these into `snapshot.GlobalOrphans` (`src/Flowline.Core/WebResources/WebResourceReader.cs:61-67`). `WebResourcePlanner.Plan` handled a hit unconditionally: build an Update if content differs, then always queue an `AddToSolution`. The pre-fix shape of that branch in `WebResourcePlanner.cs` was:
+The failure path: a local file whose CRM name doesn't exist in the *current* solution but does exist in Dataverse under *another* solution is a "global orphan." `WebResourceReader.LoadSnapshotAsync` collects these into `snapshot.GlobalOrphans` (`src/Flowline.Core/WebResources/WebResourceReader.cs:65-67`). `WebResourcePlanner.Plan` handled a hit unconditionally: build an Update if content differs, then always queue an `AddToSolution`. The pre-fix shape of that branch in `WebResourcePlanner.cs` was:
 
 ```csharp
 if (snapshot.GlobalOrphans.TryGetValue(name, out var existing))
@@ -53,7 +53,7 @@ return result.Entities
 
 `WebResourceOwnership` in `src/Flowline.Core/Models/WebResourceModels.cs` was, pre-fix, `(int NonDefaultUnmanagedSolutionCount, bool IsInCurrentUnmanagedSolution, bool HasManagedSolutionReference = false)` — every global orphan looked identically unowned, `(0, false, false)`, whether it truly had no owner or was owned by a live ISV-managed solution.
 
-**The diagnostic tell — an asymmetry inside one class.** In the same `Plan` method, the *delete* path (`dataverseNames.Except(localNames)`, still at `WebResourcePlanner.cs:90-113`) discriminated three ownership cases before acting: sole non-default unmanaged owner → `Delete`; shared with another unmanaged solution, or a managed reference → `RemoveFromSolution` (drop only this solution's link); anything unclear → `Skip`. The *adopt* path a few lines above discriminated none. The code was meticulous about deleting a resource it might not fully own, and unguarded about overwriting and permanently claiming one.
+**The diagnostic tell — an asymmetry inside one class.** In the same `Plan` method, the *delete* path (`dataverseNames.Except(localNames)`, still at `WebResourcePlanner.cs:95`) discriminated three ownership cases before acting: sole non-default unmanaged owner → `Delete`; shared with another unmanaged solution, or a managed reference → `RemoveFromSolution` (drop only this solution's link); anything unclear → `Skip`. The *adopt* path a few lines above discriminated none. The code was meticulous about deleting a resource it might not fully own, and unguarded about overwriting and permanently claiming one.
 
 ## Symptoms
 
@@ -64,17 +64,17 @@ return result.Entities
 
 ## What Didn't Work / What Was Learned
 
-**Two tests looked like a spec for the overwrite behavior — they weren't.** `SyncSolutionAsync_ExistsInOtherSolutionWithDifferentContent_ShouldUpdateAndAddToSolution` and its same-content sibling (`tests/Flowline.Core.Tests/WebResourceServiceTests.cs:337`, `:361`) both call `SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", ...))` and never call the separate `SetupOwnership(webResourceId, ...)` helper (`WebResourceServiceTests.cs:1201-1214`). `SetupGlobalOrphans` (`:1173-1179`) only mocks the `webresource` query, not the `solutioncomponent` ownership query — so `GetOwnershipAsync` returns an empty result set, i.e. genuinely unowned. On top of that, both fixtures name the resource `my_MySolution/shared.js` — `my_` is `MySolution`'s *own* publisher prefix, the same solution doing the push. These tests model **bootstrap adoption of an unowned record**, not **overwriting a foreign-owned one**. Read what a fixture actually mocks before treating its passing assertion as a locked-in specification — a green test proves the path it exercises, not the path its name suggests.
+**Two tests looked like a spec for the overwrite behavior — they weren't.** `SyncSolutionAsync_ExistsInOtherSolutionWithDifferentContent_ShouldUpdateAndAddToSolution` and its same-content sibling (`tests/Flowline.Core.Tests/WebResourceServiceTests.cs:350`, `:374`) both call `SetupGlobalOrphans(RemoteWebResource(webResourceId, "my_MySolution/shared.js", ...))` and never call the separate `SetupOwnership(webResourceId, ...)` helper (`WebResourceServiceTests.cs:1615`). `SetupGlobalOrphans` (`:1587`) only mocks the `webresource` query, not the `solutioncomponent` ownership query — so `GetOwnershipAsync` returns an empty result set, i.e. genuinely unowned. On top of that, both fixtures name the resource `my_MySolution/shared.js` — `my_` is `MySolution`'s *own* publisher prefix, the same solution doing the push. These tests model **bootstrap adoption of an unowned record**, not **overwriting a foreign-owned one**. Read what a fixture actually mocks before treating its passing assertion as a locked-in specification — a green test proves the path it exercises, not the path its name suggests.
 
-**First attempt at the depends-exemption gated on the wrong field.** Once ownership blocking existed, a `// flowline:depends` declaration was meant to downgrade a block to a reference-only `Skip`. Gating that exemption on `LocalWebResource.DependsOn` was wrong: `WebResourceReader.AutoMatchResxDependencies` (`WebResourceReader.cs:217-254`) enriches `DependsOn` by folder-qualified base-name matching between RESX and JS files, with no `// flowline:depends` annotation behind the added entries. A JS+RESX pair sharing a base name would silently acquire the exemption for a dependency the author never declared. Fixed by adding `LocalWebResource.AnnotatedDependsOn` (`WebResourceModels.cs:64-75`) — the raw parsed annotations, never touched by enrichment — and gating `WebResourcePlanner.CollectDependsOnReferences` (`WebResourcePlanner.cs:250-252`, comment explains the distinction) on that field instead.
+**First attempt at the depends-exemption gated on the wrong field.** Once ownership blocking existed, a `// flowline:depends` declaration was meant to downgrade a block to a reference-only `Skip`. Gating that exemption on `LocalWebResource.DependsOn` was wrong: `WebResourceReader.AutoMatchResxDependencies` (`WebResourceReader.cs:218`) enriches `DependsOn` by folder-qualified base-name matching between RESX and JS files, with no `// flowline:depends` annotation behind the added entries. A JS+RESX pair sharing a base name would silently acquire the exemption for a dependency the author never declared. Fixed by adding `LocalWebResource.AnnotatedDependsOn` (`WebResourceModels.cs:59-74`) — the raw parsed annotations, never touched by enrichment — and gating `WebResourcePlanner.CollectDependsOnReferences` (`WebResourcePlanner.cs:251-257`, comment explains the distinction) on that field instead.
 
-**The reference-only warning didn't fire in its main case.** `WebResourceSyncPlan.TotalChanges` (`WebResourceModels.cs:124`) excludes `Skips` by design. A push where every action was a skip hit `WebResourceService`'s `TotalChanges == 0` early-return before reaching `WebResourceExecutor`, so the warning meant to fire for a reference-only skip never rendered — a second, unbranched loop in the no-change path rendered plain skip lines instead. Fixed with a shared `WebResourceExecutor.RenderSkips` (`WebResourceExecutor.cs:103-112`), called from the executor's normal path, the no-change early-return, and dry-run — one render function instead of three copies that could drift again.
+**The reference-only warning didn't fire in its main case.** `WebResourceSyncPlan.TotalChanges` (`WebResourceModels.cs:142`) excludes `Skips` by design. A push where every action was a skip hit `WebResourceService`'s `TotalChanges == 0` early-return before reaching `WebResourceExecutor`, so the warning meant to fire for a reference-only skip never rendered — a second, unbranched loop in the no-change path rendered plain skip lines instead. Fixed with a shared `WebResourceExecutor.RenderSkips` (`WebResourceExecutor.cs:118`), called from the executor's normal path, the no-change early-return, and dry-run — one render function instead of three copies that could drift again.
 
 ## Solution
 
 **1. Ownership is now read, not assumed, for global orphans.**
 
-`WebResourceOwnership` gained `OwningSolutionNames` (`WebResourceModels.cs:87-94`):
+`WebResourceOwnership` gained `OwningSolutionNames` (`WebResourceModels.cs:100-107`):
 
 ```csharp
 public record WebResourceOwnership(
@@ -87,11 +87,11 @@ public record WebResourceOwnership(
 }
 ```
 
-`WebResourceReader.GetOwnershipAsync` (`WebResourceReader.cs:300-336`) already existed for the current-solution delete path; `GetGlobalWebResourcesByNameAsync` now takes `solutionName` and calls the same ownership resolution instead of hardcoding `(0, false)` (`WebResourceReader.cs:378-397`, via `ResolveOwnershipBoundedAsync` at `:345-365`).
+`WebResourceReader.GetOwnershipAsync` (`WebResourceReader.cs:301`) already existed for the current-solution delete path; `GetGlobalWebResourcesByNameAsync` now takes `solutionName` and calls the same ownership resolution instead of hardcoding `(0, false)` (`WebResourceReader.cs:379-398`, via `ResolveOwnershipBoundedAsync` at `:346`).
 
 **2. `WebResourcePlanner` refuses the adopt when ownership says no.**
 
-`WebResourcePlanner.cs:30-54`:
+`WebResourcePlanner.cs:39-51`:
 
 ```csharp
 if (snapshot.GlobalOrphans.TryGetValue(name, out var existing))
@@ -107,11 +107,11 @@ if (snapshot.GlobalOrphans.TryGetValue(name, out var existing))
 }
 ```
 
-**Both disjuncts are load-bearing.** `NonDefaultUnmanagedSolutionCount` only counts unmanaged owners, so a resource owned solely by a managed (ISV) solution is `(0, false, true)` — a count-only predicate (`> 0`) would route that case straight into the adopt branch it was meant to block. Violations accumulate in `ownershipViolations` and, after the loop, throw `FlowlineException(ExitCode.ValidationFailed, ...)` (`WebResourcePlanner.cs:70-77`) *before* the exists-in-both loop runs any write — a caught violation stops the whole push, not just that one file.
+**Both disjuncts are load-bearing.** `NonDefaultUnmanagedSolutionCount` only counts unmanaged owners, so a resource owned solely by a managed (ISV) solution is `(0, false, true)` — a count-only predicate (`> 0`) would route that case straight into the adopt branch it was meant to block. Violations accumulate in `ownershipViolations` and, after the loop, throw `FlowlineException(ExitCode.ValidationFailed, ...)` (`WebResourcePlanner.cs:75-82`) *before* the exists-in-both loop runs any write — a caught violation stops the whole push, not just that one file.
 
-**3. An explicit escape hatch, not a silent one.** `PlanForeignOwned` (`WebResourcePlanner.cs:179-209`) checks `// flowline:depends` annotations first: a name a local file explicitly declared as a dependency becomes a reference-only `Skip` (`ReferencedNotOwnedReason`) instead of a hard block; an annotation that's a bare name matching multiple candidates fails with its own disambiguation message rather than silently picking one or falling through to the generic ownership error.
+**3. An explicit escape hatch, not a silent one.** `PlanForeignOwned` (`WebResourcePlanner.cs:184`) checks `// flowline:depends` annotations first: a name a local file explicitly declared as a dependency becomes a reference-only `Skip` (`ReferencedNotOwnedReason`) instead of a hard block; an annotation that's a bare name matching multiple candidates fails with its own disambiguation message rather than silently picking one or falling through to the generic ownership error.
 
-**4. Ownership fan-out is bounded.** `ResolveOwnershipBoundedAsync` (`WebResourceReader.cs:343-365`) caps concurrent `solutioncomponent` queries at `MaxOwnershipParallelism = 8`, matching `WebResourceExecutor.MaxParallelism` (`WebResourceExecutor.cs:14`) — both govern concurrent requests against the same org, so a cold/bootstrap push with many local files doesn't fan out one unbounded request per file into Dataverse's service-protection limits.
+**4. Ownership fan-out is bounded.** `ResolveOwnershipBoundedAsync` (`WebResourceReader.cs:344-346`) caps concurrent `solutioncomponent` queries at `MaxOwnershipParallelism = 8`, matching `WebResourceExecutor.MaxParallelism` (`WebResourceExecutor.cs:14`) — both govern concurrent requests against the same org, so a cold/bootstrap push with many local files doesn't fan out one unbounded request per file into Dataverse's service-protection limits.
 
 ## Why This Works
 

@@ -84,14 +84,10 @@ long command, after which `Activity.Current` becomes null mid-run.
 ### 3. Declare the ActivitySource in a static class
 
 ```csharp
-// src/Flowline/Diagnostics/FlowlineActivitySource.cs
+// src/Flowline.Core/Diagnostics/FlowlineActivitySource.cs
 public static class FlowlineActivitySource
 {
-    static readonly string s_version =
-        Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version
-        ?? "0.0.0";
-
-    public static readonly ActivitySource Source = new("Flowline.CLI", s_version);
+    public static readonly ActivitySource Source = new("Flowline.CLI", FlowlineVersion.Display);
 }
 ```
 
@@ -148,7 +144,7 @@ Logging 16 activity tags and the invocation header from inside `FlowlineCommand.
 couples the behavior to the command dependency graph. Extract it to a static internal class:
 
 ```csharp
-// src/Flowline/Commands/InvocationLogger.cs
+// src/Flowline/Diagnostics/InvocationLogger.cs
 internal static class InvocationLogger
 {
     internal static string HashUrl(string url) =>
@@ -183,7 +179,7 @@ internal static class InvocationLogger
 The static class has no constructor dependencies, so tests can call `InvocationLogger.Log(...)` or
 `InvocationLogger.HashUrl(...)` directly with a mock `ILogger` and a manually started `Activity` —
 no command object graph needed. The `[assembly: InternalsVisibleTo("Flowline.Tests")]` attribute
-(already present in `ProfileResolutionService.cs`) grants the test project access.
+(now declared on `Flowline.Core` and in `src/Flowline/Utils/PacUtils.cs`) grants the test project access.
 
 Call site in `FlowlineCommand.ExecuteAsync`:
 
@@ -191,10 +187,12 @@ Call site in `FlowlineCommand.ExecuteAsync`:
 InvocationLogger.Log(Logger, RuntimeOptions, Config, RootFolder, activity);
 ```
 
-### 7. Hash environment URLs, do not log them verbatim
+### 7. Scrub environment URLs, do not log them verbatim
 
 Environment URLs contain tenant identifiers (e.g. `https://contoso.crm.dynamics.com`). Logging them
-verbatim leaks PII into CI logs and log aggregators. Hash them instead:
+verbatim leaks PII into CI logs and log aggregators. They now go through
+`FlowlineScrubber.Current.ScrubUrl(url)` (`src/Flowline/Logging/FlowlineScrubber.cs`, called from
+`InvocationLogger.cs`). The original design hashed them as shown below; `HashUrl` no longer exists.
 
 ```csharp
 internal static string HashUrl(string url) =>
@@ -209,6 +207,7 @@ the URL.
 ### 8. Detect CI platform as a discriminated string, not a boolean
 
 ```csharp
+// src/Flowline.Core/Environments/CiPlatform.cs (CiPlatform.Detect)
 internal static string? DetectCIPlatform()
 {
     if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null) return "github";
@@ -225,7 +224,7 @@ impossible to write CI-specific log filters or alert rules in future waves. The 
 makes the `ci={true|false}` log property derivable without a separate IsCI flag:
 
 ```csharp
-var ciPlatform = ConsoleHelper.DetectCIPlatform();
+var ciPlatform = CiPlatform.Detect();
 var ci = ciPlatform is not null;
 ```
 
@@ -237,7 +236,7 @@ the invocation header reflects the branch from the last tool-version probe, not 
 ```csharp
 // Inside CheckSetupAsync, inside the Spectre.Console spinner:
 // Fetched fresh (not cached) — branch changes too frequently for 7-day TTL
-gitBranch = await GitUtils.GetCurrentBranchAsync(settings.Verbose, cancellationToken);
+gitBranch = await GitUtils.GetCurrentBranchAsync(null, cancellationToken);
 ```
 
 `ToolCheckResult` is appropriate for stable facts (dotnet version, pac version) that change only
@@ -419,14 +418,14 @@ public void DetectCIPlatform_ReturnsExpectedString(string envVar, string value, 
 {
     using var scope = SaveAndClearCiVars(); // clears all CI env vars, restores on Dispose
     Environment.SetEnvironmentVariable(envVar, value);
-    ConsoleHelper.DetectCIPlatform().Should().Be(expected);
+    CiPlatform.Detect().Should().Be(expected);
 }
 
 [Fact]
 public void DetectCIPlatform_WhenNoCiVarsSet_ReturnsNull()
 {
     using var scope = SaveAndClearCiVars();
-    ConsoleHelper.DetectCIPlatform().Should().BeNull();
+    CiPlatform.Detect().Should().BeNull();
 }
 ```
 

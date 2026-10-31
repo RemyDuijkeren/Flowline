@@ -1,17 +1,19 @@
 ---
-title: "Adding a new named environment to Flowline CLI"
+title: "Adding a new named environment role to Flowline CLI"
 date: 2026-06-06
+last_updated: 2026-11-01
 category: docs/solutions/conventions
 module: environment-management
 problem_type: convention
 component: tooling
 severity: low
 applies_when:
-  - "Adding a new named environment beyond Dev, Test, UAT, Prod (e.g., Staging, Demo, Training)"
-  - "Deciding which Dataverse environment type a new environment should require"
+  - "Adding a new named environment role beyond dev, test, uat, prod (e.g. staging, demo, training)"
+  - "Deciding which Dataverse environment type a new role should require"
 tags:
   - environment
   - flowline-cli
+  - environment-role
   - project-config
   - provision
   - deploy
@@ -19,173 +21,76 @@ tags:
   - status
 ---
 
-# Adding a new named environment to Flowline CLI
+# Adding a new named environment role to Flowline CLI
 
 ## Context
 
-Flowline CLI manages named environments (Dev, Test, UAT, Prod) that map to Dataverse URLs. Adding UAT as a fourth environment between Test and Production revealed a clear pattern: six distinct files each need a small, consistent change. Missing any one of them leaves that command silently broken for the new environment (e.g., `deploy uat` errors out, `status` doesn't show it, `clone` skips it).
-
-This document captures the complete checklist and the key decisions that must be made before each new environment is added.
+A role (`dev`, `test`, `uat`, `prod`) is one enum plus helper switches in Core, and a handful of hard-coded role lists in commands. Most commands now read through the shared helpers, so they need no edit. The lists that remain are plain arrays and `||` chains; the compiler does not flag a missing entry in them. A forgotten list leaves that command quietly ignoring the new role.
 
 ## Guidance
 
-### Step 1: Make four key decisions upfront
-
-Before touching any code, answer these for the new environment:
+### Step 1: Decide four things first
 
 | Decision | Options | Example (UAT) |
 |---|---|---|
 | Dataverse type | `Production` or `Sandbox` | `Sandbox` |
 | Deploy confirmation | Silent (like Test) or prompted (like Prod) | Silent |
-| Provision supported? | Yes (`FullCopy` or `MinimalCopy`) or No | Yes — `FullCopy` |
-| Clone search order position | Where in Prod → ... → Dev? | After Prod, before Test |
+| Provision supported? | Yes (full or minimal copy) or No | Yes, full copy |
+| Position in the promotion order | Where between Dev and Prod? | After Test, before Prod |
 
-The Dataverse type drives the shared environment-type rule (`EnvironmentTarget.CheckType` in `src/Flowline.Core/Environments/EnvironmentTarget.cs`): PROD must be a Production environment, and every other role must not be. A new Sandbox role needs no change there. A new role that must be Production-typed does.
+The Dataverse type feeds `EnvironmentTarget.CheckType` (step 2). The position feeds `ResolveDtapGate` (step 6) and the status column order (step 8).
 
-### Step 2: Six files to update
+### Step 2: Core role definition and rules (`src/Flowline.Core/Environments/`)
 
-#### 1. `src/Flowline/Config/ProjectConfig.cs` — URL storage
+1. `EnvironmentRole.cs`: add the enum member, add it to `All` (dev first, promotion order), and add an arm to each helper switch: `ConfigKey`, `Keyword`, `Label`, `UpperLabel`, `TryParse`. `ConfigKey`, `Keyword`, `Label` and `UpperLabel` throw on an unhandled member; `TryParse` returns null, so the role would be unreachable by keyword.
+2. `EnvironmentTarget.cs`: `CheckType` needs a decision. Today prod must be a Production type and every other role must not be; a null type passes. A new Sandbox role needs no change. A new Production-typed role does. The placeholder and "isn't a role" message are built from `All`, so they follow.
+3. `EnvironmentRoleInference.cs`: add keywords for the role to the keyword map. Keep `CONCEPTS.md` "Role inference" in step, since it lists every keyword.
+4. `EnvironmentTargetResolver.cs`: the interactive picker for a new URL has two literal role lists (one with prod, one without). Add the role to both if it is a sandbox role the user may choose.
 
-Add a property and its `GetOrUpdateXxxUrl()` method. The method has a fixed three-block structure matching all existing env methods:
+### Step 3: Config (`src/Flowline.Core/Config/ProjectConfig.cs`)
 
-```csharp
-public string? UatUrl { get; set; }
+Add a URL property, an arm in `GetUrl` and an arm in `GetOrUpdateUrl(role, ...)` (it delegates to the shared `GetOrUpdateValue`). A named `GetOrUpdateXxxUrl` wrapper is optional: it is a one-line delegate to `GetOrUpdateUrl`, and the commands call `GetOrUpdateUrl` directly. Tests: `tests/Flowline.Core.Tests/ProjectConfigTests.cs` (null input when empty, URL when empty, null when set, same URL when set, JSON round-trip).
 
-public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineSettings? settings = null)
-{
-    inputUatUrl = inputUatUrl?.Trim();
+### Step 4: Provision (`src/Flowline/Commands/ProvisionCommand.cs`)
 
-    if (string.IsNullOrWhiteSpace(UatUrl))
-    {
-        UatUrl = inputUatUrl;
-        return string.IsNullOrWhiteSpace(inputUatUrl) ? null : inputUatUrl;
-    }
+Provision has its own `Role` enum, separate from `EnvironmentRole`. Add the member, update the `[Description]` on the positional, and decide the copy type in `ResolveCopyType` (test and uat default to a full copy, dev to minimal). Mapping goes through `EnvironmentRoles.TryParse` and the save through `GetOrUpdateUrl`, so there is no URL switch. Provision branches from prod with `pac admin copy`, so the new role is a Sandbox here.
 
-    if (string.IsNullOrWhiteSpace(inputUatUrl))
-    {
-        if (settings is { Verbose: true })
-            AnsiConsole.MarkupLine($"[dim]UAT: [bold]{UatUrl}[/][/]");
-        return UatUrl;
-    }
+### Step 5: Clone (`src/Flowline/Commands/CloneCommand.cs`)
 
-    if (UatUrl != inputUatUrl)
-    {
-        AnsiConsole.MarkupLine($"[yellow]UAT is already set: [bold]{UatUrl}[/][/]");
-        if (!ConsoleHelper.Confirm("[yellow]Overwrite it?[/]", false, settings))
-        {
-            AnsiConsole.MarkupLine($"[dim]Keeping UAT as-is: [link]{UatUrl}[/][/]");
-            return UatUrl;
-        }
-        AnsiConsole.MarkupLine("[green]UAT updated[/]");
-    }
+There is no per-role option. The source comes from `--env`, resolved by the shared resolver. Two hard-coded lists remain: `AnyRoleUrlConfigured` (a `||` chain over the four URLs) and the role picker in the role-resolution method (`Dev, Test, Uat`; prod is chosen by environment type, not by the picker). Add the role to both.
 
-    UatUrl = inputUatUrl;
-    return UatUrl;
-}
-```
+### Step 6: Deploy (`src/Flowline/Commands/DeployCommand.cs`)
 
-Property order in the class: `ProdUrl`, `UatUrl`, `TestUrl`, `DevUrl` — matches promotion order top-to-bottom.
+Keyword resolution is shared, so `deploy <role>` works after step 2. Update `ResolveDtapGate`: an `is<Role>` flag, predecessor lists for the roles above the new one, and its own predecessor list. Also update `HasAnyEnvironmentUrl`, the `hasTestOrUat` line near the build-once messaging if the new role counts as a pipeline stage, and the `[Description]` on the target setting.
 
-#### 2. `src/Flowline.Core/Environments/EnvironmentRole.cs` — Enum + role helpers
+### Step 7: Other command surfaces
 
-Add the new value to `EnvironmentRole`, then extend every helper switch beside it: `ConfigKey` (the `.flowline` key), `Keyword` (what a user types), `Label` (progress lines and pickers), `UpperLabel` (status lines) and `TryParse`. Add it to `All` in promotion order, dev first; the "isn't a role" message and the `<dev|test|uat|prod|url>` placeholder are built from that list. `ProjectConfig.GetUrl` and `GetOrUpdateUrl` need the matching arm (step 1).
+- `src/Flowline/Settings/EnvironmentSettings.cs`, `src/Flowline/Commands/DriftCommand.cs`, `SettingsApplyCommand.cs`, `SettingsCaptureCommand.cs` and `SettingsComponentCommands.cs` in the same folder: `[Description]` strings list the role keywords by hand.
+- `src/Flowline/Program.cs`: command descriptions and examples (deploy, provision, drift).
 
-The shared target check, the saved-URL check and the environment service read through these helpers, so they need no edits.
+### Step 8: Status and logging lists
 
-#### 3. `src/Flowline/Commands/DeployCommand.cs` — Promotion order
+- `src/Flowline/Commands/StatusCommand.cs`: the `envs` array, in Dev to Prod order.
+- `src/Flowline/Commands/FlowlineCommand.cs` (known-host scrubber loop over the four URLs) and `src/Flowline/Diagnostics/InvocationLogger.cs` (tier list). A missed entry here leaks the new host into logs or drops it from telemetry tiers.
 
-Keyword resolution is shared (`EnvironmentRoles.TryParse` plus `EnvironmentTarget.RequireRoleUrl`), so `deploy <new-role>` works once step 2 is done. What deploy still owns is the DTAP promotion order in `ResolveDtapGate`: add the new role to the predecessor lists for the roles above it, and give it its own list.
+### Step 9: Docs
 
-#### 4. `src/Flowline/Commands/ProvisionCommand.cs` — Role enum + copy type + suffix
+README command table, `CONCEPTS.md` keyword table, wiki `02-Project-Configuration.md` (config keys and keyword tables), `04-Command-Reference.md`, `08-Deploy.md`, and a CHANGELOG entry. Follow `docs/solutions/conventions/cli-surface-change-doc-sweep.md`.
 
-Three changes:
+### Step 10: Find the rest
 
-```csharp
-// 1. Extend Role enum
-public enum Role { Dev, Test, Uat }
-
-// 2. Nothing to do for the suffix: provision maps its positional to the shared role once and takes the
-//    default suffix from that role's Label().
-
-// 3. Add URL dispatch
-string? url = settings.Role switch
-{
-    Role.Dev  => Config!.GetOrUpdateDevUrl(targetUrl, settings),
-    Role.Test => Config!.GetOrUpdateTestUrl(targetUrl, settings),
-    Role.Uat  => Config!.GetOrUpdateUatUrl(targetUrl, settings),
-    _ => null
-};
-
-// 4. Update copyType (FullCopy for test-like environments)
-string copyType = (settings.Role is Role.Test or Role.Uat || settings.CopyType == CopyType.Full)
-    ? "FullCopy"
-    : "MinimalCopy";
-```
-
-Also update `[Description]` on the `[role]` argument to list the new value.
-
-#### 5. `src/Flowline/Commands/CloneCommand.cs` — Search option + order
-
-Three changes:
-
-```csharp
-// 1. Add option to Settings
-[CommandOption("--uat <URL>")]
-[Description("UAT environment URL to clone solution from")]
-public string? UatUrl { get; set; }
-
-// 2. Save URL in ExecuteFlowlineAsync (alongside existing saves)
-Config!.GetOrUpdateUatUrl(settings.UatUrl, settings);
-
-// 3. Extend FindUnmanagedSourceAsync
-foreach (var role in new[] { EnvironmentRole.Prod, EnvironmentRole.Uat, EnvironmentRole.Test, EnvironmentRole.Dev })
-{
-    var configUrl = role switch
-    {
-        EnvironmentRole.Prod => Config!.ProdUrl,
-        EnvironmentRole.Uat  => Config!.UatUrl,
-        EnvironmentRole.Test => Config!.TestUrl,
-        EnvironmentRole.Dev  => Config!.DevUrl,
-        _ => null
-    };
-    // ...
-    var label = role switch { EnvironmentRole.Prod => "Prod", EnvironmentRole.Uat => "UAT", EnvironmentRole.Test => "Test", _ => "Dev" };
-}
-```
-
-Update the `FlowlineException` error message at the end of `FindUnmanagedSourceAsync` to include `--uat`.
-
-#### 6. `src/Flowline/Commands/StatusCommand.cs` — Grid column
-
-Insert the new entry in DTAP flow order (left to right: Dev → ... → Prod — this is the order the status grid renders its columns in, not the `ProjectConfig` property declaration order from Step 1):
-
-```csharp
-var envs = new (string Label, string? Url)[]
-{
-    ("Dev",  config.DevUrl),
-    ("Test", config.TestUrl),
-    ("UAT",  config.UatUrl),   // new
-    ("Prod", config.ProdUrl),
-};
-```
-
-### Step 3: Add tests for `GetOrUpdateXxxUrl`
-
-Add five tests to `ProjectConfigTests.cs` covering: null input when empty (returns null), URL input when empty (sets and returns), null input when set (returns stored), same URL input when set (no conflict), and JSON round-trip.
+Run `rg -n "Uat|UAT|uat" src` (substitute the nearest existing role) and walk every hit that is a list, array, `||` chain or description string. Also grep the shipped help text under `src/Flowline/Templates/` and `plugin/skills/`, which the command above does not cover well. Then run the Core and CLI test projects.
 
 ## Why This Matters
 
-Each command independently resolves the environment URL from the config. There is no central dispatch that fans out automatically — every command has its own switch or option set. Missing a command leaves it silently broken: `deploy uat` prints "Can't resolve 'uat'", `clone` skips the environment without an error, `status` just omits the row.
-
-Following the checklist ensures the new environment is first-class everywhere.
+Core reads through the helpers, so a new role mostly works once step 2 is done. What fails is silent: a missing literal in the clone picker, status grid, scrubber loop or tier list. No test fails for those unless one is written.
 
 ## When to Apply
 
-- Adding any named Sandbox environment between existing ones (Staging, Demo, Training, etc.)
-- The pattern for Production-type environments is the same except: no type-guard changes needed, and the deploy confirmation fires automatically based on Dataverse environment type (not the keyword).
+- Adding a named Sandbox role between existing ones.
+- A Production-typed role also changes `CheckType` and `Infer` (which maps a Production type to prod); not verified beyond reading those two methods.
 
-## Examples
+## Related
 
-The UAT addition that established this pattern touched exactly these 6 files and introduced no behavioral regressions. 184 existing tests continued to pass after the change.
-
-Commit reference: `feat: add UAT environment` on branch `feat/add-uat-environment` (2026-06-06).
+- `docs/solutions/architecture-patterns/dtap-gate-enforcement-in-deploy-command-2026-06-07.md`
+- `docs/solutions/conventions/cli-surface-change-doc-sweep.md`

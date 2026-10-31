@@ -23,7 +23,7 @@ tags:
 
 ## Context
 
-The `dependencyxml` field on the `webresource` entity is documented only as "for internal use only" in the Dataverse SDK. Community sources suggested a format, but that format was not verified. This document records the confirmed format obtained by manually configuring a web resource dependency via the Maker Portal, running `flowline sync`, and reading the PAC-unpacked `.data.xml` output.
+The `dependencyxml` field on the `webresource` entity is documented only as "for internal use only" in the Dataverse SDK. Community sources suggested a format, but that format was not verified. This document records the confirmed format obtained by manually configuring a web resource dependency via the Maker Portal, running `flowline pull`, and reading the PAC-unpacked `.data.xml` output.
 
 Test setup: `example3.js` was given two JavaScript library dependencies (`example1.js`, `example2.js`) via the Maker Portal dependency editor.
 
@@ -145,5 +145,5 @@ The Planner (U4) resolves the full `DependencyLibrary` set before calling Serial
 ## Related
 
 - `docs/brainstorms/archive/2026-06-12-webresource-dependencies-requirements.md` — original brainstorm (format assumption now corrected)
-- `docs/plans/2026-06-13-002-feat-webresource-dependency-registration-plan.md` — implementation plan (U2 serializer design must be updated per above)
+- `docs/plans/2026-06-13-002-feat-webresource-dependency-registration-plan.md` — implementation plan (U2 serializer design now implemented; see `src/Flowline.Core/WebResources/DependencyXmlSerializer.cs`)
 - `docs/solutions/design-patterns/webresource-dependency-registration-patterns.md` — implementation patterns: GUID reuse, Name-only equality, RESX auto-matching, annotation deduplication

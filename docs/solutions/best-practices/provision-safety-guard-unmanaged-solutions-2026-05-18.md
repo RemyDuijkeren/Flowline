@@ -7,7 +7,7 @@ problem_type: best_practice
 component: tooling
 severity: critical
 applies_when:
-  - Running provision with --allow-overwrite against an existing dev/test environment
+  - Running provision against an existing dev/test environment (confirmed interactively or with --force overwrite)
   - Target environment holds unmanaged Dataverse solutions under active development
   - Unmanaged target solutions are absent from prod or exist as managed in prod
 tags:
@@ -36,22 +36,26 @@ Before the guard was added, `--allow-overwrite` conflated two distinct risk leve
 
 Before invoking `pac admin copy`, fetch the solution list from both prod and the target in parallel, then identify unmanaged target solutions that would be permanently lost. Block with a hard error and list every at-risk solution by name and reason.
 
-**Call site in `ProvisionCommand.ExecuteFlowlineAsync`** — after the `--allow-overwrite` early-return check, before the copy:
+**Call site in `ProvisionCommand.ExecuteFlowlineAsync`** — after the overwrite confirmation, before the copy:
 
 ```csharp
-var prodTask   = PacUtils.GetSolutionsAsync(prodEnv.EnvironmentUrl!,   settings.Verbose, cancellationToken);
-var targetTask = PacUtils.GetSolutionsAsync(targetEnv.EnvironmentUrl!, settings.Verbose, cancellationToken);
-await Task.WhenAll(prodTask, targetTask);
-var prodSolutions   = prodTask.Result;
-var targetSolutions = targetTask.Result;
+var (prodSolutions, targetSolutions) = await Console.Status().FlowlineSpinner().StartAsync(
+    "Checking solutions...",
+    async _ =>
+    {
+        var prodTask   = PacUtils.GetSolutionsAsync(prodEnv.EnvironmentUrl!,   _capture, cancellationToken);
+        var targetTask = PacUtils.GetSolutionsAsync(targetEnv.EnvironmentUrl!, _capture, cancellationToken);
+        await Task.WhenAll(prodTask, targetTask);
+        return (prodTask.Result, targetTask.Result);
+    });
 
 var problematic = FindProblematicSolutions(targetSolutions, prodSolutions);
 if (problematic.Count > 0)
 {
     Console.Error("Target environment has unmanaged solutions that would be permanently lost:");
     foreach (var (solution, reason) in problematic)
-        Console.Error($"  {solution.SolutionUniqueName} ({reason})");
-    return 1;
+        Console.Info($"- {solution.SolutionUniqueName} ({reason})");
+    return (int)ExitCode.ValidationFailed;
 }
 ```
 
@@ -62,19 +66,32 @@ internal static IReadOnlyList<(SolutionInfo Target, string Reason)> FindProblema
     IEnumerable<SolutionInfo> targetSolutions,
     IEnumerable<SolutionInfo> prodSolutions)
 {
-    var prodByName = prodSolutions
+    var prod = prodSolutions.ToList();
+
+    var prodByName = prod
         .Where(s => s.SolutionUniqueName != null)
         .ToDictionary(s => s.SolutionUniqueName!, StringComparer.OrdinalIgnoreCase);
+
+    // Match by Id as well as unique name: default solutions carry environment-specific unique names.
+    var prodById = prod
+        .Where(s => s.Id != Guid.Empty)
+        .ToDictionary(s => s.Id);
 
     return targetSolutions
         .Where(s => !s.IsManaged && s.SolutionUniqueName != null)
         .Select(s =>
         {
-            if (!prodByName.TryGetValue(s.SolutionUniqueName!, out var prodMatch))
+            var candidates = new List<SolutionInfo>();
+            if (prodByName.TryGetValue(s.SolutionUniqueName!, out var byName))
+                candidates.Add(byName);
+            if (s.Id != Guid.Empty && prodById.TryGetValue(s.Id, out var byId))
+                candidates.Add(byId);
+
+            if (candidates.Count == 0)
                 return (Target: s, Reason: "absent from prod");
-            if (prodMatch.IsManaged)
-                return (Target: s, Reason: "managed in prod");
-            return (Target: s, Reason: "");
+            if (candidates.Any(c => !c.IsManaged))
+                return (Target: s, Reason: "");
+            return (Target: s, Reason: "managed in prod");
         })
         .Where(x => x.Reason != "")
         .ToList();
@@ -85,8 +102,8 @@ Key implementation decisions:
 
 - **No escape hatch.** There is no `--force` flag to bypass this check. The risk is permanent data loss; the correct action is to delete the unmanaged solutions manually before running provision, not to bypass the guard.
 - **Cross-environment comparison, not target-only.** Checking only "does the target have any unmanaged solutions?" would block safe cases where prod also has the solution as unmanaged. The comparison is: "is this unmanaged target solution at risk given what prod contains?"
-- **`--allow-overwrite` scope unchanged.** The flag bypasses the "environment already exists" warning only. It does not and must not bypass the data-loss check.
-- **No system solution filtering needed.** Microsoft system solutions are always managed — excluded by the `!s.IsManaged` filter. The Default Solution is always unmanaged in both environments, so it passes the cross-environment comparison cleanly.
+- **The overwrite consent does not bypass this check.** `--force overwrite` (or the interactive confirm) covers "environment already exists" only; the data-loss check always runs.
+- **Microsoft system solutions are always managed**, so the `!s.IsManaged` filter excludes them. Default solutions are matched by Id: their unique names are environment-specific, so only the solution Id is stable across environments (`ProvisionCommand.cs:216-224`).
 - **`Task.WhenAll` for parallel fetch.** `pac admin copy` is a slow operation. Fetching both solution lists sequentially would add visible latency. Parallel fetch keeps the pre-flight check fast.
 - **Null-safe.** Solutions with a null `SolutionUniqueName` are excluded from both the prod dictionary and the target scan.
 
@@ -107,7 +124,7 @@ Apply this pattern whenever a CLI command wraps an operation that:
 
 - Is **irreversible** (environment copy, environment delete, bulk record delete)
 - **Destroys data the CLI itself created or manages** (solutions synced via `flowline sync`, environments provisioned by Flowline)
-- Has an **existing bypass flag** (`--allow-overwrite`, `--force`) that might be misread as authorising the destructive sub-operation
+- Has an **existing bypass flag** (`--force overwrite`) that might be misread as authorising the destructive sub-operation
 
 Do not add an escape hatch for the data-loss check. If blocking feels too strict, the correct fix is to tighten the detection (reduce false positives) — not to add a flag that lets users skip it.
 
@@ -115,22 +132,22 @@ Do not add an escape hatch for the data-loss check. If blocking feels too strict
 
 **Blocked — unmanaged solution is managed in prod:**
 
-Target has `MySolution` as unmanaged. Prod has `MySolution` as managed (deployed via release pipeline). Running `provision test --allow-overwrite` exits with:
+Target has `MySolution` as unmanaged. Prod has `MySolution` as managed (deployed via release pipeline). Running `provision test --force overwrite` exits with:
 
 ```
 Target environment has unmanaged solutions that would be permanently lost:
-  MySolution (managed in prod)
+- MySolution (managed in prod)
 ```
 
 Resolution: export or delete `MySolution` from the target, then re-run.
 
 **Blocked — unmanaged solution is absent from prod:**
 
-Target has `WorkInProgress` as unmanaged. Prod has no solution by that name. Running `provision dev --allow-overwrite` exits with:
+Target has `WorkInProgress` as unmanaged. Prod has no solution by that name. Running `provision dev --force overwrite` exits with:
 
 ```
 Target environment has unmanaged solutions that would be permanently lost:
-  WorkInProgress (absent from prod)
+- WorkInProgress (absent from prod)
 ```
 
 Resolution: commit or export the solution, delete it from the target, then re-run.
@@ -154,6 +171,6 @@ FindProblematicSolutions([{SolutionUniqueName: null, IsManaged: false}], [])    
 ## Related
 
 - `src/Flowline/Commands/ProvisionCommand.cs` — implementation (`FindProblematicSolutions` + call site)
-- `tests/Flowline.Tests/ProvisionCommandTests.cs` — 7 unit test scenarios
+- `tests/Flowline.Tests/ProvisionCommandTests.cs` — unit tests
 - `src/Flowline/Utils/PacUtils.cs` — `GetSolutionsAsync` (fetches solution list via PAC CLI)
 - `docs/solutions/logic-errors/sync-overwrites-uncommitted-src-without-warning-2026-05-15.md` — related pattern: pre-sync guard that prevents `flowline sync` from overwriting uncommitted `src/` changes

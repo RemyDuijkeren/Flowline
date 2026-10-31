@@ -2,7 +2,7 @@
 title: A set tuned to be over-inclusive for safety becomes unsafe when reused as an exclusion filter
 date: 2026-07-21
 category: docs/solutions/design-patterns/
-module: Flowline.Core.Services (WebResourcesProjectResolver, SolutionFileLayout), Flowline.Core.Plugins (PluginProjectResolver)
+module: Flowline.Core.Solutions (WebResourcesProjectResolver, SolutionFileLayout), Flowline.Core.Plugins (PluginProjectResolver)
 problem_type: design_pattern
 component: project_detection
 tags: [discovery, set-semantics, exclusion, false-negative, data-loss, over-inclusive, filtering]
@@ -20,13 +20,13 @@ Flowline classifies the projects in a `.sln`/`.slnx` into roles. Plugin discover
 **over-inclusive** cheap pre-filter: `PluginProjectResolver.DescribePreFilterSkip` keeps a project as a
 "maybe-plugin" whenever it *can't cheaply rule it out* — e.g. the project declares no `<TargetFramework>`
 of its own but a `Directory.Build.props` sits above it, so an SDK reference *could* arrive from there
-(`src/Flowline.Core/Plugins/PluginProjectResolver.cs:124`). That over-inclusion is correct **for its own
+(`src/Flowline.Core/Plugins/PluginProjectResolver.cs`, `DescribePreFilterSkip` at `:104`). That over-inclusion is correct **for its own
 purpose**: a false "definitely not a plugin" drop later deletes a live plugin registration, its steps, and
-its Custom APIs, so the pre-filter is tuned to never drop a real plugin (`PluginProjectResolver.cs:96`).
+its Custom APIs, so the pre-filter is tuned to never drop a real plugin (`PluginProjectResolver.cs:104`).
 
 `SolutionFileLayout` then reused that same over-inclusive set as the **exclusion** for WebResources
 detection: WebResources = the solution `.csproj` that is *not* in the plugin set, not PCF, not a test
-(`SolutionFileLayout.cs:73` builds the set; `:78-79` hands it to `WebResourcesProjectResolver.Resolve`).
+(`SolutionFileLayout.cs:89` builds the set; `:90` hands it to `WebResourcesProjectResolver.Resolve`).
 The reuse is where it broke.
 
 ## Guidance
@@ -43,11 +43,11 @@ Two defenses, applied together:
    here. Flowline keeps a plugin-set member in the WebResources candidates when it carries a *strong*
    WebResources signal (`Microsoft.Build.NoTargets` SDK, a suppressed compile target, a `dist/` folder, a
    `flowline:` annotation), because a real plugin carries none of those:
-   `WebResourcesProjectResolver.cs:96` — `.Where(path => !pluginProjectPaths.Contains(path) || HasStrongWebResourceSignal(path))`.
+   `WebResourcesProjectResolver.cs:97` — `.Where(path => !pluginProjectPaths.Contains(path) || HasStrongWebResourceSignal(path))`.
 2. **Require a positive signal from the winner, so a wrong elimination fails loud, not silent.** Detection
    was elimination-first ("the one that's left is it"). If the real item was wrongly excluded, a *different*
    item is "the one that's left". Requiring the winner to carry at least one positive signal turns that
-   into a loud outcome instead of a confident wrong pick: `WebResourcesProjectResolver.cs:121` —
+   into a loud outcome instead of a confident wrong pick: `WebResourcesProjectResolver.cs:122` —
    `if (topScore < MediumWeight)` returns "no confident match" rather than the zero-signal survivor.
 
 ## Why This Matters

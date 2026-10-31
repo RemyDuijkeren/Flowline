@@ -37,8 +37,8 @@ tags:
 
 Flowline pushes JS form-event handlers to Dataverse forms using source annotations —
 `// flowline:onload <entity> "<Form Name>" FunctionName` — that bind to a `systemform` by a literal
-`(EntityLogicalName, FormName)` string match (`src/Flowline.Core/Services/FormEventReader.cs:116-166`,
-keyed via the case-insensitive `FormKeyComparer` at `FormEventReader.cs:330-342`). The Dataverse-side
+`(EntityLogicalName, FormName)` string match (`src/Flowline.Core/FormEvents/FormEventReader.cs:115-171`,
+keyed via the case-insensitive `FormKeyComparer` at `FormEventReader.cs:332`). The Dataverse-side
 handler registration itself is wired to the form by `formid` (a GUID), not by name, so a rename in the
 Maker Portal never breaks the actual handler binding — but it does break Flowline's ability to *find*
 that form again on the next push, since the annotation still says the old name.
@@ -49,7 +49,7 @@ Before this change, that lookup miss produced a bare message with no diagnostic 
 form '{form}' not found for entity '{entity}' (Main or Quick Create form).
 ```
 
-(`FormEventReader.cs:215`, inside `BuildFormNotFoundMessage`.) The developer had no signal that a
+(`FormEventReader.cs:222`, inside `BuildFormNotFoundMessage`.) The developer had no signal that a
 rename was the likely cause, and no path forward except manually diffing Maker Portal history against
 source.
 
@@ -60,12 +60,8 @@ constraints that shaped it: preserving a hard failure as a product requirement, 
 value the tool itself produced earlier, and a live platform-verification step that killed an initially
 promising idea before it reached code.
 
-This work is captured on the local branch `feat/form-event-rename-resilience` (not yet pushed or opened
-as a PR); the codebase paths below are the current state of that branch, including the follow-up refactor
-commit `020bdcf` (`refactor(form-events): use DataverseForm instead of a raw tuple across the advisor
-boundary`). That SHA is local-only as of this writing — no PR exists to cite instead, and the hash itself
-may change if the branch is later rebased or squash-merged; treat "commit 020bdcf" below as shorthand for
-"the current state of this local branch," not a stable, permanently-resolvable reference.
+This work landed on master, including the follow-up refactor commit `020bdcf` (`refactor(form-events): use DataverseForm instead of a raw tuple across the advisor
+boundary`); the codebase paths below are the current state.
 
 ## Guidance
 
@@ -75,11 +71,11 @@ alone or combined, lets registration proceed or succeed silently
 (`docs/plans/2026-07-12-001-feat-form-event-rename-resilience-plan.md`, R5). The annotation's form name
 stays mandatory and the annotation grammar is untouched (R7) — a deliberate decision to keep
 source-of-truth in the annotation, not an oversight. The entire feature lives in one function,
-`FormEventRenameAdvisor.Suggest` (`src/Flowline.Core/Services/FormEventRenameAdvisor.cs:15-50`), called
+`FormEventRenameAdvisor.Suggest` (`src/Flowline.Core/FormEvents/Support/FormEventRenameAdvisor.cs:15-50`), called
 only from the miss branch of `FormEventReader`'s resolution loop:
 
 ```csharp
-// FormEventReader.cs:161-165
+// FormEventReader.cs:168-172
 return globalMatches.Count switch
 {
     0 => (Pair: pair, Error: BuildFormNotFoundMessage(entity, form, resolvedAnnotations, solutionForms, cache)),
@@ -87,8 +83,8 @@ return globalMatches.Count switch
 };
 ```
 
-`BuildFormNotFoundMessage` (`FormEventReader.cs:209-229`) always builds the same `baseMessage`, calls
-`FormEventRenameAdvisor.Suggest`, and appends its result only if non-null (`FormEventReader.cs:228`:
+`BuildFormNotFoundMessage` (`FormEventReader.cs:216-230`) always builds the same `baseMessage`, calls
+`FormEventRenameAdvisor.Suggest`, and appends its result only if non-null (`FormEventReader.cs:229`:
 `return suggestion is null ? baseMessage : baseMessage + suggestion;`). When no signal fires, the
 message is byte-for-byte identical to the pre-feature text — the negative case is a no-op by
 construction, not an extra branch to keep in sync.
@@ -100,7 +96,7 @@ still-unrenamed `requestedName`, not any candidate's current name), then scans e
 entity for a `<Handler>` whose stored ID matches:
 
 ```csharp
-// FormEventRenameAdvisor.cs:52-96 (FindSelfTagMatch)
+// FormEventRenameAdvisor.cs:52-116 (FindSelfTagMatch)
 foreach (var resolved in sharingAnnotations)
 {
     var evt = resolved.Annotation.Event;
@@ -137,25 +133,25 @@ handler was first written — see
 [`docs/solutions/logic-errors/iframe-control-id-prefix-normalization.md`](../logic-errors/iframe-control-id-prefix-normalization.md)
 for why an un-normalized token here would silently break self-tag matching for any annotation using an
 IFRAME control's prefixed spelling. `DeriveHandlerResolutionInputs` is shared (not reimplemented) from
-`FormEventPlanner.cs:436-443`, so the advisor's resolution logic can't drift from the planner's — a small
+`FormEventPlanner.cs:457-464`, so the advisor's resolution logic can't drift from the planner's — a small
 but important reuse decision, since divergent resolution rules between the two would make self-tag
 evidence unreliable.
 
-Note the resilience choice at `FormEventRenameAdvisor.cs:78-80`: this loop parses FormXml for *every*
+Note the resilience choice at `FormEventRenameAdvisor.cs:95-97`: this loop parses FormXml for *every*
 live candidate on the entity, including ones the feature never validated FormXml for elsewhere. A
 malformed/empty FormXml on any one candidate is swallowed and that candidate is skipped, rather than
 crashing the whole advisory pass — an already-failing push must never get *worse* by the advisor blowing
 up.
 
 **3. A per-environment cache widens the evidence window past what's derivable in a single pass.**
-`FormEventIdentityCache` (`src/Flowline.Core/Services/FormEventIdentityCache.cs`) is a plain JSON-array
+`FormEventIdentityCache` (`src/Flowline.Core/FormEvents/Support/FormEventIdentityCache.cs`) is a plain JSON-array
 file of `(Entity, Name, FormId, LastSeenUtc)` records, one file per Dataverse organization
 (`GetFormEventCachePath`, below). It's written on *every* successful resolution during
 `FormEventReader.LoadSnapshotAsync` — including forms with no current annotation, which matters because
 that's exactly the data a rename-detection later needs from a form that was renamed away from:
 
 ```csharp
-// FormEventReader.cs:116-131 (abbreviated)
+// FormEventReader.cs:123-138 (abbreviated)
 foreach (var group in solutionForms.GroupBy(f => (f.EntityLogicalName, f.Name), FormKeyComparer.Instance))
 {
     var matches = group.ToList();
@@ -177,7 +173,7 @@ At lookup-miss time, the cache signal checks whether a previously cached `formId
 requestedName)` still exists live, just possibly under a different name now:
 
 ```csharp
-// FormEventRenameAdvisor.cs:34-42
+// FormEventRenameAdvisor.cs:36-42
 var cachedFormId = cache?.TryGet(entity, requestedName);
 if (cachedFormId is { } formId)
 {
@@ -187,15 +183,14 @@ if (cachedFormId is { } formId)
 }
 ```
 
-**4. Architecture boundaries can force an API's shape — accept the explicit-path constructor rather than
-fighting the boundary.** `Flowline.Core` has no project reference to `Flowline` (the CLI project) — the
-reference direction runs the other way. That means `FormEventIdentityCache` cannot call
-`FlowlineStoragePaths` itself to find its own file. Its constructor therefore just takes a raw
-`path: string` (`FormEventIdentityCache.cs:11`), with the caller responsible for resolving it. Resolution
-happens in `Flowline.Utils.FlowlineStoragePaths.GetFormEventCachePath`:
+**4. Keep path resolution at the composition root — accept the explicit-path constructor.**
+`FlowlineStoragePaths` now lives in `Flowline.Core` (`Diagnostics/`), but `FormEventIdentityCache` still
+does not call it to find its own file. Its constructor takes a raw `path: string`
+(`FormEventIdentityCache.cs:11`), with the caller responsible for resolving it (`PushCommand.cs:216`
+calls `FlowlineStoragePaths.GetFormEventCachePath`):
 
 ```csharp
-// src/Flowline/Utils/FlowlineStoragePaths.cs:31-35
+// src/Flowline.Core/Diagnostics/FlowlineStoragePaths.cs:31-35
 public static string GetFormEventCachePath(string environmentUrl)
 {
     var sanitized = SanitizeForFileName(environmentUrl);
@@ -240,7 +235,7 @@ Name")` still finds the old entry's `formId`, and that `formId` is then checked 
 left as-is rather than hardened, each with a stated reason:
 
 - *Swallow-all exception handling.* Both `TryGet` and `SetMany` wrap all I/O in `try/catch (Exception)`
-  and degrade to a no-op miss or a skipped write (`FormEventIdentityCache.cs:27-32`, `:69-73`) — "a failed
+  and degrade to a no-op miss or a skipped write (`FormEventIdentityCache.cs:28-32`, `:69-73`) — "a failed
   cache write shouldn't fail a push that already resolved forms successfully; worst case, the next push
   just doesn't find these entries and re-resolves by name." This is a narrow, deliberate exception to this
   project's standing convention against swallowing exceptions (no try/catch around service calls unless
@@ -248,26 +243,22 @@ left as-is rather than hardened, each with a stated reason:
   explicit and narrow *(auto memory [claude])*.
 - *Unlocked concurrent-write race.* Two simultaneous `flowline push` runs against the same environment
   can race on `SetMany`'s read-modify-write and clobber each other's writes. Recorded explicitly in
-  `docs/residual-review-findings/feat-form-event-rename-resilience.md` under "Accepted, not a residual":
+  the review of this feature as an accepted risk:
   a lost write just means a future push re-resolves by name — the cache is advisory-only bookkeeping, not
   a correctness-bearing store, so file locking was judged disproportionate.
-- *Self-tag's first-sharing-annotation-wins precision gap.* `FindSelfTagMatch` (`FormEventRenameAdvisor.cs:52-96`)
+- *Self-tag's first-sharing-annotation-wins precision gap.* `FindSelfTagMatch` (`FormEventRenameAdvisor.cs:52-116`)
   returns on the *first* sharing annotation that produces a match, without checking whether another
   sharing annotation on the same `(entity, form)` pair (e.g. `onSave` vs `onLoad`) has its own genuine
   self-tag evidence pointing at a *different* candidate. `BuildSuggestion` then prints a rewrite line for
-  every sharing annotation using that one winning candidate. This is recorded as an open residual finding
-  (P2, confidence 75) in `docs/residual-review-findings/feat-form-event-rename-resilience.md` — flagged
+  every sharing annotation using that one winning candidate. This is an open residual finding
+  (P2, confidence 75), flagged
   as "a behavior change to the matching algorithm (favor recall vs. precision), not a mechanical fix," so
   it needs a design call rather than auto-apply, and was left unfixed by user decision.
 
-  **Note on that residual-findings file's own staleness:** its *other* listed finding — that
-  `FormEventRenameAdvisor.Suggest`/`FormEventReader.BuildFormNotFoundMessage` took a raw 5-field
-  positional tuple instead of the existing `DataverseForm` model — has since been fixed. Commit `020bdcf`
-  retyped both call sites to `IReadOnlyList<DataverseForm>`; current `FormEventReader.cs` builds
-  `List<DataverseForm>` explicitly rather than passing the tuple through, and `DataverseForm` itself is
-  defined at `src/Flowline.Core/Models/FormEventModels.cs:40`. The findings doc's text for that entry is
-  stale relative to the current tree — worth flagging rather than repeating as a live gap if that file is
-  read later.
+  The review's other finding, that `FormEventRenameAdvisor.Suggest`/`FormEventReader.BuildFormNotFoundMessage`
+  took a raw 5-field positional tuple instead of the existing `DataverseForm` model, was fixed in commit
+  `020bdcf`: both call sites take `IReadOnlyList<DataverseForm>`, and `DataverseForm` is defined at
+  `src/Flowline.Core/Models/FormEventModels.cs:47`.
 
 **7. Two options were named and explicitly deferred, not silently dropped.** Per the plan (R8): fuzzy
 name-similarity matching and an explicit `formid:` GUID-pin annotation token are documented as future
@@ -323,22 +314,19 @@ implementation, not just before they ship in a doc.
 
 ## Examples
 
-- `FormEventRenameAdvisor.Suggest` (`src/Flowline.Core/Services/FormEventRenameAdvisor.cs:15-50`) — the
+- `FormEventRenameAdvisor.Suggest` (`src/Flowline.Core/FormEvents/Support/FormEventRenameAdvisor.cs:15-50`) — the
   full three-signal, strongest-first dispatch, returning `null` (no candidate) or a
   `Confidence`-tiered suggestion string; never a resolved `DataverseForm`.
-- `FormEventReader.BuildFormNotFoundMessage` (`FormEventReader.cs:209-229`) — the call site proving the
+- `FormEventReader.BuildFormNotFoundMessage` (`FormEventReader.cs:216-230`) — the call site proving the
   contract: base message always built first, advisor result only ever appended, never substituted.
 - `FormEventIdentityCache.SetMany` (`FormEventIdentityCache.cs:40-74`) — the remove-matching-key-then-add
   merge that preserves historical `(entity, oldName) -> formId` rows across concurrent/overlapping writes.
-- `FlowlineStoragePaths.GetFormEventCachePath` / `SanitizeForFileName` (`src/Flowline/Utils/FlowlineStoragePaths.cs:31-55`)
+- `FlowlineStoragePaths.GetFormEventCachePath` / `SanitizeForFileName` (`src/Flowline.Core/Diagnostics/FlowlineStoragePaths.cs:31-55`)
   — canonicalize-before-sanitize, so trailing-slash/casing differences in an environment URL don't
   fragment the per-organization cache file.
 - `docs/plans/2026-07-12-001-feat-form-event-rename-resilience-plan.md` — Requirements R1-R8 and Key
   Technical Decisions KTD1-6, including the explicit rationale for the tuple-vs-model choice later revised
   in commit `020bdcf`.
-- `docs/residual-review-findings/feat-form-event-rename-resilience.md` — the two open/accepted findings;
-  note its first entry (raw-tuple API) is stale against current source as of `020bdcf` and should not be
-  treated as a live gap when reading that file going forward.
 
 ## Related
 

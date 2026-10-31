@@ -38,7 +38,7 @@ The assembly is present, never registered, and never runs.
 `flowline push` already compensated for this on the environment it writes to directly: it waits for
 the registration it was promised and, if the wait expires, creates the record itself
 (`PluginService.RegisterPackageAssemblyDirectlyAsync`,
-`src/Flowline.Core/Plugins/PluginService.cs:714`). That fix is local to that one environment — nothing
+`src/Flowline.Core/Plugins/PluginService.cs:703`). That fix is local to that one environment — nothing
 in the exported solution carries it forward.
 
 ## Measurement
@@ -105,7 +105,7 @@ The post-import check below still runs, unchanged, as the verification half:
   reflects each imported plug-in package's `.nupkg` content for plugin-bearing assemblies and polls
   the target for a `pluginassembly` record per assembly. Anything still missing is named — assembly,
   version, package — with the remedy below and a note that the finding repeats every later deploy
-  until it's applied. Registered in `Program.cs` last, after orphan cleanup, so it evaluates the state
+  until it's applied. Registered last in `PostDeployServiceRegistration` (`src/Flowline/Program.cs:398`), after orphan cleanup, so it evaluates the state
   a deploy actually leaves behind.
 - The check itself never writes to the target (`ExitCode.AssemblyNotRegistered`, 21, instead of a repair —
   repairing is the pre-import service's job, above). A check
@@ -114,7 +114,7 @@ The post-import check below still runs, unchanged, as the verification half:
   exits 0 — no Flowline change required.
 - `push` prints one warning the moment its own self-registration fallback fires, saying the record is
   local to that environment and that every deploy target needs the same fix
-  (`src/Flowline.Core/Plugins/PluginService.cs:752`).
+  (`src/Flowline.Core/Plugins/PluginService.cs`, in `RegisterPackageAssemblyDirectlyAsync`, ~`:714`).
 - Orphan cleanup no longer misreads this gap as a component removed on purpose. It matched a live
   `pluginassembly` against the type-91 root components in the imported `Solution.xml`, and "absent
   from the manifest" used to mean "removed from source" — true for a classic assembly, false for one a

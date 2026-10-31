@@ -48,7 +48,7 @@ Caught in review here, before shipping. It is easy to miss because it only repro
 
 The cache should hold the *input* to the decision (what NuGet published), not the *decision* (what to tell the user). Keep the network result cached; re-run the cheap comparison every time.
 
-In `src/Flowline/Services/UpdateNoticeChecker.cs`:
+In `src/Flowline.Core/Updates/UpdateNoticeChecker.cs`:
 
 ```csharp
 // Wrong — serves a verdict that the user's own action may have invalidated.

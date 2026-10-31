@@ -39,7 +39,7 @@ related_components:
 
 ## Solution
 
-Move both types from `Flowline` to `Flowline.Core`, keeping the original `namespace Flowline;` so all callers compile unchanged.
+Move both types from `Flowline` to `Flowline.Core`, keeping the original `namespace Flowline;` so all callers compile unchanged. (Later changed to `namespace Flowline.Core;`; callers now use `using Flowline.Core;`.)
 
 **Step 1: Move the files**
 
@@ -52,7 +52,7 @@ src/Flowline/FlowlineException.cs → src/Flowline.Core/FlowlineException.cs
 
 ```csharp
 // src/Flowline.Core/ExitCode.cs — same content, same namespace, different physical project
-namespace Flowline;
+namespace Flowline.Core; // was `namespace Flowline;` when moved
 
 public enum ExitCode
 {
@@ -64,7 +64,7 @@ public enum ExitCode
 
 ```csharp
 // src/Flowline.Core/FlowlineException.cs — same content, same namespace
-namespace Flowline;
+namespace Flowline.Core; // was `namespace Flowline;` when moved
 
 public class FlowlineException : Exception
 {
@@ -110,4 +110,4 @@ Keeping `namespace Flowline;` in the moved files is the key: C# namespaces are a
 
 ## Related Issues
 
-- [AI-agent-consumable CLI contract](../architecture-patterns/ai-agent-consumable-cli-contract-2026-06-07.md) — documents the design rationale for `ExitCode` and `FlowlineException` as a stable public API. **Note:** that doc references the old path `src/Flowline/ExitCode.cs`; the canonical location is now `src/Flowline.Core/ExitCode.cs`.
+- [AI-agent-consumable CLI contract](../architecture-patterns/ai-agent-consumable-cli-contract-2026-06-07.md) — documents the design rationale for `ExitCode` and `FlowlineException` as a stable public API.

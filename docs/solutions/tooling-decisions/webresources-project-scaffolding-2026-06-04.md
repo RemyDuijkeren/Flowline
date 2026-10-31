@@ -43,7 +43,7 @@ Store each template file as an `<EmbeddedResource>` in `Flowline.csproj` with an
   <EmbeddedResource Include="Templates\WebResources\package.json">
     <LogicalName>Flowline.Templates.WebResources.package.json</LogicalName>
   </EmbeddedResource>
-  <!-- ... repeat for rollup.config.mjs, tsconfig.json, eslint.config.mjs, README.md, src/example.ts -->
+  <!-- ... repeat for rollup.config.mjs, tsconfig.json, eslint.config.mjs, README.md, src/example.ts, src/example-js.js -->
 </ItemGroup>
 ```
 
@@ -83,10 +83,6 @@ Use `Sdk="Microsoft.Build.NoTargets/3.7.134"` for projects that participate in `
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
-  <ItemGroup>
-    <NpmInputFiles Include="src\**\*.ts;public\**\*;rollup.config.mjs;eslint.config.mjs;package.json;tsconfig.json" />
-  </ItemGroup>
-
   <!-- Incremental: only re-runs when package.json changes -->
   <Target Name="NpmInstall"
           Inputs="package.json"
@@ -96,13 +92,9 @@ Use `Sdk="Microsoft.Build.NoTargets/3.7.134"` for projects that participate in `
     <Touch Files="$(BaseIntermediateOutputPath)npm-install.stamp" AlwaysCreate="true" />
   </Target>
 
-  <!-- Incremental: only re-runs when source files change -->
-  <Target Name="NpmBuild" DependsOnTargets="NpmInstall" BeforeTargets="Build"
-          Inputs="@(NpmInputFiles)"
-          Outputs="$(BaseIntermediateOutputPath)npm-build.stamp">
-    <MakeDir Directories="$(BaseIntermediateOutputPath)" />
+  <!-- Not incremental: runs on every build -->
+  <Target Name="NpmBuild" DependsOnTargets="NpmInstall" BeforeTargets="Build">
     <Exec Command="npm run build" />
-    <Touch Files="$(BaseIntermediateOutputPath)npm-build.stamp" AlwaysCreate="true" />
   </Target>
 </Project>
 ```
@@ -181,5 +173,5 @@ await TemplateWriter.WriteAsync("Flowline.Templates.WebResources.src.example.ts"
 
 - `src/Flowline/Templates/WebResources/` — template files
 - `src/Flowline/Utils/TemplateWriter.cs` — template writer utility
-- `src/Flowline/Commands/CloneCommand.cs` — `SetupWebResourcesProjectAsync()`
+- `src/Flowline/Services/ProjectScaffolder.cs` — `SetupWebResourcesProjectAsync()`
 - `docs/plans/2026-06-04-001-feat-webresources-embedded-templates-plan.md` — implementation plan

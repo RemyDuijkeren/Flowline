@@ -200,7 +200,7 @@ var annotationRefs = WebResourceAnnotationParser.CollectAllReferences(webresourc
 // Exempt them from deletion even if absent from Solution.xml
 ```
 
-`CollectAllReferences` scans all `*.js` files under the project root and returns the union set of
+`CollectAllReferences` scans all `*.js` and extensionless files under the given web resource root and returns the union set of
 all `// flowline:depends` names. Any name in this set is protected from orphan deletion.
 
 ### 8. Scan the whole file for annotations — a bundler banner is not a `//` comment
@@ -329,7 +329,7 @@ convention, not line comments, so `//!` can still get stripped where `/*! ... */
 ## Related
 
 - [Dataverse dependencyxml field format — confirmed empirically](../documentation-gaps/webresource-dependencyxml-field-format-2026-06-14.md) — raw field format, write behavior, libraryUniqueId semantics
-- `src/Flowline.Core/Services/WebResourceAnnotationParser.cs` — annotation parsing with deduplication
-- `src/Flowline.Core/Services/WebResourceReader.cs` — two-phase enrichment (LCID expansion, RESX auto-match)
-- `src/Flowline.Core/Services/WebResourcePlanner.cs` — read-modify-write with GUID reuse
+- `src/Flowline.Core/WebResources/WebResourceAnnotationParser.cs` — annotation parsing with deduplication
+- `src/Flowline.Core/WebResources/WebResourceReader.cs` — two-phase enrichment (LCID expansion, RESX auto-match)
+- `src/Flowline.Core/WebResources/WebResourcePlanner.cs` — read-modify-write with GUID reuse
 - `src/Flowline.Core/Models/WebResourceModels.cs` — DependencyLibrary with Name-only equality

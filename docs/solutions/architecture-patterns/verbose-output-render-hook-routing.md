@@ -195,7 +195,7 @@ Attach `VerboseFilterHook` (and `LoggingRenderHook` if the test needs to assert 
 
 ## Related
 
-- [`spectre-console-ilogger-render-hook.md`](spectre-console-ilogger-render-hook.md) — the parent architecture this learning extends (documents `LoggingRenderHook`'s original design). Its file-path citations drifted after the `src/Flowline.Core/Console/` folder move and were refreshed on 2026-07-17; the embedded code sample and prefix-detection content still match current source.
+- [`spectre-console-ilogger-render-hook.md`](spectre-console-ilogger-render-hook.md) — the parent architecture this learning extends (documents `LoggingRenderHook`'s original design). Its file-path citations drifted after the `src/Flowline.Core/Console/` folder move and were refreshed on 2026-07-17; the embedded code sample and prefix constants were later updated for the `FlowlineTheme` move.
 - [`../logic-errors/stale-bool-capture-hook-construction.md`](../logic-errors/stale-bool-capture-hook-construction.md) — sibling incident about `VerboseFilterHook`'s constructor; already reflects the `VerboseRenderable` rename and established the `TestConsole.Pipeline.Attach(VerboseFilterHook)` test pattern this learning reused.
 - `src/Flowline.Core/Console/VerboseRenderable.cs`, `src/Flowline.Core/Console/VerboseFilterHook.cs`, `src/Flowline.Core/Console/LoggingRenderHook.cs`, `src/Flowline.Core/Console/FlowlineConsoleExtensions.cs` — implementation
 - `src/Flowline.Core/Plugins/PluginService.cs`, `src/Flowline.Core/WebResources/WebResourceService.cs`, `src/Flowline/Diagnostics/SubprocessCapture.cs` — call sites fixed

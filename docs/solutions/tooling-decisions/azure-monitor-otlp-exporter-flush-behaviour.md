@@ -100,8 +100,8 @@ the span silently: it is dropped in memory rather than spooled.
 **A second signal changes the answer.** Once the Serilog stream is exported as well, the two pipelines
 tear down side by side and both have to finish inside the same bound. Measured the same way, at
 1500 ms six identical runs delivered five, and a run whose send was abandoned after the server had
-already accepted it was retried from the offline store on a later run and arrived twice. Flowline uses
-3000 ms for that reason. Sequencing the two teardowns instead of running them side by side is worse
+already accepted it was retried from the offline store on a later run and arrived twice. Flowline first used
+3000 ms for that reason; the shipped teardown now waits for completion under an 8000 ms backstop (`FlowlineTelemetry.cs`, `FlushBackstopMs`). Sequencing the two teardowns instead of running them side by side is worse
 still: the spans consume the whole bound and no log record leaves at all.
 
 **8b. A send abandoned at the bound is spooled after all, and forwarded by a later run.** Measured
@@ -114,7 +114,7 @@ system temp directory by default, so a backlog that can never succeed (for examp
 a spike using a bogus key) is retried by every later run and competes with that run's own export.
 Flowline sets `StorageDirectory` under its own storage root for that reason.
 
-**8. Offline storage spools only on a transmission that fails, not on one that is abandoned.** With a
+**8. (Superseded by 8b for abandoned sends.) Offline storage spools a transmission that fails fast.** With a
 short `Retry.NetworkTimeout` the send fails fast, lands in `StorageDirectory`, and a later run drains
 it — verified. That is the shape a "never wait, always forward later" design would need; it is not what
 a short bound gives you.
@@ -139,3 +139,5 @@ KTD8's three call sites (after `RunAsync`, `ProcessExit`, SIGTERM) and its idemp
 stand. Its mechanism does not: the idempotent flush runs `ForceFlush` **and** `Dispose` inside one
 bounded background wait rather than calling `ForceFlush(3s)` and then disposing inline. Without
 that, every command pays up to four seconds on exit, which is exactly what R7 forbids.
+
+Superseded in code: the teardown now waits for the send to finish (finding 10) with `Retry.NetworkTimeout` at 3 s and `MaxRetries` at 0, capped by an 8000 ms backstop; see `src/Flowline/Diagnostics/FlowlineTelemetry.cs` (`Flush`).

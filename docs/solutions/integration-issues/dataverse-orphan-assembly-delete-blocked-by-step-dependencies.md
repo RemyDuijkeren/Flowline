@@ -1,12 +1,12 @@
 ---
 title: "Orphan plugin assembly deletion fails when child plugin types have step dependencies"
 date: 2026-06-25
-module: Flowline.Core.Services.PluginService
+module: Flowline.Core.Plugins.PluginService
 problem_type: integration_issue
 component: tooling
 severity: high
 symptoms:
-  - "flowline push --scope plugins --force throws FaultException when deleting orphan plugin assemblies"
+  - "flowline push --scope plugins --force delete-orphans throws FaultException when deleting orphan plugin assemblies"
   - "Error: PluginAssembly cannot be deleted because it is referenced by 2 other components"
   - "Deletion fails even after removing the assembly from the named solution via RemoveSolutionComponent"
 root_cause: logic_error
@@ -27,11 +27,11 @@ related_components:
 
 ## Problem
 
-`flowline push --scope plugins --force` fails with a Dataverse `FaultException` when attempting to delete an orphan plugin assembly — an assembly present in the Dataverse environment with no local source file. The deletion is blocked because Dataverse's dependency check fires before any cascade can run, and that check finds plugin steps (`sdkmessageprocessingstep`) referencing plugin types (`plugintype`) that belong to the assembly.
+`flowline push --scope plugins --force delete-orphans` fails with a Dataverse `FaultException` when attempting to delete an orphan plugin assembly — an assembly present in the Dataverse environment with no local source file. The deletion is blocked because Dataverse's dependency check fires before any cascade can run, and that check finds plugin steps (`sdkmessageprocessingstep`) referencing plugin types (`plugintype`) that belong to the assembly.
 
 ## Symptoms
 
-- `flowline push --scope plugins --force` exits with an unhandled `System.ServiceModel.FaultException`.
+- `flowline push --scope plugins --force delete-orphans` exits with an unhandled `System.ServiceModel.FaultException`.
 - Error message: `The PluginAssembly(<guid>) component cannot be deleted because it is referenced by 2 other components.`
 - Error fires in `WarnOrphanAssembliesAsync` (`PluginService.cs`) at the `DeleteAsync("pluginassembly", ...)` call.
 - The assembly is not missing from the solution — it is registered in Dataverse and has live plugin types, steps, and optionally images and custom APIs.
@@ -74,21 +74,22 @@ if (willDelete && orphanSnapshot != null)
     // Must delete children manually in reverse dependency order — same as RunDeletesAsync.
     foreach (var e in orphanSnapshot.Images)
         await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
-    foreach (var e in orphanSnapshot.ResponseProps)
+    foreach (var e in orphanResponseProps)
         await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
-    foreach (var e in orphanSnapshot.RequestParams)
+    foreach (var e in orphanRequestParams)
         await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
     foreach (var e in orphanSnapshot.Steps)
         await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
-    foreach (var e in orphanSnapshot.CustomApis)
+    foreach (var e in orphanCustomApis)
         await service.DeleteAsync(e.LogicalName, e.Id, cancellationToken).ConfigureAwait(false);
     foreach (var (_, pluginType) in orphanSnapshot.PluginTypes)
         await service.DeleteAsync(pluginType.LogicalName, pluginType.Id, cancellationToken).ConfigureAwait(false);
-    await service.DeleteAsync("pluginassembly", entity.Id, cancellationToken).ConfigureAwait(false);
+    if (package != null) packagesToDelete.Add(package.Id);
+    else await service.DeleteAsync("pluginassembly", entity.Id, cancellationToken).ConfigureAwait(false);
 }
 ```
 
-The `RegistrationSnapshot` already contains all child record sets (`Images`, `ResponseProps`, `RequestParams`, `Steps`, `CustomApis`, `PluginTypes`), so no new queries are needed beyond the existing snapshot load.
+The `RegistrationSnapshot` already contains all child record sets (`Images`, `ResponseProps`, `RequestParams`, `Steps`, `CustomApis`, `PluginTypes`), so no new queries are needed beyond the existing snapshot load. The Custom API rows and their parameters and properties are narrowed to the ones this assembly's plugin types implement (`OwnCustomApiRecords`), because the snapshot resolves them publisher-wide. A package-owned assembly is removed by deleting its `pluginpackage` after the loop, once every orphan sibling has had its children cleared.
 
 ## Why This Works
 

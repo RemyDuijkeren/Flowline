@@ -146,5 +146,5 @@ When splitting output from external tools (PAC CLI, any subprocess), never index
 
 ## Related Issues
 
-- `SubprocessCapture._options.IsVerbose` reference approach — already correct; serves as the model for the VFH fix.
+- `SubprocessCapture` formerly held `_options` by reference; it now routes through `console.Verbose()` and no longer holds options (see verbose-output-render-hook-routing.md).
 - IRenderHook pipeline architecture (VFH outer + LRH inner, yield-before-log, hook registration order): [`docs/solutions/architecture-patterns/spectre-console-ilogger-render-hook.md`](../architecture-patterns/spectre-console-ilogger-render-hook.md)

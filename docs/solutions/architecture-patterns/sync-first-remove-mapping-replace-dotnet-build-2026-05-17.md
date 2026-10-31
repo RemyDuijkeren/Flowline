@@ -59,7 +59,7 @@ This created three compounding problems:
 The correct architecture for sync-first Dataverse ALM:
 
 ```
-source code → push → Dataverse DEV → sync → src/ → pack → deploy to test/prod
+source code → push → Dataverse DEV → pull → Solution/src/ → pack → deploy to test/prod
 ```
 
 **Step 1: Sync without `--map`**
@@ -83,7 +83,7 @@ CommandResult result = await Cli.Wrap(cmdName)
         args.AddIfNotNull(prefixArgs)
             .Add("solution")
             .Add("pack")
-            .Add("--folder").Add(Path.Combine(slnFolder, "src"))
+            .Add("--folder").Add(Path.Combine(dataverseSolutionFolder, "src"))
             .Add("--zipFile").Add(zipFile)
             .Add("--packageType").Add(packageType))
     .ExecuteAsync(cancellationToken).Task;
@@ -97,7 +97,7 @@ The zip produced reflects exactly what is in Dataverse DEV — no local build ar
 
 **Step 4: Replace Dataverse SDK download with file copy**
 
-`pac solution clone` already downloads web resources into `src/WebResources/`. The previous implementation made a separate Dataverse SDK call to download them again. Replace with a direct file copy:
+`pac solution clone` already downloads web resources into `src/WebResources/`. The previous implementation made a separate Dataverse SDK call to download them again. Replace with a direct file copy (now `ProjectScaffolder.SeedWebResourceDistFromSrc`):
 
 ```csharp
 private void SeedWebResourceDistFromSrc(string slnFolder, Settings settings)
@@ -119,12 +119,12 @@ private void SeedWebResourceDistFromSrc(string slnFolder, Settings settings)
 }
 ```
 
-**Step 5: Add `DriftChecker` for non-blocking post-sync warnings**
+**Step 5: Add `PluginWebResourceDriftChecker` for non-blocking post-pull warnings**
 
-Without mapping, local build artifacts (`WebResources/dist/`, `Plugins/bin/Release/`) no longer participate in the ALM chain. Add a drift check after sync that compares them against what sync downloaded:
+Without mapping, local build artifacts (`WebResources/dist/`, `Plugins/bin/Release/`) no longer participate in the ALM chain. Add a drift check after pull that compares them against what sync downloaded:
 
 ```csharp
-var driftWarnings = await DriftChecker.CheckAsync(slnFolder, cancellationToken);
+var driftWarnings = await PluginWebResourceDriftChecker.CheckAsync(solutionUniqueName, layout, dataverseSolutionFolder, publisherPrefix, cancellationToken);
 foreach (var w in driftWarnings)
 {
     var hint = w.Category switch
@@ -200,7 +200,7 @@ CommandResult result = await Cli.Wrap(cmdName)
         args.AddIfNotNull(prefixArgs)
             .Add("solution")
             .Add("pack")
-            .Add("--folder").Add(Path.Combine(slnFolder, "src"))
+            .Add("--folder").Add(Path.Combine(dataverseSolutionFolder, "src"))
             .Add("--zipFile").Add(zipFile)
             .Add("--packageType").Add(packageType))
     .ExecuteAsync(cancellationToken).Task;
@@ -209,15 +209,15 @@ CommandResult result = await Cli.Wrap(cmdName)
 **Anti-pattern: silently swallowing drift check exceptions**
 ```csharp
 // Do not do this
-try { var warnings = await DriftChecker.CheckAsync(slnFolder, cancellationToken); ... }
+try { var warnings = await PluginWebResourceDriftChecker.CheckAsync(solutionUniqueName, layout, dataverseSolutionFolder, publisherPrefix, cancellationToken); ... }
 catch { Console.Skip("Drift check unavailable"); }
 ```
 
-Let `DriftChecker.CheckAsync` throw. Only catch exceptions when you have specific recovery logic — silent swallowing hides real problems.
+Let `PluginWebResourceDriftChecker.CheckAsync` throw. Only catch exceptions when you have specific recovery logic — silent swallowing hides real problems.
 
 ## Related
 
-- `docs/solutions/logic-errors/sync-overwrites-uncommitted-src-without-warning-2026-05-15.md` — pre-sync dirty-tree guard that prevents sync from silently overwriting `src/`; complements this pattern (guard first, then sync cleanly)
+- `docs/solutions/logic-errors/sync-overwrites-uncommitted-src-without-warning-2026-05-15.md` — pre-pull dirty-tree guard that prevents pull from silently overwriting `src/`; complements this pattern (guard first, then sync cleanly)
 - `docs/brainstorms/archive/2026-05-16-build-validation-and-pac-warnings-requirements.md` — requirements source for this refactor (R1–R15, acceptance examples, scope)
 - `docs/plans/2026-05-17-001-refactor-remove-mapping-replace-dotnet-build-plan.md` — implementation plan covering U1–U6
 - `pac solution sync` CLI — `--map`, `--packagetype`, `--async` flags

@@ -15,7 +15,7 @@ root_cause: logic_error
 resolution_type: code_fix
 severity: high
 related_components:
-  - PluginAssemblyReader
+  - PluginTypeMetadataScanner
 tags:
   - multi-handles
   - plugin-registration
@@ -101,7 +101,7 @@ state" above) rather than by further patching this predicate.
 
 ### Secondary fix — `ValidateSecondaryTable` parity (still current, unrelated to the identity refactor)
 
-**File:** `src/Flowline.Core/Services/PluginAssemblyReader.cs` — `BuildMultiHandlesSteps`
+**File:** `src/Flowline.Core/Plugins/PluginTypeMetadataScanner.cs` — `BuildMultiHandlesSteps`
 
 The single-`[Handles]` path validated secondary table. The multi-`[Handles]` path (`BuildMultiHandlesSteps`)
 initially skipped it. Fix: call `ValidateSecondaryTable(type.Name, msg, secondaryTable)` per-handle

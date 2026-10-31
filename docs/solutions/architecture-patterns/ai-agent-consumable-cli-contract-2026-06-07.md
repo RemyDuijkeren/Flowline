@@ -64,12 +64,13 @@ public enum ExitCode
     Inconclusive = 19,          // a check couldn't run to completion — not a pass/fail signal
     WriteTargetOccupied = 20,   // a write target is already occupied by something valid
     AssemblyNotRegistered = 21, // deploy succeeded; a plug-in package assembly has no registration
+    ChangesFound = 22,          // diff/drift found changes; not a failure, only with --exit-code
     Cancelled = 130,            // de facto convention: 128 + SIGINT(2)
 }
 ```
 
 Conventional slots (3, 4, 130) follow curl/git/rsync to avoid collisions. Flowline-specific codes
-use the 10–21 range (added to as new failure classes earned their own number — see `ExitCode.cs`
+use the 10–22 range (added to as new failure classes earned their own number — see `ExitCode.cs`
 for the current, authoritative list). Codes 2 and 5 are intentionally unused — document that fact
 with comments so future maintainers don't fill them with wrong semantics.
 
@@ -96,7 +97,7 @@ public class FlowlineException : Exception
 ```csharp
 case FlowlineException fe:
     AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(fe.Message)}");
-    fe.Detail?.Invoke(AnsiConsole.Console);
+    WriteExceptionContext(fe, serilogLogger);
     return (int)fe.ExitCode;
 ```
 
@@ -113,7 +114,7 @@ agents can extract it without a lookup table:
 |------|--------------------------|
 | 4 (NotAuthenticated) | `run: pac auth create --environment <url>` |
 | 12 (DirtyWorkingDirectory) | `Commit or stash changes first` |
-| 14 (VersionConflict) | `Add --force <specifier> to overwrite` — `--force` requires a value naming the exact hazard (e.g. `--force dirty`); a bare or unrecognized value fails listing the valid ones for that command. See `docs/plans/2026-07-11-001-refactor-force-specifier-plan.md`. |
+| 14 (VersionConflict) | Reserved, currently never thrown (`ExitCode.cs`). `Add --force <specifier> to overwrite` — `--force` requires a value naming the exact hazard (e.g. `--force dirty`); a bare or unrecognized value fails listing the valid ones for that command. See `docs/plans/2026-07-11-001-refactor-force-specifier-plan.md`. |
 | 17 (ForceRequired) | `Use --force <specifier> to proceed` — same per-command specifier requirement as above |
 
 All other error messages must at minimum state what failed and what to check. No message should
@@ -125,17 +126,17 @@ Use `Console.Error(message)` (the FlowlineConsoleExtensions helper), never raw
 
 ### 4. `AGENTS.md` scaffolded by `flowline clone`
 
-`CloneCommand` writes `AGENTS.md` at the repo root after scaffolding the solution structure.
+`ProjectScaffolder` (invoked by `clone`) writes `AGENTS.md` at the repo root after scaffolding the solution structure.
 Template is a C# raw string literal with `solutionName` interpolated — not an embedded resource
 (single use, needs substitution, no infrastructure justified):
 
 ```csharp
-private async Task ScaffoldAgentsFileAsync(string solutionName, CancellationToken ct)
+internal async Task ScaffoldAgentsFileAsync(string slnFolder, string solutionName, string slnFileName, CancellationToken ct)
 {
     var agentsFilePath = Path.Combine(RootFolder, "AGENTS.md");
     if (File.Exists(agentsFilePath))
     {
-        Console.Info("AGENTS.md already exists — skipping.");
+        console.Skip("AGENTS.md already exists — skipping.");
         return;
     }
     var content = $"""
@@ -143,7 +144,7 @@ private async Task ScaffoldAgentsFileAsync(string solutionName, CancellationToke
         ...daily loop, project structure with {solutionName} substituted, exit code table...
         """;
     await File.WriteAllTextAsync(agentsFilePath, content, ct);
-    Console.Ok("AGENTS.md written.");
+    console.Ok("AGENTS.md created.");
 }
 ```
 
@@ -164,9 +165,9 @@ Examples:
  Reads [Step] attributes to create or update plugin registrations.
  Run after plugin or web resource changes."
 
-// sync
-"Export solution from DEV, bump build version, and unpack to source-controlled XML.
- Run after testing changes in DEV. Requires no uncommitted changes in Package/src/."
+// pull
+"Export the solution from DEV, bump the patch version, unpack it to source-controlled XML, and write CHANGES.md and the context docs.
+ Run after testing in DEV, with a clean working tree."
 
 // deploy
 "Pack solution from repo and import into target environment (test, uat, prod, or URL).
@@ -186,7 +187,7 @@ environment (precondition), or abort (user error).
 table mapping error text to corrective actions — this breaks the moment messages change.
 
 **No AGENTS.md:** agents lack the repository's operational model. They don't know that `push` is
-idempotent, that `sync` requires a clean working directory, or the correct command order. So they
+idempotent, that `pull` requires a clean working directory, or the correct command order. So they
 default to defensive inaction or guesswork.
 
 With this contract, agents can classify failures by exit code, extract corrective actions directly
@@ -199,8 +200,8 @@ from error messages, and understand the full workflow without external documenta
 - Every new CLI command — write a three-part help text description before shipping.
 - Exit code enum additions — treat as a breaking change; document in release notes.
 
-Do not add new exit codes in the 0–9 range (reserved by convention). Use 10–17 range or extend
-above 17 for new Flowline-specific conditions.
+Do not add new exit codes in the 0–9 range (reserved by convention). Extend above the highest
+allocated code (see `ExitCode.cs`) for new Flowline-specific conditions.
 
 ## Examples
 
@@ -215,10 +216,10 @@ if (!await GitUtils.IsRepoCleanAsync(verbose, ct))
 
 **After — typed code, actionable message, Console.Error helper:**
 ```csharp
-// In GitUtils.AssertRepoCleanAsync:
+// In PullCommand:
 throw new FlowlineException(
     ExitCode.DirtyWorkingDirectory,
-    "Uncommitted changes in Package/src/ — commit or stash changes first.");
+    "Uncommitted changes in 'Solution/src' — Commit or stash changes first, or re-run with --force dirty.");
 ```
 
 **Before — vague error message:**
@@ -235,21 +236,21 @@ throw new FlowlineException(
 
 **Before — one-line help text:**
 ```csharp
-.WithDescription("Sync the solution")
+.WithDescription("Pull the solution")
 ```
 
 **After — what + trigger + state-change:**
 ```csharp
-.WithDescription("Export solution from DEV, bump build version, and unpack to source-controlled XML. Run after testing changes in DEV. Requires no uncommitted changes in Package/src/.")
+.WithDescription("Export the solution from DEV, bump the patch version, unpack it to source-controlled XML, and write CHANGES.md and the context docs. Run after testing in DEV, with a clean working tree.")
 ```
 
 ## Related
 
-- [`src/Flowline/ExitCode.cs`](../../../src/Flowline/ExitCode.cs) — the enum
-- [`src/Flowline/FlowlineException.cs`](../../../src/Flowline/FlowlineException.cs) — typed constructor
+- [`src/Flowline.Core/ExitCode.cs`](../../../src/Flowline.Core/ExitCode.cs) — the enum
+- [`src/Flowline.Core/FlowlineException.cs`](../../../src/Flowline.Core/FlowlineException.cs) — typed constructor
 - [`src/Flowline/Program.cs`](../../../src/Flowline/Program.cs) — global exception handler + `.WithDescription()` strings
-- [`src/Flowline/Commands/CloneCommand.cs`](../../../src/Flowline/Commands/CloneCommand.cs) — `ScaffoldAgentsFileAsync`
-- [`src/Flowline.Core/FlowlineConsoleExtensions.cs`](../../../src/Flowline.Core/FlowlineConsoleExtensions.cs) — `Console.Error()` helper
+- [`src/Flowline/Services/ProjectScaffolder.cs`](../../../src/Flowline/Services/ProjectScaffolder.cs) — `ScaffoldAgentsFileAsync`
+- [`src/Flowline.Core/Console/FlowlineConsoleExtensions.cs`](../../../src/Flowline.Core/Console/FlowlineConsoleExtensions.cs) — `Console.Error()` helper
 - [`docs/solutions/conventions/flowline-add-environment-2026-06-06.md`](../conventions/flowline-add-environment-2026-06-06.md) — environment resolution per command (related FlowlineException context)
 - [`docs/solutions/tooling-decisions/webresources-project-scaffolding-2026-06-04.md`](../tooling-decisions/webresources-project-scaffolding-2026-06-04.md) — clone scaffolding patterns
 - [`docs/solutions/logic-errors/sync-overwrites-uncommitted-src-without-warning-2026-05-15.md`](../logic-errors/sync-overwrites-uncommitted-src-without-warning-2026-05-15.md) — DirtyWorkingDirectory guard origin

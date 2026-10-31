@@ -44,7 +44,7 @@ Multiple more capabilities were already anticipated on the exact same pre-import
 Extract a typed protocol for the two hook points, then have the orchestrating command depend on `IEnumerable<TProtocol>` instead of a concrete type:
 
 ```csharp
-// src/Flowline.Core/Services/IPostDeployService.cs
+// src/Flowline.Core/Deploy/IPostDeployService.cs  (shape at the time; see the current records in that file)
 public sealed record PostDeployContext(
     IOrganizationServiceAsync2 Service,
     string SolutionName,
@@ -55,7 +55,7 @@ public sealed record PostDeployContext(
 public interface IPostDeployService
 {
     Task RunPreImportAsync(PostDeployContext context, CancellationToken ct);
-    Task<int> RunPostImportAsync(PostDeployContext context, CancellationToken ct);
+    Task<PostDeployOutcome> RunPostImportAsync(PostDeployContext context, CancellationToken ct);
 }
 ```
 
@@ -75,7 +75,7 @@ Six design decisions drove the shape:
 
 6. **Aggregation logic extracted as a testable static helper.** The interface's post-import method returns `Task<PostDeployOutcome>` (`readonly record struct PostDeployOutcome(int Findings, bool Inconclusive, ExitCode? PreferredExitCode)`), not the plain `int` shown in the original Guidance sample above — a service can now say "I couldn't verify" without that reading as a clean pass, and can prefer a more specific exit code than the plain finding count. `internal static ExitCode ResolvePostImportExitCode(IReadOnlyList<PostDeployOutcome> outcomes)` in `DeployCommand.cs` resolves the deploy's exit code from every implementer's outcome — a package-assembly finding (`ExitCode.AssemblyNotRegistered`) outranks a plain finding count (`ExitCode.PartialSuccess`), which outranks "couldn't verify" (`ExitCode.Inconclusive`) — without sniffing which concrete service produced which outcome (KTD5). It follows the established `ResolveDtapGate` convention (see `tests/Flowline.Tests/DeployCommandDtapGateTests.cs`) — the only way to unit-test `DeployCommand` logic without constructing the whole command, since its constructor needs live `DataverseConnector`/PAC-CLI dependencies with no test doubles in this codebase.
 
-**Update (2026-07-10): `PostDeployContext`'s flat fields consolidated into a `DeploySolutionInfo` sub-record.** The shape shown in the Guidance code sample above (a flat `SolutionName: string`) is out of date — three `IPostDeployService` implementers exist now (`OrphanCleanupService`, `BackupService`, `SolutionCheckService`), and all three read solution name and environment URL. `DeploySolutionInfo(Name, EnvironmentUrl, IncludeManaged, ExistsInTarget)` replaces the flat `SolutionName`/`EnvironmentUrl` fields with one nested record, adding two new facts (`IncludeManaged`, `ExistsInTarget`) needed to decide managed-vs-unmanaged import behavior — see [orphan-cleanup-two-phase-deploy-pipeline.md](orphan-cleanup-two-phase-deploy-pipeline.md)'s 2026-07-10 update for the full context:
+**Update (2026-07-10): `PostDeployContext`'s flat fields consolidated into a `DeploySolutionInfo` sub-record.** The shape shown in the Guidance code sample above (a flat `SolutionName: string`) is out of date — three `IPostDeployService` implementers existed then (`OrphanCleanupService`, `BackupService`, `SolutionCheckService`; seven are registered now, see `PostDeployServiceRegistration` in `src/Flowline/Program.cs`), and all three read solution name and environment URL. `DeploySolutionInfo(Name, EnvironmentUrl, IncludeManaged, ExistsInTarget)` replaces the flat `SolutionName`/`EnvironmentUrl` fields with one nested record, adding two new facts (`IncludeManaged`, `ExistsInTarget`) needed to decide managed-vs-unmanaged import behavior — see [orphan-cleanup-two-phase-deploy-pipeline.md](orphan-cleanup-two-phase-deploy-pipeline.md)'s 2026-07-10 update for the full context:
 
 ```csharp
 public sealed record DeploySolutionInfo(
@@ -89,12 +89,14 @@ public sealed record PostDeployContext(
     DeploySolutionInfo Solution,
     RunMode Mode,
     string PackagePath,
-    string PackageSrcRoot);
+    string DataverseSolutionSrcRoot,
+    bool DeleteOrphansConsent = false,
+    string? CheckoutSolutionSrcRoot = null);
 ```
 
-This went through a wrong-first-draft before landing here, worth recording because it's a reusable lesson for this exact pattern: the first attempt added a pre-rendered `OrphanNoDeleteHint` string field directly to `PostDeployContext`, computed by `DeployCommand` and printed verbatim by `OrphanCleanupService`. Flagged as backwards against design decision 2 above: a shared context feeding multiple consumers should carry the raw facts a consumer needs to decide for itself, not a string one consumer already rendered on another's behalf. `DeploySolutionInfo` plus a new `OrphanCleanupService.BuildNoDeleteHint(DeploySolutionInfo)` pure function fixed it — the context stays a data carrier, and the consumer that owns the printed report decides what to render from it.
+This went through a wrong-first-draft before landing here, worth recording because it's a reusable lesson for this exact pattern: the first attempt added a pre-rendered `OrphanNoDeleteHint` string field directly to `PostDeployContext`, computed by `DeployCommand` and printed verbatim by `OrphanCleanupService`. Flagged as backwards against design decision 2 above: a shared context feeding multiple consumers should carry the raw facts a consumer needs to decide for itself, not a string one consumer already rendered on another's behalf. `DeploySolutionInfo` plus a new `OrphanCleanupService.BuildReportOnlyHint(DeploySolutionInfo, RunMode)` pure function fixed it — the context stays a data carrier, and the consumer that owns the printed report decides what to render from it.
 
-Also note, independent of this update: `LocalComponents` (`IReadOnlyList<(Guid ObjectId, int ComponentType)>`) and `WebResourceRoot` (`string?`), both shown in this doc's original Guidance sample above, are gone from the current record — `WebResourceRoot`'s removal is documented in the two-phase doc's part-7 update; `LocalComponents`' removal isn't documented anywhere else, noted here for the record. `DeployCommand`'s fan-out loop (Examples section below) also now filters via `activeServices = postDeployServices.Where(s => !IsSkipped(s))` (skipping `SolutionCheckService`/`BackupService` per `--skip-solution-check`/`--no-backup`), rather than the plain unconditional `foreach` shown there — this and the `LocalComponents`/`WebResourceRoot` removal both predate this specific update and are flagged here for a future refresh pass rather than fixed inline.
+Also note, independent of this update: `LocalComponents` (`IReadOnlyList<(Guid ObjectId, int ComponentType)>`) and `WebResourceRoot` (`string?`), both shown in this doc's original Guidance sample above, are gone from the current record — `WebResourceRoot`'s removal is documented in the two-phase doc's part-7 update; `LocalComponents`' removal isn't documented anywhere else, noted here for the record. `DeployCommand`'s fan-out loop (Examples section below) also now filters via `DeployCommand.ResolveActiveServices` (skipping services per the `--skip-*`/`--no-backup` flags), rather than the plain unconditional `foreach` shown there — this and the `LocalComponents`/`WebResourceRoot` removal both predate this specific update and are flagged here for a future refresh pass rather than fixed inline.
 
 **Update (2026-07-10): `PackageSrcRoot` is now always an unpacked temp copy of the imported zip, never a direct `Package/src` reference.** `DeployCommand` used to pass `Path.Combine(PackageFolder(slnFolder), "src")` straight through as `PackageSrcRoot`, which only stayed correct because `deploy` always packed from that exact folder immediately beforehand. That assumption broke once `deploy` gained a `--path <zip>` flag and a local build-once artifact cache (both let `packagePath` come from something other than "just packed from the current `Package/src`") — see `docs/plans/2026-07-10-001-feat-deploy-artifact-reuse-plan.md`. `DeployCommand` now runs `pac solution unpack` on whatever `packagePath` was actually resolved (fresh pack, cache reuse, or `--path`) into a fresh temp directory, deletes it in a `finally` block, and passes that temp directory as `PackageSrcRoot` instead. `OrphanCleanupService` (the only consumer that reads `PackageSrcRoot`, via `ComponentClassifier.ParseLocalSource`) is unaffected by this change beyond now seeing guaranteed-accurate content — the folder shape it walks (`Other/Solution.xml`, `Entities/`, etc.) is unchanged, since `pac solution unpack` reproduces the same layout `pac solution pack` reads from.
 
@@ -102,7 +104,7 @@ Also note, independent of this update: `LocalComponents` (`IReadOnlyList<(Guid O
 
 Without this pattern, each new post-deploy capability adds another bespoke pair of calls and another merge point directly inside `DeployCommand`, and the command accumulates knowledge of every capability's concrete type and return shape. With more implementers already anticipated (state restoration, backup, flow-callback repair), that would mean `DeployCommand` growing a third and fourth hand-written call pair, each slightly different, each requiring `DeployCommand` itself to change.
 
-**The gotcha, confirmed during code review — the most important cost of this exact pattern shape:** switching `DeployCommand`'s dependency from a required concrete type to `IEnumerable<IPostDeployService>` changes a DI failure mode from loud to silent. In Microsoft.Extensions.DependencyInjection, resolving `IEnumerable<T>` when zero implementations of `T` are registered returns an **empty collection** — it does NOT throw `InvalidOperationException`, unlike resolving `T` directly (which throws immediately if unregistered). Concretely: if `Program.cs:63`'s `services.AddSingleton<IPostDeployService, OrphanCleanupService>();` line is ever accidentally removed (bad merge, careless refactor), both `foreach` loops in `DeployCommand` silently iterate zero times. Orphan cleanup never runs. The deploy still reports full success (exit code 0) — no error, no warning, nothing in the console output signals anything went wrong.
+**The gotcha, confirmed during code review — the most important cost of this exact pattern shape:** switching `DeployCommand`'s dependency from a required concrete type to `IEnumerable<IPostDeployService>` changes a DI failure mode from loud to silent. In Microsoft.Extensions.DependencyInjection, resolving `IEnumerable<T>` when zero implementations of `T` are registered returns an **empty collection** — it does NOT throw `InvalidOperationException`, unlike resolving `T` directly (which throws immediately if unregistered). Concretely: if the `OrphanCleanupService` and forwarding `IPostDeployService` registrations in `PostDeployServiceRegistration` (`src/Flowline/Program.cs:387-388`) are ever accidentally removed (bad merge, careless refactor), both `foreach` loops in `DeployCommand` silently iterate zero times. Orphan cleanup never runs. The deploy still reports full success (exit code 0) — no error, no warning, nothing in the console output signals anything went wrong.
 
 This is the fundamental tradeoff of the `IEnumerable<T>` "plugin collection" DI pattern: it trades a fail-fast arity guarantee for "zero-or-more is valid," and that tradeoff is invisible unless you know to look for it. This was a deliberate, discussed decision NOT to add a guard (e.g., a composition-root arity check after `services.BuildServiceProvider()`, or a DI-resolution test) — treated as the same class of "don't validate scenarios that only occur via deliberate future human error" as other guard-adding decisions this project avoids. The tradeoff is documented here so a future engineer touching this DI wiring knows the failure mode is silent, even though no guard was added.
 
@@ -152,25 +154,23 @@ foreach (var postDeployService in activeServices)
     await postDeployService.RunPreImportAsync(postDeployContext, cancellationToken);
 // ... PackSolutionAsync, ImportSolutionAsync ...
 foreach (var postDeployService in activeServices)
-    cleanupFailures += await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken);
+    postImportOutcomes.Add(await postDeployService.RunPostImportAsync(postDeployContext, cancellationToken));
+// exit code: ResolvePostImportExitCode(postImportOutcomes)
 ```
 
 The `IsSkipped` filter is new since the "after" example above — `--skip-solution-check`/`--no-backup` now opt specific implementers out of both loops. An earlier version applied the filter only to the pre-import loop, leaving post-import unfiltered — harmless in practice since `BackupService`/`SolutionCheckService`'s `RunPostImportAsync` are both no-ops, but fixed for consistency (`activeServices` now backs both loops) rather than left as a latent asymmetry. `LocalComponents`/`WebResourceRoot`, both present on the original `PostDeployContext` shown above, are gone — see the `DeploySolutionInfo` update earlier in this doc.
 
-**`Program.cs:63` — DI registration before/after:**
+**`PostDeployServiceRegistration` in `Program.cs` — DI registration (current):**
 
 ```csharp
-// Before
 services.AddSingleton<OrphanCleanupService>();
-
-// After
-services.AddSingleton<IPostDeployService, OrphanCleanupService>();
+services.AddSingleton<IPostDeployService>(sp => sp.GetRequiredService<OrphanCleanupService>());
 ```
 
-If this line is ever dropped, `DeployCommand`'s constructor-injected `IEnumerable<IPostDeployService> postDeployServices` resolves as empty rather than throwing — the deploy runs, reports success, and silently skips orphan cleanup.
+If these lines are ever dropped, `DeployCommand`'s constructor-injected `IEnumerable<IPostDeployService> postDeployServices` resolves as empty rather than throwing — the deploy runs, reports success, and silently skips orphan cleanup.
 
 ## Related
 
 - [orphan-cleanup-two-phase-deploy-pipeline.md](orphan-cleanup-two-phase-deploy-pipeline.md) — the two-phase orphan-diffing algorithm `OrphanCleanupService` still implements; its own 2026-07-03 update covers the `IPostDeployService` fan-out transition described here, and its 2026-07-10 update covers the managed-solution handling that reuses this protocol's `PostDeployContext`.
-- [ai-agent-consumable-cli-contract-2026-06-07.md](ai-agent-consumable-cli-contract-2026-06-07.md) — `ExitCode.PartialSuccess = 18`, unchanged by this refactor; `DeployCommand` still returns it when the summed `cleanupFailures` across all `IPostDeployService` implementers is non-zero.
+- [ai-agent-consumable-cli-contract-2026-06-07.md](ai-agent-consumable-cli-contract-2026-06-07.md) — `ExitCode.PartialSuccess = 18`, unchanged by this refactor; `DeployCommand` still returns it when the summed `Findings` across all `IPostDeployService` implementers is non-zero (`ResolvePostImportExitCode`, `DeployCommand.cs:808`).
 - GitHub issue #1 ("Post-deploy: Auto-fix missing callback registrations for Dataverse-triggered flows") — a third real candidate `IPostDeployService` implementer (post-import-only), not yet built.

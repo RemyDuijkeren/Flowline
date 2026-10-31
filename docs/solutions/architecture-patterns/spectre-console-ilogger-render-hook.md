@@ -78,19 +78,19 @@ public sealed class LoggingRenderHook(ILogger<LoggingRenderHook> logger) : IRend
     private static LogLevel? DetectLevel(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
-        if (text.StartsWith(FlowlineConsoleExtensions.OkPrefix) ||
-            text.StartsWith(FlowlineConsoleExtensions.InfoPrefix) ||
-            text.StartsWith(FlowlineConsoleExtensions.SkipPrefix) ||
-            text.StartsWith(FlowlineConsoleExtensions.DonePrefix))
+        if (text.StartsWith(FlowlineTheme.OkPrefix) ||
+            text.StartsWith(FlowlineTheme.InfoPrefix) ||
+            text.StartsWith(FlowlineTheme.SkipPrefix) ||
+            text.StartsWith(FlowlineTheme.DonePrefix))
             return LogLevel.Information;
-        if (text.StartsWith(FlowlineConsoleExtensions.WarningPrefix)) return LogLevel.Warning;
-        if (text.StartsWith(FlowlineConsoleExtensions.ErrorPrefix)) return LogLevel.Error;
+        if (text.StartsWith(FlowlineTheme.WarningPrefix)) return LogLevel.Warning;
+        if (text.StartsWith(FlowlineTheme.ErrorPrefix)) return LogLevel.Error;
         return LogLevel.Debug;
     }
 }
 ```
 
-The type check covers more than plain `Markup`: `VerboseRenderable` (a marker wrapper originally named `VerboseMarkup`, generalized to wrap any `IRenderable` so verbose-gated `Tree`/`Panel`/`Table` content is logged the same way — see [`../architecture-patterns/verbose-output-render-hook-routing.md`](verbose-output-render-hook-routing.md)), plus `Tree`, `Panel`, and `Table` directly for renderables written without going through the verbose wrapper. `DetectLevel` reads the same named prefix constants (`OkPrefix`, `InfoPrefix`, etc.) that `FlowlineConsoleExtensions`' methods emit, rather than duplicating the literal strings.
+The type check covers more than plain `Markup`: `VerboseRenderable` (a marker wrapper originally named `VerboseMarkup`, generalized to wrap any `IRenderable` so verbose-gated `Tree`/`Panel`/`Table` content is logged the same way — see [`../architecture-patterns/verbose-output-render-hook-routing.md`](verbose-output-render-hook-routing.md)), plus `Tree`, `Panel`, and `Table` directly for renderables written without going through the verbose wrapper. `DetectLevel` reads the same named prefix constants (`OkPrefix`, `InfoPrefix`, etc.) that `FlowlineTheme` defines and `FlowlineConsoleExtensions`' methods emit, rather than duplicating the literal strings.
 
 **Three design constraints in this implementation:**
 
@@ -98,7 +98,7 @@ The type check covers more than plain `Markup`: `VerboseRenderable` (a marker wr
 
 **`int.MaxValue` for the extraction width.** `IRenderable.Render(options, maxWidth)` must be called with `int.MaxValue` rather than `options.ConsoleSize.Width`. Using the actual console width causes word-wrap in narrow terminals (CI is typically 80 columns), embedding `\n` into the logged string and splitting one message across multiple log entries. It also crashes at width=0, which occurs when output is piped. The `int.MaxValue` width is for extraction only — the renderable was already yielded to the terminal at its natural width before this call executes.
 
-**`ILoggerFactory` lifecycle.** `CommandApp` does not expose its `IServiceProvider` before `RunAsync`, so the hook's logger cannot be resolved from the DI container. A separate `ILoggerFactory` is created outside the container, stored, and disposed after `Log.CloseAndFlush()` to ensure proper cleanup.
+**`ILoggerFactory` lifecycle.** `CommandApp` does not expose its `IServiceProvider` before `RunAsync`, so the hook's logger cannot be resolved from the DI container. The hook takes its logger from the `loggerFactory` that `Program.cs` creates before the app is built (the same factory registered in DI and handed to telemetry), so there is no separate hook factory to dispose.
 
 ### 2. Visual Prefixes on Console Extensions
 
@@ -106,10 +106,10 @@ Level detection relies on plain-text prefixes surviving Spectre markup stripping
 
 ```csharp
 public static void Info(this IAnsiConsole console, string message) =>
-    console.MarkupLine($"· {message}");
+    console.MarkupLine($"{FlowlineTheme.InfoPrefix} {message}");
 
 public static void Skip(this IAnsiConsole console, string message) =>
-    console.MarkupLine($"[dim]↷ {message}[/]");
+    console.MarkupLine($"[dim]{FlowlineTheme.SkipPrefix} {message}[/]");
 
 // Ok() already emits "✓ "; Done() already emits ":rocket:" → "🚀"
 ```
@@ -120,18 +120,18 @@ These prefixes survive `Segment.Text` extraction because `IRenderable.Render(...
 
 ```csharp
 // Program.cs
-var hookLoggerFactory = LoggerFactory.Create(b => b.AddSerilog(serilogLogger));
+AnsiConsole.Console.Pipeline.Attach(new VerboseFilterHook(runtimeOptions));
 AnsiConsole.Console.Pipeline.Attach(new LoggingRenderHook(
-    hookLoggerFactory.CreateLogger<LoggingRenderHook>()
+    loggerFactory.CreateLogger<LoggingRenderHook>()
 ));
 
 var exitCode = await app.RunAsync(args, cancellationTokenSource.Token);
+FlowlineTelemetry.Flush();
 Log.CloseAndFlush();
-hookLoggerFactory.Dispose();
 return exitCode;
 ```
 
-The hook is attached before `RunAsync` and the factory is disposed after the logger is flushed. Order matters: `CloseAndFlush` first, then `Dispose`.
+The hooks are attached before `RunAsync`, `VerboseFilterHook` first and `LoggingRenderHook` second.
 
 ---
 

@@ -1,12 +1,12 @@
 ---
-title: "SyncCommand overwrote uncommitted src/ files without warning"
+title: "pull (formerly sync) overwrote uncommitted src/ files without warning"
 date: 2026-05-15
 category: docs/solutions/logic-errors/
 module: flowline-cli
 problem_type: logic_error
 component: tooling
 symptoms:
-  - "pac solution sync silently overwrote unpacked XML in solutions/<Name>/src/ with no warning"
+  - "pac solution sync silently overwrote unpacked XML in Solution/src/ with no warning"
   - "Developers lost uncommitted work with no opportunity to abort"
   - "On Windows: git status returned empty for untracked files in a new src/ directory when workingDirectory was omitted"
   - "Filenames in the dirty list had a trailing \\r when splitting git output on \\n only"
@@ -27,17 +27,17 @@ tags:
   - sync
 ---
 
-# SyncCommand overwrote uncommitted src/ files without warning
+# pull (formerly sync) overwrote uncommitted src/ files without warning
 
 ## Problem
 
-`pac solution sync` overwrites unpacked XML in `solutions/<Name>/src/` with no confirmation prompt. `SyncCommand` had no dirty-tree check before invoking pac, so developers with half-edited form components who ran sync to pick up a colleague's change lost work silently — no warning, only `git diff` as a recovery path after the fact.
+`pac solution sync` overwrites unpacked XML in `Solution/src/` with no confirmation prompt. `SyncCommand` (now `PullCommand`) had no dirty-tree check before invoking pac, so developers with half-edited form components who ran sync to pick up a colleague's change lost work silently — no warning, only `git diff` as a recovery path after the fact.
 
 `DeployCommand` had an existing repo-wide guard (`GitUtils.AssertRepoCleanAsync`); `SyncCommand` had none.
 
 ## Symptoms
 
-- `flowline sync` completed with exit code 0 even when `solutions/<Name>/src/` had modified tracked files
+- `flowline pull` (formerly `flowline sync`) completed with exit code 0 even when `Solution/src/` had modified tracked files
 - Uncommitted changes to solution XML (forms, entities, plugin registrations) disappeared after sync
 - On Windows: with a brand-new `src/` directory (first sync after `pac solution clone`), the guard silently passed even when untracked files were present
 
@@ -78,16 +78,16 @@ public static async Task<IReadOnlyList<string>> GetUncommittedChangesInPathAsync
 }
 ```
 
-### 2. Guard in `SyncCommand.ExecuteFlowlineAsync`
+### 2. Guard in `PullCommand` (was `SyncCommand`)
 
-Insert after the `.cdsproj` existence check (so `slnFolder` is known) and before `EnsureMapFilePathAsync` (the first write operation):
+Insert after the `.cdsproj` existence check (so `slnFolder` is known) and before the first write operation (the version bump and `pac solution sync`):
 
 ```csharp
-if (!settings.Force)
+if (!RuntimeOptions.HasForce("dirty"))
 {
     var srcPath = Path.Combine(slnFolder, "src");
     var dirty = await GitUtils.GetUncommittedChangesInPathAsync(
-        srcPath, workingDirectory: RootFolder, verbose: settings.Verbose,
+        srcPath, workingDirectory: RootFolder, capture: _capture,
         cancellationToken: cancellationToken);
     if (dirty.Count > 0)
     {
@@ -99,7 +99,7 @@ if (!settings.Force)
 }
 ```
 
-`-f|--force` is inherited from `FlowlineSettings`. No new property needed on `SyncCommand.Settings`.
+The guard is scoped to `--force dirty` (`RuntimeOptions.HasForce("dirty")`). No new property needed on the command's settings.
 
 ## Why This Works
 
@@ -120,8 +120,8 @@ Use `GetUncommittedChangesInPathAsync` rather than the repo-wide `AssertRepoClea
 Checklist:
 - Always pass `workingDirectory: RootFolder` — never omit it; null triggers the absolute-path code path that silently misses untracked files on Windows
 - Insert the guard after existence checks but before the first write operation
-- Reuse `settings.Force` from `FlowlineSettings` — do not add a duplicate property to the command's `Settings` class
-- Pass `verbose: settings.Verbose` to honour the `--verbose` flag
+- Reuse the scoped `--force dirty` (`RuntimeOptions.HasForce("dirty")`) — do not add a duplicate property to the command's `Settings` class
+- Pass the command's `SubprocessCapture` (`capture: _capture`) so git output honours `--verbose`
 - Use `Console.Skip($"  {Markup.Escape(file)}")` for the per-file list (dim, pre-escaped)
 
 **In tests for this method:**

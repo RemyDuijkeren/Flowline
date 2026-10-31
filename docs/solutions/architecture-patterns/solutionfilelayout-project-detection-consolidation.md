@@ -2,7 +2,7 @@
 title: SolutionFileLayout — consolidating three ad-hoc project resolvers behind one loud-by-default rule
 date: 2026-07-21
 category: docs/solutions/architecture-patterns/
-module: Flowline.Core.Services (SolutionFileLayout)
+module: Flowline.Core.Solutions (SolutionFileLayout)
 problem_type: architecture_pattern
 component: project_detection
 severity: high
@@ -42,7 +42,7 @@ Flowline resolved its three per-project-root project types — the Dataverse sol
 | Zero matches | throw `ConfigInvalid` | degrade (advisory) / throw (`push`) | **silent degrade to a conventional path that may not exist** |
 | Two-plus matches | throw — refuses to pick | supported (multiple projects, by design) | **silent — picked alphabetically first** |
 | No solution file | throw `NotFound` | fallback to `Plugins/Plugins.csproj` | fallback to `WebResources/WebResources.csproj` |
-| Wrong-answer cost | wrong solution synced/deployed | deletes a live plugin registration | **silences `deploy`'s drift gate** |
+| Wrong-answer cost | wrong solution pulled/deployed | deletes a live plugin registration | **silences `deploy`'s drift gate** |
 
 The WebResources resolver was the weak one because its discriminator was structurally weaker than the other two's from the start. `.cdsproj` is a unique extension — no ambiguity is possible. Plugin detection is thorough and loud on the stated rule: cheap, over-inclusive, and it never guesses on a path that drives a destructive op (it reflects the actual build output for `IPlugin`/`CodeActivity` types before registering or deleting anything). WebResources detection, by contrast, was one substring check (`Microsoft.Build.NoTargets`) against project file text, with no fallback rule for a project that doesn't declare that SDK, and no refusal when more than one project matched — it just took the alphabetically first one.
 
@@ -52,13 +52,13 @@ This missed real, non-adversarial project shapes. A WebResources project convert
 
 ### Consolidate the read, not just the rules
 
-`SolutionFileLayout` (`src/Flowline.Core/Services/SolutionFileLayout.cs`) reads the solution file exactly once per `LoadAsync` call and hands the parsed project list to per-type resolvers it composes — `DataverseSolutionProjectResolver`, `PluginProjectResolver`, `WebResourcesProjectResolver` — rather than each resolver re-reading the file. Each resolver is a pure function over an already-parsed `IReadOnlyList<MsBuildSolutionProject>`, so it is unit-tested with fixtures and no command (`SolutionFileLayout.cs:58-81`).
+`SolutionFileLayout` (`src/Flowline.Core/Solutions/SolutionFileLayout.cs`) reads the solution file exactly once per `LoadAsync` call and hands the parsed project list to per-type resolvers it composes — `DataverseSolutionProjectResolver`, `PluginProjectResolver`, `WebResourcesProjectResolver` — rather than each resolver re-reading the file. Each resolver is a pure function over an already-parsed `IReadOnlyList<MsBuildSolutionProject>`, so it is unit-tested with fixtures and no command (`SolutionFileLayout.cs:58-81`).
 
 Per-project resolution is lazy and cached (`Lazy<T>` per property, `SolutionFileLayout.cs:36-38`), so a command that never touches WebResources (e.g. `generate`, which only reads `PluginProjects`) never triggers that validation. Coupling every command to every project type's validation would be loud in the wrong place.
 
 ### Make the weak rule as strong as the strong ones: elimination first, signals only to rank
 
-`WebResourcesProjectResolver.Resolve` (`src/Flowline.Core/Services/WebResourcesProjectResolver.cs:73-118`) treats WebResources detection as a by-elimination-plus-signal problem rather than a positive-match-on-a-substring problem:
+`WebResourcesProjectResolver.Resolve` (`src/Flowline.Core/Solutions/WebResourcesProjectResolver.cs:84-126`) treats WebResources detection as a by-elimination-plus-signal problem rather than a positive-match-on-a-substring problem:
 
 1. Start from every solution-referenced, on-disk `.csproj`.
 2. Exclude plugin projects — but keep one that carries a *strong* WebResources signal even if the over-inclusive plugin pre-filter swept it up (so a WebResources project inheriting its framework from a `Directory.Build.props` isn't lost).

@@ -106,6 +106,8 @@ Directory.CreateDirectory(tempOutputPath);
 
 This requirement was independently discovered for both XrmContext3 (auto memory [claude]) and v4.
 
+Note: the current generator no longer pre-creates this folder. Whether XrmContext v4 needs it is unverified.
+
 ### Pattern 3: Auth routing via BuildEnvVars
 
 `DefaultAzureCredential` walks a credential chain. Control which step wins by conditionally injecting environment variables.
@@ -114,7 +116,7 @@ This requirement was independently discovered for both XrmContext3 (auto memory 
 
 ```csharp
 // XrmContextGenerator.cs
-internal static IReadOnlyDictionary<string, string?> BuildEnvVars(PacProfile? profile)
+internal static IReadOnlyDictionary<string, string?> BuildEnvVars(PacProfile? profile, string? resolvedSecret = null)
 {
     var envVars = new Dictionary<string, string?>();
 
@@ -126,7 +128,7 @@ internal static IReadOnlyDictionary<string, string?> BuildEnvVars(PacProfile? pr
         if (profile.TenantId is not null)
             envVars["AZURE_TENANT_ID"] = profile.TenantId;
 
-        var secret = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
+        var secret = resolvedSecret ?? Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
         if (secret is not null)
             envVars["AZURE_CLIENT_SECRET"] = secret;
     }
@@ -137,16 +139,7 @@ internal static IReadOnlyDictionary<string, string?> BuildEnvVars(PacProfile? pr
 
 **For UNIVERSAL (interactive) profiles:** empty dict → subprocess inherits parent env → `DefaultAzureCredential` finds PAC's MSAL cache via `SharedTokenCacheCredential` on Windows.
 
-**For SP profiles:** `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` injected from the PAC profile. `AZURE_CLIENT_SECRET` read from parent process env — never stored in `.flowline` or PAC profiles. Guard before launching:
-
-```csharp
-if (profile?.IsServicePrincipal == true &&
-    Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET") is null)
-{
-    throw new FlowlineException(ExitCode.ConfigInvalid,
-        "AZURE_CLIENT_SECRET is required when authenticating with a Service Principal. Set the environment variable before running.");
-}
-```
+**For SP profiles:** `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` injected from the PAC profile. `AZURE_CLIENT_SECRET` comes from the resolved secret (`--secret` flag or `SecretResolver`) or the parent process env, and is never stored in `.flowline` or PAC profiles. `GenerateCommand` resolves the profile and secret and passes them in through `GenerationContext` (`ResolvedProfile`, `ResolvedSecret`).
 
 ### DefaultAzureCredential chain
 
@@ -166,11 +159,7 @@ For SP profiles: `EnvironmentCredential` wins (all three `AZURE_*` vars injected
 
 ### Pattern 4: Profile resolution
 
-```csharp
-var profile = dataverseConnector.FindBestProfile(context.DevUrl);
-```
-
-`FindBestProfile` returns a URL-specific profile first; falls back to UNIVERSAL. A null profile (no match) returns an empty dict — same behaviour as UNIVERSAL.
+`GenerateCommand` resolves the profile and secret and passes them in through the generation context; the generator no longer looks them up itself. `FindBestProfile` returns a URL-specific profile first; falls back to UNIVERSAL. A null profile (no match) returns an empty dict — same behaviour as UNIVERSAL.
 
 ## Why This Matters
 
@@ -217,6 +206,6 @@ CI sets `AZURE_CLIENT_SECRET=<secret>` in the environment. `.flowline` config st
 ## Related
 
 - `src/Flowline/Generators/XrmContextGenerator.cs` — implementation
-- `src/Flowline/Generators/xrmcontext-v4-auth-flow.md` — sequence diagram + flowchart
+- `src/Flowline/Generators/auth-flow-xrmcontext-v4.md` — sequence diagram + flowchart
 - `docs/brainstorms/archive/2026-06-17-generate-xrmcontext-support-requirements.md` — v3 brainstorm (v4 supersedes)
 - `project_xrmcontext_auth.md` (auto memory) — v3 ADAL auth decisions, partially stale with v4 in place

@@ -36,7 +36,7 @@ related_components:
 
 `flowline push` reconciles the plugin steps declared in code (via `[Handles]` attributes) against
 the plugin steps that already exist in a Dataverse solution. `PluginPlanner.cs`
-(`src/Flowline.Core/Services/PluginPlanner.cs`) is the component that decides, for each declared
+(`src/Flowline.Core/Plugins/PluginPlanner.cs`) is the component that decides, for each declared
 step, whether it already exists (→ update in place) or needs to be created, and which existing rows
 are now orphaned (→ delete). That decision is made by *matching* — looking up a declared step
 against the existing Dataverse rows using some key.

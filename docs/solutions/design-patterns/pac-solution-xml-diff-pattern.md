@@ -22,7 +22,7 @@ tags:
 
 ## Context
 
-`SolutionChangeSummary` needed to show *what* changed inside a Dataverse solution component (attributes added, view columns changed, options modified) rather than just flagging that a file changed. This required comparing the previous committed XML (via `git show HEAD:<path>`) against the working-tree XML after `pac solution sync`, then diffing specific XML elements by identity key.
+`SolutionChangeSummary` needed to show *what* changed inside a Dataverse solution component (attributes added, view columns changed, options modified) rather than just flagging that a file changed. This required comparing the previous committed XML (via `git show HEAD:<path>`) against the working-tree XML after `flowline pull`, then diffing specific XML elements by identity key.
 
 Several non-obvious format details in PAC-exported XML caused silent failures during implementation: UTF-8 BOM on every file, lowercase element/attribute names in OptionSet XML, and structural false-positives when comparing FetchXML after column changes.
 
@@ -72,7 +72,7 @@ Backslash-to-forward-slash conversion is required — git paths always use `/` e
 | View column | `cell` | `name` attribute |
 | Form field | `cell` | `datafieldname` attribute |
 
-**All PAC-exported XML files include a UTF-8 BOM** (`﻿`). `XDocument.Parse` throws `XmlException` on it. Always strip with `.TrimStart('﻿')` before parsing.
+**All PAC-exported XML files include a UTF-8 BOM** (`﻿`). `XDocument.Parse` throws `XmlException` on it. Always strip it before parsing: use `XmlHelpers.Parse` / `XmlHelpers.StripBom` (`src/Flowline.Core/Solutions/XmlHelpers.cs`), as `SolutionChangeSummary` does.
 
 **OptionSet names and attributes are all lowercase**: `<option value="100000000">` — not `<Option Value="...">`. Using PascalCase here produces zero matches with no error, not an exception.
 
@@ -173,5 +173,5 @@ var result = DiffEntityAttributes(oldXml, null);
 
 ## Related
 
-- `docs/solutions/logic-errors/sync-overwrites-uncommitted-src-without-warning-2026-05-15.md` — SyncCommand dirty-tree guard, also operates on `Package/src/`
-- `docs/solutions/architecture-patterns/sync-first-remove-mapping-replace-dotnet-build-2026-05-17.md` — why `Package/src/` is canonical truth after pac sync
+- `docs/solutions/logic-errors/sync-overwrites-uncommitted-src-without-warning-2026-05-15.md` — pull dirty-tree guard (formerly SyncCommand), also operates on `Solution/src/`
+- `docs/solutions/architecture-patterns/sync-first-remove-mapping-replace-dotnet-build-2026-05-17.md` — why `Solution/src/` is canonical truth after pull
