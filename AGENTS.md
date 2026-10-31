@@ -150,6 +150,9 @@ option you'd recommend, and say why.
 - Relevant build and tests pass.
 - User-facing CLI text follows `docs/tone-of-voice.md`.
 - README, wiki, and CHANGELOG are updated when their documented behavior or public contracts change.
+  A change to what the user types (command, flag, argument, placeholder) also covers the help examples
+  in `Program.cs`, `src/Flowline/Templates/`, and the shipped agent skills in `plugin/skills/`; close it
+  with one literal search over all of them (`docs/solutions/conventions/cli-surface-change-doc-sweep.md`).
 - Final response lists validation run and anything not verified.
 
 ## Tone of voice
