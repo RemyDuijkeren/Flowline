@@ -74,7 +74,7 @@ public class SettingsCommandSurfaceTests : IDisposable
             ExecuteFlowlineAsync(new CommandContext(args, new NoRemainingArguments(), "toggle", null), settings,
                 CancellationToken.None);
 
-        public static EnvironmentRole? ResolveRole(
+        public EnvironmentRole? ResolveRole(
             string target, bool standalone, string? name, IReadOnlyList<string> args) =>
             ResolveRoleOrThrow(target, standalone, name, args);
     }
@@ -677,7 +677,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     [Fact]
     public void ATargetThatIsNotAnEnvironment_FailsAsInvalidInput()
     {
-        var act = () => StateProbe.ResolveRole(
+        var act = () => MakeStateProbe(interactive: false).ResolveRole(
             "ApprovalFlow", standalone: false, "prod", ["settings", "toggle", "ApprovalFlow", "prod", "--off"]);
 
         act.Should().Throw<FlowlineException>()
@@ -689,7 +689,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     [Fact]
     public void ARoleOutsideAProject_StillGetsTheStandaloneAnswer()
     {
-        var act = () => StateProbe.ResolveRole("prod", standalone: true, null, ["settings", "toggle", "prod"]);
+        var act = () => MakeStateProbe(interactive: false).ResolveRole("prod", standalone: true, null, ["settings", "toggle", "prod"]);
 
         act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
     }
@@ -697,8 +697,8 @@ public class SettingsCommandSurfaceTests : IDisposable
     [Fact]
     public void ARoleOrAUrl_ResolvesAsBefore()
     {
-        StateProbe.ResolveRole("prod", standalone: false, null, []).Should().Be(EnvironmentRole.Prod);
-        StateProbe.ResolveRole("https://contoso.crm4.dynamics.com", standalone: true, null, []).Should().BeNull();
+        MakeStateProbe(interactive: false).ResolveRole("prod", standalone: false, null, []).Should().Be(EnvironmentRole.Prod);
+        MakeStateProbe(interactive: false).ResolveRole("https://contoso.crm4.dynamics.com", standalone: true, null, []).Should().BeNull();
     }
 
     // ── A scripted write with no name ────────────────────────────────────────
@@ -790,6 +790,6 @@ public class SettingsCommandSurfaceTests : IDisposable
         var act = () => probe.Run(settings, "settings", "toggle", "ApprovalFlow", "--solution-name", "Contoso", "--off");
 
         (await act.Should().ThrowAsync<FlowlineException>())
-            .WithMessage("'ApprovalFlow' isn't an environment*");
+            .WithMessage("'ApprovalFlow' isn't a role (dev, test, uat, prod) or a URL*");
     }
 }

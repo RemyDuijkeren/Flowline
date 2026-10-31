@@ -53,18 +53,11 @@ public class DriftCommand(CommandServices services, DataverseConnector dataverse
         // always keyed its own artifact route this way (`usingExplicitArtifact`); drift was the outlier.
         var usingArtifact = !string.IsNullOrWhiteSpace(settings.Path);
 
-        // R15: a role keyword resolves through Config in project mode, but standalone's Config is a bare
-        // `new ProjectConfig()` (see FlowlineCommand.cs) — every role would fall through to a
-        // config-shaped "URL is required" message pointing at a .flowline that was never expected to
-        // exist here. Caught before ResolveEnvironmentAsync reaches that route.
-        //
-        // Checked before the manifest read below so an unresolvable target is diagnosed ahead of the
-        // artifact, matching deploy — it resolves its target at the top of ExecuteFlowlineAsync, so
-        // `deploy uat --path bad.zip` reports the target. Reading the zip first would have drift report
-        // the artifact for that same invocation, and one command's diagnosis shouldn't depend on which
-        // of the two you reached for.
-        if (standalone && TryResolveRole(settings.Target) is not null)
-            throw new FlowlineException(ExitCode.ConfigInvalid, BuildStandaloneRoleError(settings.Target));
+        // Checked before the artifact read below, so an unusable target is reported ahead of a bad zip,
+        // the same order deploy uses. A role outside a project has no .flowline to resolve from, and a
+        // word that is neither a role nor a URL fails here instead of at the PAC profile lookup.
+        var role = Environments.CheckTarget(settings.Target, standalone,
+            () => EnvironmentTarget.NotATarget(settings.Target, $"Run: flowline drift {EnvironmentTarget.TargetPlaceholder}"));
 
         // R5/R7: when an artifact is named, it is the only identity source — read (and validated) before
         // any network call, so a corrupt or missing zip fails fast rather than after a round trip to the
@@ -81,7 +74,7 @@ public class DriftCommand(CommandServices services, DataverseConnector dataverse
                 Console.Info(DeployCommand.BuildStandaloneIdentityNote(Path.GetFileName(settings.Path!)));
         }
 
-        var (env, profile) = await ResolveEnvironmentAsync(settings.Target, settings, cancellationToken);
+        var (env, profile) = await Environments.ResolveAsync(Config, settings.Target, role, cancellationToken);
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, env.EnvironmentUrl!, cancellationToken, profile);
 
         if (usingArtifact)
@@ -138,12 +131,6 @@ public class DriftCommand(CommandServices services, DataverseConnector dataverse
         return SelectExitCode(result, settings.ExitCodeOnChanges);
     }
 
-    // R15: pure so the wording is unit-testable without a live PAC CLI or Dataverse connection, mirroring
-    // DeployCommand.ResolveTargetUrl's own standalone branch. Assumes the caller already confirmed
-    // `target` resolves to a role (TryResolveRole is not null) — this only builds the message.
-    internal static string BuildStandaloneRoleError(string target) =>
-        $"Can't resolve '{target}' — no config here to check (standalone mode). Pass the environment URL instead.";
-
     // R13: extracted from the standalone branch above purely so the cleanup guarantee (temp dir removed
     // on success AND on failure) is testable without a live PAC CLI or Dataverse connection. Same
     // swallow-on-cleanup-failure shape as DeployCommand's own temp-unpack `finally` block — a locked/
@@ -167,32 +154,6 @@ public class DriftCommand(CommandServices services, DataverseConnector dataverse
             }
         }
     }
-
-    // <target> accepts a role keyword or a raw URL, mirroring DeployCommand's target-argument shape —
-    // unlike KTD2's original role-only design, which forced a --prod/--uat/--test/--dev override per
-    // role even though drift only ever acts on one role per invocation (those flags exist on CloneCommand
-    // because clone can configure all four roles in one run; drift can't and shouldn't inherit that shape).
-    // A role keyword still resolves via the shared, role-generic GetAndCheckEnvironmentInfoAsync (config
-    // lookup + Production-type safety check); anything else is treated as a literal URL, matching how
-    // DeployCommand's ResolveTargetUrl falls through to the raw target string.
-    async Task<(EnvironmentInfo Info, PacProfile Profile)> ResolveEnvironmentAsync(string target, Settings settings, CancellationToken ct)
-    {
-        var role = TryResolveRole(target);
-        if (role is not null)
-            return await Environments.CheckByRoleAsync(Config, role.Value, ct);
-
-        var profile = await ProfileResolutionService.ResolveAsync(target, ct);
-        var env = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Checking [bold]{target}[/]...",
-            _ => Validator.GetEnvironmentInfoByUrlAsync(target, profile, RuntimeOptions, settings.NoCache, ct));
-        if (env == null)
-            throw new FlowlineException(ExitCode.ConnectionFailed, $"Environment not found — check the URL '{target}' or your PAC login.");
-
-        Console.Ok($"Env [bold]{env.DisplayName}[/] ({env.EnvironmentUrl}) exists");
-        return (env, profile);
-    }
-
-    internal static EnvironmentRole? TryResolveRole(string target) => EnvironmentRoles.TryParse(target);
 
     // KD8: drift is read-only, so a completed comparison is not itself a failure — it exits 0 whether or
     // not orphans were found. Only --exit-code turns "orphans found" into a distinct code (22, shared with

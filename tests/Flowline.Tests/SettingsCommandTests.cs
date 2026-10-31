@@ -173,15 +173,6 @@ public class SettingsCommandTests : IDisposable
 
     // ── Messages ─────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void BuildStandaloneRoleError_NamesTheRoleAndTheWayOut()
-    {
-        var error = SettingsSupport.BuildStandaloneRoleError("prod");
-
-        error.Should().Contain("prod");
-        error.Should().Contain("URL", "the message has to say what to pass instead");
-    }
-
     // R11: the run says which file it read and which environment it is about to write, before it writes.
     // There is no confirmation prompt (KTD10), so this line is the only wrong-file-wrong-environment guard
     // an operator gets.
@@ -555,29 +546,6 @@ public class SettingsCommandTests : IDisposable
 
     // ── A target that is not an environment ──────────────────────────────────
 
-    // Anything that is neither a role nor an http(s) URL used to reach the PAC profile lookup as if it were
-    // a URL, which answered a swapped component name with "pac auth create --environment ApprovalFlow".
-    [Theory]
-    [InlineData("prod")]
-    [InlineData("PROD")]
-    [InlineData("uat")]
-    [InlineData("https://contoso.crm4.dynamics.com")]
-    [InlineData("http://localhost:5555/")]
-    public void ARoleOrAnHttpUrl_IsAnEnvironment(string target)
-    {
-        SettingsSupport.IsEnvironmentTarget(target).Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData("ApprovalFlow")]
-    [InlineData("contoso-test.crm4.dynamics.com")]
-    [InlineData("ftp://contoso")]
-    [InlineData("staging")]
-    public void AnythingElse_IsNotAnEnvironment(string target)
-    {
-        SettingsSupport.IsEnvironmentTarget(target).Should().BeFalse();
-    }
-
     [Fact]
     public void ASwappedOrder_IsAnsweredWithTheLineToRun()
     {
@@ -641,9 +609,8 @@ public class SettingsCommandTests : IDisposable
         var message = SettingsSupport.BuildNotAnEnvironmentError(
             "ApprovalFlow", name, ["settings", "toggle", "ApprovalFlow", "--off"]);
 
-        message.Should().Contain("'ApprovalFlow' isn't an environment")
-            .And.Contain("dev, test, uat, prod")
-            .And.Contain("https://")
+        message.Should().StartWith("'ApprovalFlow' isn't a role (dev, test, uat, prod) or a URL.")
+            .And.Contain("flowline settings <operation> <dev|test|uat|prod|url>")
             .And.NotContain("comes first");
     }
 

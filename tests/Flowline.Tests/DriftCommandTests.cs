@@ -11,32 +11,6 @@ namespace Flowline.Tests;
 
 public class DriftCommandTests
 {
-    // ── Target → EnvironmentRole resolution: happy paths ─────────────────────
-
-    [Theory]
-    [InlineData("prod", EnvironmentRole.Prod)]
-    [InlineData("uat", EnvironmentRole.Uat)]
-    [InlineData("test", EnvironmentRole.Test)]
-    [InlineData("dev", EnvironmentRole.Dev)]
-    [InlineData("PROD", EnvironmentRole.Prod)]
-    [InlineData("Dev", EnvironmentRole.Dev)]
-    public void TryResolveRole_MapsKeywordToRole(string target, EnvironmentRole expected)
-    {
-        DriftCommand.TryResolveRole(target).Should().Be(expected);
-    }
-
-    // ── Target → EnvironmentRole resolution: not a role keyword ───────────────
-
-    [Theory]
-    [InlineData("staging")]
-    [InlineData("https://contoso-test.crm4.dynamics.com/")]
-    public void TryResolveRole_ReturnsNull_WhenTargetIsNotARoleKeyword(string target)
-    {
-        // Anything that isn't one of the four role keywords is treated as a literal URL by the
-        // caller (ResolveEnvironmentAsync) — TryResolveRole itself just signals "not a role."
-        DriftCommand.TryResolveRole(target).Should().BeNull();
-    }
-
     // ── Exit code selection ───────────────────────────────────────────────────
 
     // KD8: drift is read-only, so a completed comparison exits 0 whether or not orphans were found —
@@ -160,21 +134,6 @@ public class DriftCommandTests
         {
             Directory.Delete(dir, recursive: true);
         }
-    }
-
-    // ── R15: role keyword in standalone — reworded, no ".flowline" mention ───────────────────────────
-
-    [Theory]
-    [InlineData("prod")]
-    [InlineData("uat")]
-    [InlineData("test")]
-    [InlineData("dev")]
-    public void BuildStandaloneRoleError_NamesTargetAndOmitsFlowlineConfig(string target)
-    {
-        var message = DriftCommand.BuildStandaloneRoleError(target);
-
-        message.Should().Contain(target);
-        message.Should().NotContain(".flowline");
     }
 
     // ── R13: temp unpack dir is removed after the run, success or failure ────────────────────────────

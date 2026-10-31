@@ -222,7 +222,7 @@ public class SettingsCaptureCommand(
         // Per target, not per run: a sweep resolves a role for each one it captures.
         var role = ResolveRoleOrThrow(target, standalone);
 
-        var (env, profile) = await ResolveEnvironmentAsync(target, role, settings, ct);
+        var (env, profile) = await Environments.ResolveAsync(Config, target, role, ct);
         var solutionName = await ResolveSolutionNameAsync(settings, standalone, settings.From, env, ct);
 
         // A URL target carries no role, so the file it would write has no name (KTD17). Inference reads the

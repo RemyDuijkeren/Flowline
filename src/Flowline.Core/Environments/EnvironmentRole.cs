@@ -56,7 +56,7 @@ public static class EnvironmentRoles
     };
 
     /// <summary>Case-insensitive dev/test/uat/prod keyword to role, or null when it isn't one. The one
-    /// mapping DriftCommand.TryResolveRole and EnvironmentTargetResolver.TryParseRole both delegate to.</summary>
+    /// mapping every target check and the --env resolver use.</summary>
     public static EnvironmentRole? TryParse(string value) => value.ToLowerInvariant() switch
     {
         "prod" => EnvironmentRole.Prod,

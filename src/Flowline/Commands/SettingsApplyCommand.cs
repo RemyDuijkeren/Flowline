@@ -37,7 +37,7 @@ public class SettingsApplyCommand(
         var (standalone, _) = ResolveProjectMode(settings);
         var role = ResolveRoleOrThrow(settings.Target, standalone);
 
-        var (env, profile) = await ResolveEnvironmentAsync(settings.Target, role, settings, cancellationToken);
+        var (env, profile) = await Environments.ResolveAsync(Config, settings.Target, role, cancellationToken);
         var solutionName = await ResolveSolutionNameAsync(settings, standalone, null, env, cancellationToken);
 
         var location = await ResolveSettingsFileAsync(

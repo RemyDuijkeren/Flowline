@@ -57,60 +57,15 @@ public abstract class SettingsCommandBase<TSettings>(
         return (standalone, projectFound);
     }
 
-    /// <summary>Reads a role keyword out of the target, or fails when there is nothing to resolve it against.</summary>
+    /// <summary>Reads a role out of the target, or fails before anything resolves it.</summary>
     /// <remarks>
-    /// A role keyword has nothing to resolve against outside a project: the config is a bare
-    /// <see cref="ProjectConfig"/> there, so every role would fall through to a config-shaped "URL is
-    /// required" pointing at a <c>.flowline</c> that was never expected to exist.
-    ///
-    /// Anything that is neither a role nor an http(s) URL fails here too, before a PAC profile is looked
-    /// up for it. The component operations pass their name and the invocation, so a swapped order is
-    /// answered with the line to run.
+    /// The component operations pass their name and the invocation, so a swapped order is answered with
+    /// the line to run.
     /// </remarks>
-    protected static EnvironmentRole? ResolveRoleOrThrow(
-        string target, bool standalone, string? name = null, IReadOnlyList<string>? args = null)
-    {
-        var role = DriftCommand.TryResolveRole(target);
-
-        if (standalone && role is not null)
-            throw new FlowlineException(ExitCode.ConfigInvalid, SettingsSupport.BuildStandaloneRoleError(target));
-
-        if (role is null && !SettingsSupport.IsEnvironmentTarget(target))
-            throw new FlowlineException(ExitCode.ValidationFailed,
-                SettingsSupport.BuildNotAnEnvironmentError(target, name, args ?? []));
-
-        return role;
-    }
-
-    /// <summary>
-    /// Resolves a role through the shared role path and anything else as a URL.
-    /// </summary>
-    /// <remarks>
-    /// The role branch keeps its environment-type guard — that check is what catches a stale role URL in
-    /// <c>.flowline</c> pointed at the wrong environment, and inheriting it costs nothing. It updates the
-    /// config in memory only; nothing here saves, so a dry run leaves the file untouched.
-    ///
-    /// The URL branch has no type guard on purpose: a URL names the environment outright, so there is no
-    /// role to disagree with, and the base standalone helper would refuse Production outright.
-    /// </remarks>
-    protected async Task<(EnvironmentInfo Info, PacProfile Profile)> ResolveEnvironmentAsync(
-        string target, EnvironmentRole? role, TSettings settings, CancellationToken ct)
-    {
-        if (role is not null)
-            return await Environments.CheckByRoleAsync(Config, role.Value, ct);
-
-        var profile = await ProfileResolutionService.ResolveAsync(target, ct);
-        var env = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Checking [bold]{Markup.Escape(target)}[/]...",
-            _ => Validator.GetEnvironmentInfoByUrlAsync(target, profile, RuntimeOptions, settings.NoCache, ct));
-
-        if (env is null)
-            throw new FlowlineException(ExitCode.ConnectionFailed,
-                $"Environment not found — check the URL '{target}' or your PAC login.");
-
-        Console.Ok($"Env [bold]{Markup.Escape(env.DisplayName ?? target)}[/] ({env.EnvironmentUrl}) exists");
-        return (env, profile);
-    }
+    protected EnvironmentRole? ResolveRoleOrThrow(
+        string target, bool standalone, string? name = null, IReadOnlyList<string>? args = null) =>
+        Environments.CheckTarget(target, standalone,
+            () => SettingsSupport.BuildNotAnEnvironmentError(target, name, args ?? []));
 
     /// <summary>
     /// Names the solution: from the artifact when one is given, from the project otherwise.

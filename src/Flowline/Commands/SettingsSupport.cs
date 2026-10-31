@@ -164,7 +164,7 @@ public static class SettingsSupport
         }
 
         // 'settings dev': an environment where an operation belongs, with no operation anywhere.
-        if (IsEnvironmentTarget(first))
+        if (EnvironmentTarget.IsTarget(first))
             return $"'{first}' is an environment, not an operation. The operation comes first: " +
                    $"flowline settings <operation> {Quote(first)}. " +
                    $"Operations are {string.Join(", ", s_operations)}.";
@@ -225,17 +225,6 @@ public static class SettingsSupport
     static bool IsOperation(string token) =>
         s_operations.Contains(token, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Whether a token is the kind of thing a <c>&lt;target&gt;</c> accepts: a role or an http(s) URL.</summary>
-    /// <remarks>
-    /// Deliberately narrow, and the same rule <c>--env</c> applies: a bare host with no scheme is not a URL
-    /// here either. A token that is neither is more likely a mistyped operation or a component name in the
-    /// wrong place than an environment, so nothing downstream should treat it as one.
-    /// </remarks>
-    public static bool IsEnvironmentTarget(string token) =>
-        EnvironmentRoles.TryParse(token) is not null
-        || (Uri.TryCreate(token, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps));
-
     /// <summary>The message a target that is neither a role nor a URL earns, before anything resolves it.</summary>
     /// <remarks>
     /// Without this the token went to the PAC profile lookup as a URL, and a component name typed where
@@ -248,7 +237,7 @@ public static class SettingsSupport
     /// </remarks>
     public static string BuildNotAnEnvironmentError(string target, string? name, IReadOnlyList<string> args)
     {
-        if (name is not null && IsEnvironmentTarget(name))
+        if (name is not null && EnvironmentTarget.IsTarget(name))
         {
             var swapped = args.ToArray();
             var targetAt = PositionalIndex(swapped, target, after: -1);
@@ -262,7 +251,8 @@ public static class SettingsSupport
             }
         }
 
-        return $"'{target}' isn't an environment. Pass a role (dev, test, uat, prod) or the full https:// URL.";
+        return EnvironmentTarget.NotATarget(target,
+            $"Put the environment first: flowline settings <operation> {EnvironmentTarget.TargetPlaceholder}");
     }
 
     /// <summary>The message a scripted write with no component name earns.</summary>
@@ -333,10 +323,6 @@ public static class SettingsSupport
     // A component name routinely has spaces in it, so a suggestion that can be pasted has to keep them
     // together.
     internal static string Quote(string token) => token.Contains(' ') ? $"\"{token}\"" : token;
-
-    public static string BuildStandaloneRoleError(string target) =>
-        $"'{target}' is a role name, and roles resolve from .flowline — there's no Flowline project here. " +
-        "Pass the environment URL instead.";
 
     /// <summary>Names the file a run resolved, before anything is written.</summary>
     /// <remarks>

@@ -120,7 +120,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
                 SettingsSupport.BuildMissingNameError(
                     SettingsComponentNames.Singular(kinds), WriteVerb(settings), settings.Target, context.Arguments));
 
-        var (env, profile) = await ResolveEnvironmentAsync(settings.Target, role, settings, cancellationToken);
+        var (env, profile) = await Environments.ResolveAsync(Config, settings.Target, role, cancellationToken);
         var solutionName = await ResolveSolutionNameAsync(settings, standalone, null, env, cancellationToken);
 
         var mode = settings.DryRun ? RunMode.DryRun : RunMode.Normal;

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Flowline.Commands;
+using Flowline.Core.Environments;
 using Flowline.Diagnostics;
 using Spectre.Console.Cli;
 
@@ -38,7 +39,7 @@ public class SolutionNameSettings : EnvironmentSettings
             return null;
 
         var word = args[1];
-        var flag = SettingsSupport.IsEnvironmentTarget(word) ? "--env" : "--solution-name";
+        var flag = EnvironmentTarget.IsTarget(word) ? "--env" : "--solution-name";
         // The line is repeated back to the console, so a --client-secret value in it is masked.
         var rest = SubprocessCapture.RedactSensitiveArgs(
             string.Join(' ', new[] { flag, word }.Concat(args.Skip(2)).Select(SettingsSupport.Quote)));
