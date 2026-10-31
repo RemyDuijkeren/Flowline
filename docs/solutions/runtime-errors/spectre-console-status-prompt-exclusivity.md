@@ -41,7 +41,7 @@ Every command routed through the shared `FlowlineCommand` helper was affected: `
   System.InvalidOperationException: Trying to run one or more interactive functions concurrently. Operations with dynamic displays (e.g. a prompt and a progress display) cannot be running at the same time.
   ```
 - Only reproducible when the target environment URL matches multiple local PAC auth profiles — a single-match or no-match resolution never enters the prompting branch, so the bug is silent in the common case.
-- Affects any command path that reaches `FlowlineCommand.GetAndCheckEnvironmentInfoAsync` or `ConnectToDataverseAsync`: clone, sync, push (non-standalone), generate (non-standalone), drift (role-keyword branch), provision (source-Prod check).
+- Affects any command path that reaches the environment lookup (then `FlowlineCommand.GetAndCheckEnvironmentInfoAsync`, now `EnvironmentService.CheckByUrlAsync`) or `ConnectToDataverseAsync`: clone, sync, push (non-standalone), generate (non-standalone), drift (role-keyword branch), provision (source-Prod check).
 
 ## What Didn't Work
 
@@ -75,7 +75,7 @@ This confirmed the bug empirically, against the real console implementation, bef
 
 ## Solution
 
-Resolve the profile *before* opening the spinner, so any prompt happens on the plain console with no active display, then open the spinner around only the non-interactive work. `src/Flowline/Commands/FlowlineCommand.cs`:
+Resolve the profile *before* opening the spinner, so any prompt happens on the plain console with no active display, then open the spinner around only the non-interactive work. The fix was made in `src/Flowline/Commands/FlowlineCommand.cs`; the environment lookup has since moved to `EnvironmentService.CheckByUrlAsync` (`src/Flowline.Core/Environments/EnvironmentService.cs`), which keeps the same order. `ConnectToDataverseAsync` is still in the command base:
 
 ```csharp
 // Resolved before opening the status spinner — ProfileResolutionService.ResolveAsync can prompt

@@ -1,6 +1,7 @@
 ---
 title: A positional target that is neither a role nor a URL reaches the PAC profile lookup and comes back as an auth error
 date: 2026-10-31
+last_updated: 2026-10-31
 category: logic-errors
 module: flowline-cli
 problem_type: logic_error
@@ -10,6 +11,7 @@ symptoms:
   - "The error tells the user to run `pac auth create --environment ApprovalFlow`, against a component name"
   - "With a universal PAC profile active, the run goes on to an environment lookup against the bare word instead of failing"
   - "A typo'd role keyword (`staging`) gets the same authentication advice"
+  - "A non-URL saved under a role in `.flowline` (`DevUrl: staging`) reaches the same lookup through a command that reads the saved URL directly"
 root_cause: missing_validation
 resolution_type: code_fix
 severity: medium
@@ -83,6 +85,8 @@ The guard is defined once, in Core, and every command that takes an environment 
 
 - A new command that takes an environment positional calls `EnvironmentTarget.Check` and then the environment service. It does not write its own check.
 - Adding a role keyword means updating the role parser that all of these read through (`EnvironmentRoles.TryParse`); see `docs/solutions/conventions/flowline-add-environment-2026-06-06.md`.
+- Read a role's saved URL through `EnvironmentTarget.RequireRoleUrl`, never `ProjectConfig.GetUrl` on its own. `GetUrl` only says whether something is saved; it does not check that it is a URL, so a value taken from it and handed to a lookup reproduces this bug through the side door. After the check was consolidated, two paths still did exactly that and were caught only in review: `clone` with one configured role and no `--env`, and deploy's DTAP gate reading the predecessor environment's URL. `GetUrl` stays fine for asking "is this role configured?" and for comparing URLs.
+- Do not pass a role just to switch the environment-type guard on. Stand-alone `push` and `generate` passed DEV to make the lookup refuse Production; once the refusal named the role's `.flowline` key, it told a stand-alone user (no `.flowline` at all) to edit `DevUrl`. A command that refuses Production without a role asks for that directly (the DEV-only switch on `EnvironmentService.CheckByUrlAsync`), so the message matches where the URL came from.
 - Exit 4 promises that `pac auth create` is the fix (`docs/solutions/architecture-patterns/ai-agent-consumable-cli-contract-2026-06-07.md`). Reserve it for inputs that really are environment URLs.
 
 Related: `docs/solutions/integration-issues/linux-pac-profile-casing-and-token-cache-mismatch.md` (another case where the profile lookup's error points at the wrong fix).

@@ -40,7 +40,7 @@ Before touching any code, answer these for the new environment:
 | Provision supported? | Yes (`FullCopy` or `MinimalCopy`) or No | Yes — `FullCopy` |
 | Clone search order position | Where in Prod → ... → Dev? | After Prod, before Test |
 
-The Dataverse type drives the validation guard in `GetAndCheckEnvironmentInfoAsync` — **Production** environments require `env.Type == "Production"`; everything else rejects that type. A new Sandbox environment needs no type-guard changes at all.
+The Dataverse type drives the shared environment-type rule (`EnvironmentTarget.CheckType` in `src/Flowline.Core/Environments/EnvironmentTarget.cs`): PROD must be a Production environment, and every other role must not be. A new Sandbox role needs no change there. A new role that must be Production-typed does.
 
 ### Step 2: Six files to update
 
@@ -86,44 +86,15 @@ public string? GetOrUpdateUatUrl(string? inputUatUrl, FlowlineSettings? settings
 
 Property order in the class: `ProdUrl`, `UatUrl`, `TestUrl`, `DevUrl` — matches promotion order top-to-bottom.
 
-#### 2. `src/Flowline/Commands/FlowlineCommand.cs` — Base enum + switches
+#### 2. `src/Flowline.Core/Environments/EnvironmentRole.cs` — Enum + role helpers
 
-Add the new value to `EnvironmentRole` and extend the three switch expressions in `GetAndCheckEnvironmentInfoAsync`:
+Add the new value to `EnvironmentRole`, then extend every helper switch beside it: `ConfigKey` (the `.flowline` key), `Keyword` (what a user types), `Label` (progress lines and pickers), `UpperLabel` (status lines) and `TryParse`. Add it to `All` in promotion order, dev first; the "isn't a role" message and the `<dev|test|uat|prod|url>` placeholder are built from that list. `ProjectConfig.GetUrl` and `GetOrUpdateUrl` need the matching arm (step 1).
 
-```csharp
-public enum EnvironmentRole { Prod, Uat, Test, Dev }
+The shared target check, the saved-URL check and the environment service read through these helpers, so they need no edits.
 
-// label switch:   EnvironmentRole.Uat => "UAT"
-// flag switch:    EnvironmentRole.Uat => "--uat"
-// URL switch:     EnvironmentRole.Uat => Config!.GetOrUpdateUatUrl(inputUrl, settings)
-```
+#### 3. `src/Flowline/Commands/DeployCommand.cs` — Promotion order
 
-No type-guard changes needed for Sandbox environments — the existing guard (`role != Prod && type == Production → reject`) already rejects Production-type URLs for any non-Prod role.
-
-#### 3. `src/Flowline/Commands/DeployCommand.cs` — Keyword resolution
-
-Add the keyword to the `targetUrl` switch and update the `[Description]` attribute:
-
-```csharp
-// Before:
-var targetUrl = settings.Target.ToLowerInvariant() switch
-{
-    "prod" => Config!.ProdUrl,
-    "test" => Config!.TestUrl,
-    _ => settings.Target
-};
-
-// After:
-var targetUrl = settings.Target.ToLowerInvariant() switch
-{
-    "prod" => Config!.ProdUrl,
-    "uat"  => Config!.UatUrl,
-    "test" => Config!.TestUrl,
-    _ => settings.Target
-};
-```
-
-For a **Production-type** new environment (not UAT's case), no extra code is needed — the existing `if (targetEnv.Type == "Production")` confirmation check fires automatically for any URL that resolves to a Production-type environment, regardless of the keyword used.
+Keyword resolution is shared (`EnvironmentRoles.TryParse` plus `EnvironmentTarget.RequireRoleUrl`), so `deploy <new-role>` works once step 2 is done. What deploy still owns is the DTAP promotion order in `ResolveDtapGate`: add the new role to the predecessor lists for the roles above it, and give it its own list.
 
 #### 4. `src/Flowline/Commands/ProvisionCommand.cs` — Role enum + copy type + suffix
 
@@ -133,10 +104,8 @@ Three changes:
 // 1. Extend Role enum
 public enum Role { Dev, Test, Uat }
 
-// 2. Update suffix determination
-var suffix = string.IsNullOrWhiteSpace(settings.Suffix)
-    ? settings.Role switch { Role.Dev => "Dev", Role.Uat => "UAT", _ => "Test" }
-    : settings.Suffix;
+// 2. Nothing to do for the suffix: provision maps its positional to the shared role once and takes the
+//    default suffix from that role's Label().
 
 // 3. Add URL dispatch
 string? url = settings.Role switch
