@@ -150,4 +150,52 @@ public class FlowlineSettingsTests
         typeof(SlnAddCommand.Settings).GetProperty(nameof(DataverseSettings.NoCache)).Should().BeNull();
         typeof(SlnAddCommand.Settings).GetProperty(nameof(DataverseSettings.AutoSwitchProfile)).Should().BeNull();
     }
+
+    // The solution name has one spelling on every command where a project can supply it. settings
+    // declares it on its own base and push/generate on theirs, because only one of the two bases carries
+    // --env, so this pins the two declarations together.
+    [Theory]
+    [InlineData(typeof(PushCommand.Settings))]
+    [InlineData(typeof(GenerateCommand.Settings))]
+    [InlineData(typeof(SettingsPullCommand.Settings))]
+    public void SolutionName_HasTheSameOptionAndDescriptionEverywhere(Type settings)
+    {
+        var property = settings.GetProperty("SolutionName")!;
+        var option = (CommandOptionAttribute)property.GetCustomAttributes(typeof(CommandOptionAttribute), true).Single();
+        var description = (System.ComponentModel.DescriptionAttribute)property
+            .GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), true).Single();
+
+        option.LongNames.Should().Equal("solution-name");
+        option.ShortNames.Should().Equal("n");
+        description.Description.Should().Be(
+            "Solution unique name: required outside a Flowline project. Inside one, leave it out or pass the project's own");
+    }
+
+    // A bare word after push or generate must never be read as the solution: the name moved to a flag.
+    [Theory]
+    [InlineData(typeof(PushCommand.Settings))]
+    [InlineData(typeof(GenerateCommand.Settings))]
+    public void PushAndGenerate_DeclareNoPositional(Type settings)
+    {
+        settings.GetProperties()
+            .Where(p => p.GetCustomAttributes(typeof(CommandArgumentAttribute), true).Length > 0)
+            .Should().BeEmpty();
+    }
+
+    // clone and init keep the solution positional, under the same name the flag uses elsewhere, and no
+    // second spelling as a flag.
+    [Theory]
+    [InlineData(typeof(CloneCommand.Settings))]
+    [InlineData(typeof(InitCommand.Settings))]
+    public void CloneAndInit_NameTheirPositionalSolutionName(Type settings)
+    {
+        var argument = settings.GetProperties()
+            .SelectMany(p => p.GetCustomAttributes(typeof(CommandArgumentAttribute), true).Cast<CommandArgumentAttribute>())
+            .Single();
+
+        argument.Position.Should().Be(0);
+        argument.ValueName.Should().Be("solution-name");
+        argument.IsRequired.Should().BeFalse();
+        settings.GetProperty("SolutionName").Should().BeNull();
+    }
 }

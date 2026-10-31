@@ -258,7 +258,7 @@ public class ProjectConfig
             if (root.TryGetProperty("Solutions", out _))
             {
                 throw new FlowlineException(ExitCode.ConfigInvalid,
-                    $"'{configPath}' is Flowline's old multi-solution format (Solutions array) — Flowline is now single-solution tool only, a breaking change. Delete '{configPath}' and this project's old solutions/<Name>/ folder, then run 'flowline clone <solution>' to start again.");
+                    $"'{configPath}' is Flowline's old multi-solution format (Solutions array) — Flowline is now single-solution tool only, a breaking change. Delete '{configPath}' and this project's old solutions/<Name>/ folder, then run 'flowline clone <solution-name>' to start again.");
             }
 
             if (!root.TryGetProperty("SchemaVersion", out var schemaVersionElement)
@@ -267,7 +267,7 @@ public class ProjectConfig
                 || schemaVersion != CurrentSchemaVersion)
             {
                 throw new FlowlineException(ExitCode.ConfigInvalid,
-                    $"'{configPath}' has a missing or unsupported schema version. Delete '{configPath}' and run 'flowline clone <solution>' to start again.");
+                    $"'{configPath}' has a missing or unsupported schema version. Delete '{configPath}' and run 'flowline clone <solution-name>' to start again.");
             }
 
             if (root.TryGetProperty("Solution", out var solutionElement) && solutionElement.ValueKind != JsonValueKind.Null)

@@ -37,7 +37,7 @@ public class InitCommand(CommandServices services, CreateEnvironmentResolver cre
 
     public sealed class Settings : EnvironmentSettings
     {
-        [CommandArgument(0, "[name]")]
+        [CommandArgument(0, "[solution-name]")]
         [Description("Solution unique name to create (omit to enter one interactively)")]
         public string? Name { get; set; }
 
@@ -230,7 +230,7 @@ public class InitCommand(CommandServices services, CreateEnvironmentResolver cre
 
         if (!IsInteractive())
             throw new FlowlineException(ExitCode.ValidationFailed,
-                "Solution name is required — run 'flowline init <name>', or run this interactively to enter one.");
+                "Solution name is required — run 'flowline init <solution-name>', or run this interactively to enter one.");
 
         return await Console.PromptAsync(new TextPrompt<string>(FlowlineConsoleExtensions.Question("Solution unique name:")), cancellationToken);
     }

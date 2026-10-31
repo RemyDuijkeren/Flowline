@@ -35,12 +35,8 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
         All = WebResources | Plugins
     }
 
-    public sealed class Settings : EnvironmentSettings
+    public sealed class Settings : SolutionNameSettings
     {
-        [CommandArgument(0, "[solution]")]
-        [Description("Solution to push (optional in project mode)")]
-        public string? Solution { get; set; }
-
         [CommandOption("-s|--scope <SCOPE>")]
         [Description("Limit the push scope: all, webresources, plugins, or assemblyonly. Can be used more than once.")]
         public PushScope[] Scopes { get; set; } = [];
@@ -90,11 +86,11 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
 
         if (standaloneMode) ValidateStandaloneMode(settings, RootFolder);
 
-        // R8: a passed [solution] no longer selects among multiple configured solutions (only one
-        // exists) — it now just needs to match the one already configured. Checked before any
+        // A passed --solution-name does not select among configured solutions, since only one exists. It
+        // just needs to match the one already configured. Checked before any
         // Dataverse round-trip (env/solution lookups happen further down in ResolveEnvironmentAndSolutionAsync).
         if (!standaloneMode && Config.Solution != null)
-            ValidateSolutionMatchesConfig(settings.Solution, Config.Solution.UniqueName);
+            ValidateSolutionMatchesConfig(settings.SolutionName, Config.Solution.UniqueName);
 
         var runMode = ResolveRunMode(settings);
         var standaloneParams = ResolveStandaloneParameters(settings, standaloneMode);
@@ -290,7 +286,7 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
         else
         {
             (devEnv, profile) = await GetAndCheckEnvironmentAsync(environmentUrl, resolvedRole, cancellationToken, devOnly: true);
-            var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.Solution, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken);
+            var (projectSln, slnInfoResult) = await GetAndCheckSolutionAsync(settings.SolutionName, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken);
             slnInfo = slnInfoResult;
             solutionName = projectSln.UniqueName;
             pluginPackageMode = projectSln.PluginPackageMode;
@@ -626,10 +622,10 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
 
     internal static string ResolveStandaloneSolutionName(Settings settings)
     {
-        if (!string.IsNullOrWhiteSpace(settings.Solution))
-            return settings.Solution.Trim();
+        if (!string.IsNullOrWhiteSpace(settings.SolutionName))
+            return settings.SolutionName.Trim();
 
-        throw new FlowlineException(ExitCode.ValidationFailed, "Solution name is required in standalone mode — pass it as the first argument.");
+        throw new FlowlineException(ExitCode.ValidationFailed, "Solution name is required in standalone mode. Use --solution-name <name>.");
     }
 
     // R1/KD1: build output has a .dll for certain (regression-checked above). PluginPackageMode.Dll opts

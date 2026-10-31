@@ -42,6 +42,20 @@ public class GenerateCommandParseTests
     }
 
     [Fact]
+    public void CommandApp_ShortSolutionNameFlag_BindsSolutionName()
+    {
+        GenerateCommand.Settings? captured = null;
+        var app = new CommandApp();
+        app.Configure(c => c.AddCommand<CapturingGenerateSettingsCommand>("generate"));
+        CapturingGenerateSettingsCommand.OnExecute = s => captured = s;
+
+        var exitCode = app.Run(["generate", "-n", "Contoso"]);
+
+        exitCode.Should().Be(0);
+        captured!.SolutionName.Should().Be("Contoso");
+    }
+
+    [Fact]
     public void Settings_HasNoDevUrlProperty_TheOldFlagIsGone()
     {
         typeof(GenerateCommand.Settings).GetProperty("DevUrl").Should().BeNull();
@@ -486,7 +500,7 @@ public class GenerateCommandForceTests
 
 public class GenerateCommandSolutionValidationTests
 {
-    // R8: project mode's positional [solution] validated against the single configured solution.
+    // Project mode: a passed --solution-name is validated against the single configured solution.
 
     [Fact]
     public void ValidateSolutionMatchesConfig_NoInputName_DoesNotThrow()

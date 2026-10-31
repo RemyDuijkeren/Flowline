@@ -165,7 +165,7 @@ against an already-cloned, pushed or synced folder) where relevant.
   `Default` solution never listed). **No "create new" choice, clone only adopts.** Picking confirms
   which `.flowline` role to save the environment under.
 - Nothing to clone: an environment with no unmanaged solution stops with `⏸ Nothing to clone in
-  '<env>'` plus a `Next:` line naming `flowline init <name>`, exit 0.
+  '<env>'` plus a `Next:` line naming `flowline init <solution-name>`, exit 0.
 - Review the generated `AGENTS.md` as the artifact an agent will be steered by: accurate against
   current CLI behavior, right command order, hazards named.
 

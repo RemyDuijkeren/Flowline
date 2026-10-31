@@ -24,7 +24,7 @@ public class CloneCommand(CommandServices services,
 
     public sealed class Settings : EnvironmentSettings
     {
-        [CommandArgument(0, "[solution]")]
+        [CommandArgument(0, "[solution-name]")]
         [Description("Solution to clone into this repo (omit to pick one interactively)")]
         public string? Solution { get; set; }
 
@@ -227,7 +227,7 @@ public class CloneCommand(CommandServices services,
         {
             Console.CannotContinue(
                 $"Nothing to clone in '{devEnv.DisplayName}' — no unmanaged solution there.",
-                "Run 'flowline init <name>' to create one in DEV, or re-run 'flowline clone' and pick the environment that holds your solution.");
+                "Run 'flowline init <solution-name>' to create one in DEV, or re-run 'flowline clone' and pick the environment that holds your solution.");
             return (0, null, null, null);
         }
 

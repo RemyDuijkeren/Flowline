@@ -20,8 +20,8 @@ namespace Flowline.Commands;
 /// </remarks>
 public abstract class SettingsSettings : DataverseSettings
 {
-    [CommandOption("--solution-name <name>")]
-    [Description("Solution unique name: required outside a Flowline project. Inside one, leave it out or pass the project's own")]
+    [CommandOption(SolutionNameSettings.OptionTemplate)]
+    [Description(SolutionNameSettings.OptionDescription)]
     public string? SolutionName { get; set; }
 
     [CommandOption("--dry-run")]
@@ -231,14 +231,14 @@ public static class SettingsSupport
     /// than a transposed environment, and Spectre's own "unknown command" serves that better than a
     /// confident guess would.
     /// </remarks>
-    static bool LooksLikeTarget(string token) =>
+    internal static bool LooksLikeTarget(string token) =>
         EnvironmentRoles.TryParse(token) is not null
         || token.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
         || token.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     // A component name routinely has spaces in it, so a suggestion that can be pasted has to keep them
     // together.
-    static string Quote(string token) => token.Contains(' ') ? $"\"{token}\"" : token;
+    internal static string Quote(string token) => token.Contains(' ') ? $"\"{token}\"" : token;
 
     public static string BuildStandaloneRoleError(string target) =>
         $"'{target}' is a role name, and roles resolve from .flowline — there's no Flowline project here. " +

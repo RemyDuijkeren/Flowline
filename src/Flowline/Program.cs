@@ -6,6 +6,7 @@ using Flowline;
 using Flowline.Core.Validation;
 using Flowline.Core.Environments;
 using Flowline.Commands;
+using Flowline.Settings;
 using Flowline.Core.Config;
 using Flowline.Core;
 using Flowline.Core.Console;
@@ -230,6 +231,7 @@ app.Configure(config =>
                     "[red]Error:[/] " + Markup.Escape(
                         SettingsSupport.BuildArgumentOrderHint(args)
                         ?? SettingsSupport.BuildTypeValueHint(args)
+                        ?? SolutionNameSettings.BuildPositionalHint(args)
                         ?? cre.Message));
                 WriteExceptionContext(cre, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
@@ -433,8 +435,8 @@ namespace Flowline
             config.AddCommand<PushCommand>("push")
                 .WithDescription("Build the plugin assembly and web resources and register them straight into DEV, plugin steps included. Run after plugin or web resource changes. DEV only, via --env dev (default) or a DEV URL.")
                 .WithExample("push")
-                .WithExample("push", "ContosoCustomizations", "--scope", "webresources")
-                .WithExample("push", "ContosoCustomizations", "--plugin-file", "./bin/Release/Plugins.dll", "--webresources", "./dist");
+                .WithExample("push", "--scope", "webresources")
+                .WithExample("push", "--solution-name", "ContosoCustomizations", "--plugin-file", "./bin/Release/Plugins.dll", "--webresources", "./dist");
 
             // Pull changes to local repo (export solution and unpack). No sync alias: the name is kept free for a later command.
             config.AddCommand<PullCommand>("pull")
@@ -462,7 +464,7 @@ namespace Flowline
             config.AddCommand<GenerateCommand>("generate")
                   .WithDescription("Generate early-bound C# types from solution entities and custom APIs, overwriting Plugins/Models/. Run after adding or changing entities or custom APIs. Targets any environment via --env (default: dev).")
                   .WithExample("generate")
-                  .WithExample("generate", "ContosoCustomizations", "--namespace", "Contoso.Plugins.Models", "--extra-tables", "account,contact")
+                  .WithExample("generate", "--namespace", "Contoso.Plugins.Models", "--extra-tables", "account,contact")
                   .WithExample("generate", "--generator", "xrmcontext3");
 
             config.AddCommand<StatusCommand>("status")

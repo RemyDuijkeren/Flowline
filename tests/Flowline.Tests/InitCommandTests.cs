@@ -158,7 +158,7 @@ public class InitCommandTests
         var act = () => command.ResolveNameAsync(null, CancellationToken.None);
 
         (await act.Should().ThrowAsync<FlowlineException>())
-            .Which.Message.Should().Contain("init <name>");
+            .Which.Message.Should().Contain("init <solution-name>");
     }
 
     [Fact]

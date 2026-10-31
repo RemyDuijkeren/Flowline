@@ -25,12 +25,8 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
     IEnumerable<IGenerator> generators, SecretResolver secretResolver, EnvironmentTargetResolver environmentTargetResolver)
     : FlowlineCommand<GenerateCommand.Settings>(services)
 {
-    public sealed class Settings : EnvironmentSettings
+    public sealed class Settings : SolutionNameSettings
     {
-        [CommandArgument(0, "[solution]")]
-        [Description("Solution to generate types for (optional in project mode)")]
-        public string? Solution { get; set; }
-
         [CommandOption("--namespace <NS>")]
         [Description("Model namespace (saved to .flowline)")]
         public string? Namespace { get; set; }
@@ -100,12 +96,12 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
 
         if (standaloneMode)
         {
-            if (string.IsNullOrWhiteSpace(settings.Solution))
-                throw new FlowlineException(ExitCode.ValidationFailed, "Solution name is required — pass it as the first argument.");
+            if (string.IsNullOrWhiteSpace(settings.SolutionName))
+                throw new FlowlineException(ExitCode.ValidationFailed, "Solution name is required outside a Flowline project. Use --solution-name <name>.");
             if (string.IsNullOrWhiteSpace(settings.Output))
                 throw new FlowlineException(ExitCode.ValidationFailed, "Output folder is required in standalone mode — use -o <PATH> or --output <PATH>.");
 
-            solutionName = settings.Solution.Trim();
+            solutionName = settings.SolutionName.Trim();
             EnvironmentTargetResolver.EnsureUsableStandaloneEnv(settings.Env);
             devUrl = ProfileResolutionService.ResolveStandaloneEnvironmentUrl(settings.Env);
             modelsFolder = Path.GetFullPath(settings.Output);
@@ -116,14 +112,14 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
         }
         else
         {
-            // R8: a passed [solution] no longer selects among multiple configured solutions (only one
-            // exists) — it now just needs to match the one already configured.
+            // A passed --solution-name does not select among configured solutions, since only one exists.
+            // It just needs to match the one already configured.
             if (Config.Solution != null)
-                ValidateSolutionMatchesConfig(settings.Solution, Config.Solution.UniqueName);
+                ValidateSolutionMatchesConfig(settings.SolutionName, Config.Solution.UniqueName);
 
-            projectSln = Config.GetOrUpdateSolution(settings.Solution, options: RuntimeOptions);
+            projectSln = Config.GetOrUpdateSolution(settings.SolutionName, options: RuntimeOptions);
             if (projectSln == null)
-                throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required — pass it as an argument or configure a single solution in .flowline.");
+                throw new FlowlineException(ExitCode.ConfigInvalid, "Solution name is required. Use --solution-name <name> or configure a single solution in .flowline.");
 
             // KTD8: generate accepts any role (incl. Production) — onlyRole:null, and the type guard is
             // skipped below when the environment is actually checked. Any URL the resolver saves lands

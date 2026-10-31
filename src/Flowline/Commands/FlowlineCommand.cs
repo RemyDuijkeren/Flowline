@@ -357,7 +357,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     {
         var projectSln = Config.GetOrUpdateSolution(inputName, includeManaged, RuntimeOptions);
         if (projectSln == null)
-            throw new FlowlineException(ExitCode.ConfigInvalid, "No solution is configured for this project yet — run 'flowline clone <solution>' first.");
+            throw new FlowlineException(ExitCode.ConfigInvalid, "No solution is configured for this project yet — run 'flowline clone <solution-name>' first.");
 
         SolutionInfo? remoteSln = await Console.Status().FlowlineSpinner().StartAsync(
             $"Looking up solution [bold]{projectSln.UniqueName}[/]...",
@@ -447,8 +447,8 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         return null;
     }
 
-    // R8: project mode has exactly one configured solution — a passed [solution] argument no longer
-    // selects among several, it just has to name the one that's already configured.
+    // Project mode has exactly one configured solution. A passed --solution-name does not select
+    // among several, it just has to name the one that's already configured.
     internal static void ValidateSolutionMatchesConfig(string? inputName, string configuredUniqueName)
     {
         if (string.IsNullOrWhiteSpace(inputName)) return;

@@ -139,10 +139,10 @@ public class PushCommandTests : IDisposable
 
         var act = () => PushCommand.ResolveStandaloneSolutionName(settings);
 
-        act.Should().Throw<FlowlineException>();
+        act.Should().Throw<FlowlineException>().WithMessage("*--solution-name*");
     }
 
-    // -- R8: project mode's positional [solution] validated against the single configured solution --
+    // -- Project mode: a passed --solution-name is validated against the single configured solution --
 
     [Fact]
     public void ValidateSolutionMatchesConfig_NoInputName_DoesNotThrow()
@@ -989,9 +989,9 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void CommandApp_ForceImmediatelyFollowedByPositional_BindsPositionalAsForceValue()
     {
-        // "--force MySolution" with the [solution] argument otherwise omitted binds "MySolution"
-        // as --force's value and leaves the positional unset — not a silent misfire, since a
-        // real invocation would still fail ValidateForce naming push's valid values.
+        // "--force MySolution" binds "MySolution" as --force's value and leaves the solution name
+        // unset. Not a silent misfire, since a real invocation would still fail ValidateForce
+        // naming push's valid values.
         PushCommand.Settings? captured = null;
         var app = new CommandApp();
         app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
@@ -1002,7 +1002,40 @@ public class PushCommandTests : IDisposable
         exitCode.Should().Be(0);
         captured.Should().NotBeNull();
         captured!.Force.Should().BeEquivalentTo(["MySolution"]);
-        captured.Solution.Should().BeNull();
+        captured.SolutionName.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("--solution-name")]
+    [InlineData("-n")]
+    public void CommandApp_SolutionNameFlag_BindsSolutionName(string flag)
+    {
+        PushCommand.Settings? captured = null;
+        var app = new CommandApp();
+        app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
+        CapturingPushSettingsCommand.OnExecute = s => captured = s;
+
+        var exitCode = app.Run(["push", flag, "Contoso"]);
+
+        exitCode.Should().Be(0);
+        captured!.SolutionName.Should().Be("Contoso");
+    }
+
+    // The old shape: a bare word after the verb. Strict parsing, as the real CLI runs, so it fails
+    // instead of being absorbed.
+    [Fact]
+    public void CommandApp_SolutionAsPositional_FailsToParse()
+    {
+        var app = new CommandApp();
+        app.Configure(c =>
+        {
+            c.Settings.StrictParsing = true;
+            c.AddCommand<NoOpPushSettingsCommand>("push");
+        });
+
+        var exitCode = app.Run(["push", "Contoso"]);
+
+        exitCode.Should().NotBe(0);
     }
 
     sealed class CapturingPushSettingsCommand : Command<PushCommand.Settings>
