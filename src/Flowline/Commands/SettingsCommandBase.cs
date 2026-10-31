@@ -39,7 +39,7 @@ public abstract class SettingsCommandBase<TSettings>(
     protected override string[] ValidForceSpecifiers => FlowlineSettings.ConfigOnlyValidSpecifiers;
 
     /// <summary>
-    /// Works out whether this run has a project behind it, and rejects a flag that needs one (or doesn't).
+    /// Works out whether this run has a project behind it, and rejects a solution name the project contradicts.
     /// </summary>
     /// <remarks>
     /// Every operation on this branch asks the same two questions before it touches anything, and answers
@@ -51,9 +51,8 @@ public abstract class SettingsCommandBase<TSettings>(
         var standalone = IsStandalone(settings);
         var projectFound = FindFlowlineProjectRoot(Directory.GetCurrentDirectory()) is not null;
 
-        var flagError = SettingsSupport.ValidateFlags(standalone, settings.SolutionName, projectFound);
-        if (flagError is not null)
-            throw new FlowlineException(ExitCode.ValidationFailed, flagError);
+        if (projectFound)
+            SettingsSupport.ValidateSolutionName(settings.SolutionName, Config.Solution?.UniqueName);
 
         return (standalone, projectFound);
     }

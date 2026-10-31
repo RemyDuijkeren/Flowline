@@ -21,7 +21,7 @@ namespace Flowline.Commands;
 public abstract class SettingsSettings : DataverseSettings
 {
     [CommandOption("--solution-name <name>")]
-    [Description("Solution unique name: required outside a Flowline project, and set by the project inside one")]
+    [Description("Solution unique name: required outside a Flowline project. Inside one, leave it out or pass the project's own")]
     public string? SolutionName { get; set; }
 
     [CommandOption("--dry-run")]
@@ -65,18 +65,16 @@ public static class SettingsSupport
     public static bool ResolveComponentStandalone(string startDir) =>
         FlowlineCommand<FlowlineSettings>.FindFlowlineProjectRoot(startDir) is null;
 
-    /// <summary>Rejects the one flag pair that cannot mean anything, naming both flags.</summary>
+    /// <summary>Inside a project, accepts a <c>--solution-name</c> that matches it and rejects one that doesn't.</summary>
     /// <remarks>
-    /// The <c>--pull</c> with <c>--settings-file</c> check the old single leaf carried is gone: the grammar
-    /// makes that pair unreachable rather than invalid, and <c>--settings-file</c> now names the destination
-    /// on a capture (KTD16). What remains is a flag that only means something outside a project.
+    /// Same rule as push and generate, through the same check, so a stand-alone script keeps working when it
+    /// is run from inside a project folder. Rejecting the flag outright, as this first shipped, was the one
+    /// place the solution name behaved differently by command.
     /// </remarks>
-    public static string? ValidateFlags(bool standalone, string? solutionName, bool projectFound)
+    public static void ValidateSolutionName(string? solutionName, string? projectSolutionName)
     {
-        if (!standalone && !string.IsNullOrWhiteSpace(solutionName) && projectFound)
-            return "--solution-name only applies outside a Flowline project. Inside one the solution comes from the project — remove the flag.";
-
-        return null;
+        if (projectSolutionName is not null)
+            FlowlineCommand<FlowlineSettings>.ValidateSolutionMatchesConfig(solutionName, projectSolutionName);
     }
 
     /// <summary>The message a role keyword earns when there is no project to resolve it from.</summary>

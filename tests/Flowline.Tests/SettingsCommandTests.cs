@@ -134,31 +134,41 @@ public class SettingsCommandTests : IDisposable
 
     // ── Flag validation ──────────────────────────────────────────────────────
 
-    // The --pull with --settings-file contradiction the single leaf carried is gone with the flag: the
-    // grammar makes that pair unreachable rather than invalid, and --settings-file now names a capture's
-    // destination. One rejection is left.
+    // Inside a project --solution-name follows push and generate: the project's own name is accepted, a
+    // different one is rejected naming both, and leaving it out is always fine.
 
     [Fact]
-    public void ValidateFlags_SolutionNameInsideAProject_IsRejected()
+    public void ValidateSolutionName_MatchingNameInsideAProject_IsAccepted()
     {
-        var error = SettingsSupport.ValidateFlags(standalone: false, solutionName: "ContosoCustomizations", projectFound: true);
+        var act = () => SettingsSupport.ValidateSolutionName("contosocustomizations", "ContosoCustomizations");
 
-        error.Should().NotBeNull();
-        error.Should().Contain("--solution-name");
+        act.Should().NotThrow();
     }
 
     [Fact]
-    public void ValidateFlags_SolutionNameOutsideAProject_IsAccepted()
+    public void ValidateSolutionName_DifferentNameInsideAProject_IsRejected()
     {
-        SettingsSupport.ValidateFlags(standalone: true, solutionName: "ContosoCustomizations", projectFound: false)
-            .Should().BeNull();
+        var act = () => SettingsSupport.ValidateSolutionName("OtherSolution", "ContosoCustomizations");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .WithMessage("*OtherSolution*ContosoCustomizations*");
     }
 
     [Fact]
-    public void ValidateFlags_NoFlags_IsAccepted()
+    public void ValidateSolutionName_NoNameInsideAProject_IsAccepted()
     {
-        SettingsSupport.ValidateFlags(standalone: false, solutionName: null, projectFound: true)
-            .Should().BeNull();
+        var act = () => SettingsSupport.ValidateSolutionName(null, "ContosoCustomizations");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateSolutionName_ProjectWithoutASolution_IsAccepted()
+    {
+        var act = () => SettingsSupport.ValidateSolutionName("ContosoCustomizations", null);
+
+        act.Should().NotThrow();
     }
 
     // ── Messages ─────────────────────────────────────────────────────────────
