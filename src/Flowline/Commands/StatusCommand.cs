@@ -30,11 +30,8 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
     {
     }
 
-    internal static void ValidateForce(Settings settings)
-    {
-        if (settings.Force.Length > 0)
-            throw new FlowlineException(ExitCode.ValidationFailed, "'status' has no force-gated behavior — remove --force.");
-    }
+    internal static void ValidateForce(Settings settings) =>
+        FlowlineSettings.ValidateForce(settings.Force, [], "status");
 
     // status is a multi-environment overview, so it reports on profile resolution rather than going
     // through ProfileResolutionService.ResolveAsync (which can block/throw/prompt) — up to 4 confirm

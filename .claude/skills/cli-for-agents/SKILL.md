@@ -79,7 +79,20 @@ purpose: `-f|--force <SPECIFIER>`, repeatable, `all` for everything the command 
   A specifier read by `HasForce` but missing from the list is unreachable: passing it errors out.
 - Do not add `--yes`, `--assume-yes`, or a `bool Force`.
 
-## 4. `--dry-run` on anything that writes
+## 4. `--dry-run` where a preview protects an environment
+
+`push`, `deploy` and the `settings` writers have it. Not every write needs one; C6 in
+[the CLI surface review](../../../docs/reviews/2026-09-08-cli-command-surface-design-review.md)
+settled the exceptions:
+
+- `pull` and `generate`: reversible with git. For `pull`, `--bump none`, read the summary, then
+  `git checkout -- Solution/src` is the dry run.
+- `provision`, `clone`, `init`: no value. `provision` already validates region and type before
+  the copy.
+- `deploy --dry-run` still takes the pre-deploy backup.
+
+A new command that writes to an environment gets `--dry-run` unless one of those reasons applies
+to it.
 
 Preview must run the whole pre-flight and stop before the write:
 [PushCommand.cs:70](../../../src/Flowline/Commands/PushCommand.cs#L70),
@@ -198,7 +211,7 @@ When changing a command, walk this:
 - [ ] Environment is positional `<target>` when required, `-e|--env` when it has a default
 - [ ] Hazard confirmations via `ConfirmGated`/`ConfirmGatedAsync`, with an actionable `nonInteractiveMessage`
 - [ ] New `--force` specifier registered in the command's valid list
-- [ ] Writes have `--dry-run`, and dry-run precedence is respected
+- [ ] Writes to an environment have `--dry-run` unless §4 exempts them, and dry-run precedence is respected
 - [ ] Specific `ExitCode`, message carries the fix
 - [ ] `CannotContinue` `Next:` is a runnable command
 - [ ] `.WithDescription` = what + when + state change; at least one `.WithExample`; every option has `[Description]`

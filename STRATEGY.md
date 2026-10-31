@@ -21,7 +21,7 @@ permanent masters. This is the opposite of the ISV golden-env model, and is
 designed specifically for teams extending their own Dataverse environment.
 
 **Environment-centric, not source-centric.** DEV is the working canvas — makers and developers
-contribute directly in the environment, `sync` captures that state into source
+contribute directly in the environment, `pull` captures that state into source
 control, and `deploy` packs from `src/`, shipping exactly what was confirmed in
 DEV. This is deliberately not the ISV pack-flow where source builds produce the
 shippable artifact. For ISV-style reproducible builds (no shared DEV env,
@@ -30,7 +30,7 @@ Build Tools. Flowline makes no attempt to serve that model.
 
 **Progressive adoption.** `push` and `generate` work standalone — no `.flowline`
 config required. A consultant can start with `flowline push` on an existing client
-project without committing to the full workflow; adopt `clone`, `sync`, and
+project without committing to the full workflow; adopt `clone`, `pull`, and
 `deploy` when ready. Low adoption friction is a deliberate design choice.
 
 **Compose PAC, don't mirror it.** Flowline is the Git delivery loop on top of PAC
@@ -75,13 +75,13 @@ not full-time on Dataverse, wanting structure without enterprise ceremony.
 - **Community posts** — someone writing about unmanaged ALM using Flowline;
   evidence the message is landing
 - **Real deployment questions** — issues or discussions showing someone ran a
-  full clone→sync→deploy workflow
+  full clone→pull→deploy workflow
 
 ## Tracks
 
 ### Core delivery workflow
 
-Provision, clone, sync, push, and deploy — the complete unmanaged pipeline from
+Provision, clone, pull, push, and deploy — the complete unmanaged pipeline from
 source control to Dataverse.
 
 _Why it serves the approach:_ Without a complete working pipeline, the
@@ -151,16 +151,16 @@ are as sensitive as the environment they came from until that work lands.
 - **2026-07-04** — WebResource-dependencies (`// flowline:depends`, RESX auto-link) integration tested against a real push ✓
 - **2026-07-14** — `push` NuGet package (`pluginpackage`/Dependent Assemblies) support: auto-detects `.nupkg` build output, per-assembly reflection and step registration for multi-DLL packages, orphan-cleanup redirect to the parent package ✓
 - **2026-08-01** — v1.0 release (moved from 2026-07-01, then 2026-07-20). Scope now includes the solution-file wiring, multi-plugin discovery, and project-layout/naming plans, which together set the scaffolded layout v1.0 commits to.
+- **2026-08-03**: `flowline init` for greenfield projects (create publisher + solution in DEV, scaffold the repo) shipped in 0.15.0 ✓
 
 ## Deferred
 
-- `flowline init` for greenfield projects (create publisher + solution in DEV, scaffold local structure) — post-v1
 - Restore state of workflows on deploy (`--no-restore` flag; requirements: `docs/brainstorms/2026-06-12-deploy-state-restoration-requirements.md`) — post-v1, and now contradicts `settings push`, which treats the settings file as the truth and defaults every state component to on. Its counter-argument is that it needs no settings file at all. Decide whether it survives before building it.
 - CLI observability Wave 4 (opt-in telemetry) — should-have, separate product decision
 - Secret resolution for `settings` files: reference indirection, a resolution chain, and plugin secure configuration (plan: `docs/plans/2026-09-05-1406-feat-configure-secret-resolution-plan.md`) — after `settings` ships. It also owns masking a secret on the read path, which `settings envvar` deliberately does not do yet
-- Export flags on `clone` and `sync`, and auto-applying configuration after a deploy — after `settings` ships
+- Export flags on `clone` and `pull`, and auto-applying configuration after a deploy — after `settings` ships
 - `flowline diff` extensions (plan: `docs/plans/2026-09-06-1229-feat-diff-command-plan.md`, "Future Extensions") — speculative, captured while the design was fresh rather than driven by a need that was hit. All stay inside `diff`'s git-only boundary; whether `diff` later becomes the container for every comparison Flowline makes is held open. Ranked:
-  - **Depth, agreed to do first.** Sub-change detail for the component types that render as a bare status line today — security roles (privileges), cloud flows and workflows, plugin steps, app modules and sitemap, environment variables. Roles are the sharpest gap: security-relevant and invisible. Improves what exists rather than adding surface, and lands in `sync`, `diff`, and `CHANGES.md` at once.
+  - **Depth, agreed to do first.** Sub-change detail for the component types that render as a bare status line today — security roles (privileges), cloud flows and workflows, plugin steps, app modules and sitemap, environment variables. Roles are the sharpest gap: security-relevant and invisible. Improves what exists rather than adding surface, and lands in `pull`, `diff`, and `CHANGES.md` at once.
   - **Reach.** Branch merge conflicts reported in Dataverse terms against a merge base; per-component commit history; rendering settings-file changes once `settings` ships.
   - **Distribution.** A deploy preview from the last deployed tag; a CI job posting the component summary on a solution pull request.
   - Cut: release-notes-shaped output distinct from the change tree.

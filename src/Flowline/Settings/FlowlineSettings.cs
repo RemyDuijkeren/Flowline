@@ -20,6 +20,12 @@ public class FlowlineSettings : CommandSettings
 
     internal static void ValidateForce(string[] force, string[] validSpecifiers, string commandName)
     {
+        // A command with nothing to gate (diff, scaffold, sln add, status) would otherwise print
+        // "Use one of: ." with an empty list.
+        if (validSpecifiers.Length == 0 && force.Length > 0)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"'{commandName}' has no force-gated behavior. Remove --force.");
+
         var invalid = force.FirstOrDefault(v => !validSpecifiers.Contains(v, StringComparer.OrdinalIgnoreCase));
         if (invalid != null)
             throw new FlowlineException(ExitCode.ValidationFailed,

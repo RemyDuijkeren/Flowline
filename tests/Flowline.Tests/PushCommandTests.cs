@@ -853,6 +853,16 @@ public class PushCommandTests : IDisposable
     // -- ValidateForce (R5, R11, AE1a) --
 
     [Fact]
+    public void ValidateForce_CommandWithNoSpecifiers_SaysItHasNothingToForce()
+    {
+        var act = () => FlowlineSettings.ValidateForce(["all"], [], "diff");
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed
+                && e.Message == "'diff' has no force-gated behavior. Remove --force.");
+    }
+
+    [Fact]
     public void ValidateForce_UnrecognizedValue_ThrowsNamingValidValues()
     {
         var settings = new PushCommand.Settings { Force = ["banana"] };
