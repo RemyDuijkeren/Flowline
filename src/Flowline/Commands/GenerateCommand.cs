@@ -201,13 +201,13 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
         SolutionInfo remoteSln;
         if (standaloneMode)
         {
-            await GetAndCheckStandaloneEnvironmentAsync(devUrl, cancellationToken, resolvedProfile);
+            await Environments.CheckByUrlAsync(devUrl, EnvironmentRole.Dev, cancellationToken, resolvedProfile);
             remoteSln = await GetAndCheckStandaloneSolutionAsync(solutionName, devUrl, cancellationToken);
         }
         else
         {
             // KTD8: skipTypeGuard — generate reads types, never mutates, so it accepts any role incl. Production.
-            var (devEnv, _) = await GetAndCheckEnvironmentAsync(devUrl, resolvedRole, cancellationToken, resolvedProfile, skipTypeGuard: true);
+            var (devEnv, _) = await Environments.CheckByUrlAsync(devUrl, resolvedRole, cancellationToken, resolvedProfile, skipTypeGuard: true);
             (_, remoteSln) = await GetAndCheckSolutionAsync(solutionName, devEnv.EnvironmentUrl!, cancellationToken: cancellationToken);
         }
 

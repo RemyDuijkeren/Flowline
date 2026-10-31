@@ -97,7 +97,7 @@ public abstract class SettingsCommandBase<TSettings>(
         string target, EnvironmentRole? role, TSettings settings, CancellationToken ct)
     {
         if (role is not null)
-            return await GetAndCheckEnvironmentInfoAsync(role.Value, null, ct);
+            return await Environments.CheckByRoleAsync(Config, role.Value, ct);
 
         var profile = await ProfileResolutionService.ResolveAsync(target, ct);
         var env = await Console.Status().FlowlineSpinner().StartAsync(

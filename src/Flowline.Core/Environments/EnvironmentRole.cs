@@ -35,6 +35,16 @@ public static class EnvironmentRoles
         _ => throw new ArgumentOutOfRangeException(nameof(role))
     };
 
+    /// <summary>The mixed-case label environment checks and pickers use ("Checking dev ...", "UAT").</summary>
+    public static string Label(this EnvironmentRole role) => role switch
+    {
+        EnvironmentRole.Prod => "Prod",
+        EnvironmentRole.Uat  => "UAT",
+        EnvironmentRole.Test => "Test",
+        EnvironmentRole.Dev  => "Dev",
+        _ => throw new ArgumentOutOfRangeException(nameof(role))
+    };
+
     /// <summary>The upper-case label status lines use ("DEV set to ...").</summary>
     public static string UpperLabel(this EnvironmentRole role) => role switch
     {

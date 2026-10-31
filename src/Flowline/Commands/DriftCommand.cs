@@ -179,7 +179,7 @@ public class DriftCommand(CommandServices services, DataverseConnector dataverse
     {
         var role = TryResolveRole(target);
         if (role is not null)
-            return await GetAndCheckEnvironmentInfoAsync(role.Value, null, ct);
+            return await Environments.CheckByRoleAsync(Config, role.Value, ct);
 
         var profile = await ProfileResolutionService.ResolveAsync(target, ct);
         var env = await Console.Status().FlowlineSpinner().StartAsync(

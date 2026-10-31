@@ -55,7 +55,7 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
         // saves a first-seen URL to .flowline in memory, so this doesn't route back through GetOrUpdateUrl.
         var source = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Prod, IsInteractive(), RuntimeOptions,
             (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, RuntimeOptions, settings.NoCache, ct), cancellationToken);
-        var (prodEnv, _) = await GetAndCheckEnvironmentAsync(source.Url, EnvironmentRole.Prod, cancellationToken);
+        var (prodEnv, _) = await Environments.CheckByUrlAsync(source.Url, EnvironmentRole.Prod, cancellationToken);
 
         // Prepare the target environment name and url
         var suffix = string.IsNullOrWhiteSpace(settings.Suffix)
@@ -73,7 +73,7 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
             Role.Uat  => EnvironmentRole.Uat,
             _ => throw new ArgumentOutOfRangeException(nameof(settings.Role))
         };
-        string? url = GetOrUpdateUrl(environmentRole, targetUrl);
+        string? url = Config.GetOrUpdateUrl(environmentRole, targetUrl, RuntimeOptions);
 
         if (url == null)
         {

@@ -30,4 +30,8 @@ public sealed class CommandServices(
     public SubprocessCapture Capture { get; } = capture;
     public NuGetVersionClient NuGetVersionClient { get; } = nuGetVersionClient;
     public FlowlineValidator Validator { get; } = validator;
+
+    // Built from the same console, profile service, validator and options as the rest of the bundle, so a
+    // command and its environment checks never read two different sets of runtime options.
+    public EnvironmentService Environments { get; } = new(console, profileResolutionService, validator, runtimeOptions);
 }

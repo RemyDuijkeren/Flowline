@@ -105,7 +105,7 @@ public class CloneCommand(CommandServices services,
     {
         var (sourceUrl, role) = await ResolveSourceUrlAsync(settings, config, cancellationToken);
 
-        var (env, _) = await GetAndCheckEnvironmentAsync(sourceUrl, role, cancellationToken);
+        var (env, _) = await Environments.CheckByUrlAsync(sourceUrl, role, cancellationToken);
         var (sln, info) = await GetAndCheckSolutionAsync(
             settings.Solution, env.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, cancellationToken);
 
@@ -159,7 +159,7 @@ public class CloneCommand(CommandServices services,
     async Task<EnvironmentRole> PickConfiguredRoleAsync(List<EnvironmentRole> configuredRoles, CancellationToken cancellationToken)
     {
         var choices = configuredRoles
-            .Select(r => (Label: RoleLabel(r), Role: r))
+            .Select(r => (Label: r.Label(), Role: r))
             .ToList();
         var prompt = new SelectionPrompt<(string Label, EnvironmentRole Role)>()
             .Title(FlowlineConsoleExtensions.Question("More than one environment is configured — pick which one to clone from:"))

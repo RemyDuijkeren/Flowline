@@ -55,6 +55,9 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     // turns them into assertions about nothing.
     protected virtual FlowlineValidator Validator => services.Validator;
 
+    /// <summary>Checks and looks up the environment a command is pointed at.</summary>
+    protected EnvironmentService Environments => services.Environments;
+
     // One definition for both ToolVersions construction sites (project setup and standalone setup), which
     // otherwise carried the same expression forty lines apart.
     static string ThisFlowlineVersion => FlowlineVersion.Display;
@@ -250,91 +253,13 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         Console.Ok("Prerequisites all good, let's go!");
     }
 
-    // Mixed-case label for the "Checking dev ..." spinner and the environment-check errors; null covers a
-    // use-once URL that belongs to no role.
-    protected static string RoleLabel(EnvironmentRole? role) => role switch
-    {
-        EnvironmentRole.Prod => "Prod",
-        EnvironmentRole.Uat  => "UAT",
-        EnvironmentRole.Test => "Test",
-        EnvironmentRole.Dev  => "Dev",
-        null => "Environment",
-        _ => throw new ArgumentOutOfRangeException(nameof(role))
-    };
-
     protected bool IsInteractive() => Console.Profile.Capabilities.Interactive;
-
-    // Single source of truth for choosing between the four ProjectConfig.GetOrUpdate*Url wrappers —
-    // ProvisionCommand's Role enum has no Prod member, so it converts to EnvironmentRole before calling
-    // this rather than duplicating its own switch.
-    protected string? GetOrUpdateUrl(EnvironmentRole role, string? inputUrl) => role switch
-    {
-        EnvironmentRole.Prod => Config.GetOrUpdateProdUrl(inputUrl, RuntimeOptions),
-        EnvironmentRole.Uat  => Config.GetOrUpdateUatUrl(inputUrl, RuntimeOptions),
-        EnvironmentRole.Test => Config.GetOrUpdateTestUrl(inputUrl, RuntimeOptions),
-        EnvironmentRole.Dev  => Config.GetOrUpdateDevUrl(inputUrl, RuntimeOptions),
-        _ => throw new ArgumentOutOfRangeException(nameof(role))
-    };
-
-    protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironmentInfoAsync(
-        EnvironmentRole role, string? inputUrl, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
-        bool skipTypeGuard = false, bool devOnly = false)
-    {
-        var label = RoleLabel(role);
-        var key = role.ConfigKey();
-
-        var url = GetOrUpdateUrl(role, inputUrl);
-
-        // The role flags are gone (KD5) — the only remaining callers here (configure/drift resolving a
-        // role keyword out of a positional <target>) have no flag to override a missing role URL with;
-        // the only way to supply one is the file itself, or passing a URL as <target> directly.
-        if (string.IsNullOrEmpty(url))
-            throw new FlowlineException(ExitCode.ConfigInvalid,
-                $"{label} URL isn't set in .flowline — add \"{key}\": \"<url>\" to .flowline.");
-
-        return await GetAndCheckEnvironmentAsync(url, role, cancellationToken, resolvedProfile, skipTypeGuard, devOnly);
-    }
-
-    // Non-persisting sibling of GetAndCheckEnvironmentInfoAsync above — for a caller (EnvironmentTargetResolver's
-    // consumers: push/sync/generate/init) that has already resolved its target URL and must not route it
-    // back through a GetOrUpdate*Url setter, which would save it into .flowline for an empty key even on a
-    // "use this URL once" result. role is nullable to cover exactly that use-once case (KD3) — skipTypeGuard
-    // is forced on whenever role is null, since there is then no role to check the environment's type against.
-    // devOnly lets a DEV-only caller (push/sync) refuse Production even when role came back null from a
-    // "use this URL once" pick, where the role-based guard below has nothing to check.
-    protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironmentAsync(
-        string url, EnvironmentRole? role, CancellationToken cancellationToken, PacProfile? resolvedProfile = null,
-        bool skipTypeGuard = false, bool devOnly = false)
-    {
-        var label = RoleLabel(role);
-
-        // Resolved before opening the status spinner — ProfileResolutionService.ResolveAsync can prompt
-        // interactively on an ambiguous match, and Spectre.Console throws if a prompt runs while a
-        // Status/Live display is active ("Trying to run one or more interactive functions concurrently").
-        var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(url, cancellationToken);
-        EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Checking {label.ToLower()} [bold]{url}[/]...",
-            ctx => Validator.GetEnvironmentInfoByUrlAsync(url, profile, RuntimeOptions, RuntimeOptions.NoCache, cancellationToken));
-
-        if (env == null)
-            throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
-
-        switch (skipTypeGuard ? EnvironmentTypeMismatch.None : EnvironmentTarget.CheckType(role, env.Type, devOnly))
-        {
-            case EnvironmentTypeMismatch.NotProduction:
-                throw new FlowlineException(ExitCode.ValidationFailed, "That environment isn't Production type — verify the URL in .flowline points to a Production environment.");
-            case EnvironmentTypeMismatch.Production:
-                throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
-        }
-
-        Console.Ok($"{label} env [bold]{env.DisplayName}[/] ({env.EnvironmentUrl}) exists");
-        return (env, profile);
-    }
 
     protected async Task<(IOrganizationServiceAsync2 Connection, PacProfile Profile)> ConnectToDataverseAsync(
         DataverseConnector dataverseConnector, string environmentUrl, CancellationToken cancellationToken, PacProfile? resolvedProfile = null)
     {
-        // Resolved before opening the status spinner — see the comment in GetAndCheckEnvironmentInfoAsync.
+        // Resolved before opening the status spinner: the profile lookup can prompt, and Spectre.Console
+        // throws if a prompt runs while a Status display is active.
         var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
         IOrganizationServiceAsync2? conn = null;
 
@@ -369,26 +294,10 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         return (projectSln, remoteSln);
     }
 
-    // Standalone-mode counterparts of GetAndCheckEnvironmentInfoAsync/GetAndCheckSolutionAsync above —
-    // shared by PushCommand and GenerateCommand's --pluginFile/no-project paths, which take the
-    // environment URL and solution name directly instead of resolving them through ProjectConfig.
-    protected async Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckStandaloneEnvironmentAsync(
-        string environmentUrl, CancellationToken cancellationToken, PacProfile? resolvedProfile = null)
-    {
-        var profile = resolvedProfile ?? await ProfileResolutionService.ResolveAsync(environmentUrl, cancellationToken);
-        EnvironmentInfo? env = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Checking dev [bold]{environmentUrl}[/]...",
-            _ => Validator.GetEnvironmentInfoByUrlAsync(environmentUrl, profile, RuntimeOptions, RuntimeOptions.NoCache, cancellationToken));
-
-        if (env == null)
-            throw new FlowlineException(ExitCode.ConnectionFailed, "Dev environment not found — check the URL or your PAC login.");
-        if (env.Type == "Production")
-            throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
-
-        Console.Ok($"Dev: [bold]{env.DisplayName}[/] ({env.EnvironmentUrl})");
-        return (env, profile);
-    }
-
+    // Standalone-mode counterpart of GetAndCheckSolutionAsync above, shared by PushCommand and
+    // GenerateCommand's --pluginFile/no-project paths, which take the solution name directly instead of
+    // resolving it through ProjectConfig.
+    //
     // bypassCache defaults false because push and generate have downstream work that would surface a
     // stale "solution still exists" answer. drift has none — it is a health-check signal whose whole
     // output is that answer — so it opts in, matching what its project-mode path already does.

@@ -95,27 +95,17 @@ public class FlowlineCommandTests
         Directory.Delete(isolated, recursive: true);
     }
 
-    // Minimal concrete subclass — FlowlineCommand<TSettings> is abstract, and ConnectToDataverseAsync /
-    // GetAndCheckEnvironmentInfoAsync are protected, so a test-local subclass is the only seam available.
+    // Minimal concrete subclass — FlowlineCommand<TSettings> is abstract, and ConnectToDataverseAsync is
+    // protected, so a test-local subclass is the only seam available.
     sealed class TestCommand(CommandServices services)
         : FlowlineCommand<FlowlineSettings>(services)
     {
-        // U3 seam — GetAndCheckEnvironmentAsync's env-existence check goes through this instead of a real
-        // pac subprocess when set.
-        internal FlowlineValidator? ValidatorOverride { get; set; }
-        protected override FlowlineValidator Validator => ValidatorOverride ?? base.Validator;
-
         protected override Task<int> ExecuteFlowlineAsync(CommandContext context, FlowlineSettings settings, CancellationToken cancellationToken) =>
             Task.FromResult(0);
 
         public Task<(IOrganizationServiceAsync2 Connection, PacProfile Profile)> Connect(
             DataverseConnector connector, string environmentUrl, CancellationToken cancellationToken, PacProfile? resolvedProfile = null) =>
             ConnectToDataverseAsync(connector, environmentUrl, cancellationToken, resolvedProfile);
-
-        public Task<(EnvironmentInfo Info, PacProfile Profile)> GetAndCheckEnvironment(
-            string url, EnvironmentRole? role, CancellationToken cancellationToken,
-            PacProfile? resolvedProfile = null, bool skipTypeGuard = false, bool devOnly = false) =>
-            GetAndCheckEnvironmentAsync(url, role, cancellationToken, resolvedProfile, skipTypeGuard, devOnly);
     }
 
     static TestCommand MakeCommand(ProfileResolutionService profileResolutionService)
@@ -179,104 +169,5 @@ public class FlowlineCommandTests
         }
 
         resolveCalls.Should().Be(1);
-    }
-
-    // ── GetAndCheckEnvironmentAsync (U3): the non-persisting sibling of GetAndCheckEnvironmentInfoAsync,
-    // used by push/pull/generate/init once EnvironmentTargetResolver has already resolved the URL. ──
-
-    const string EnvUrl = "https://contoso-dev.crm4.dynamics.com";
-
-    static FlowlineValidator MakeValidator(string? environmentType)
-    {
-        var tempFile = Path.Combine(Path.GetTempPath(), $"flowline-validation-cache-{Guid.NewGuid()}.json");
-        var probes = new ValidationProbes
-        {
-            GetEnvironmentByProfileAsync = (_, url, _) =>
-                Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, DisplayName = "Contoso", Type = environmentType })
-        };
-        return new FlowlineValidator(new Flowline.Core.Validation.ValidationCacheStore(tempFile), probes);
-    }
-
-    static TestCommand MakeCommandWithValidator(FlowlineValidator validator)
-    {
-        var console = new TestConsole();
-        var connector = new DataverseConnector(console, new HttpClient());
-        var profileService = new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions());
-        var command = MakeCommand(profileService);
-        command.ValidatorOverride = validator;
-        return command;
-    }
-
-    [Fact]
-    public async Task GetAndCheckEnvironmentAsync_RoleDev_ProductionType_SkipTypeGuardFalse_Throws()
-    {
-        var command = MakeCommandWithValidator(MakeValidator("Production"));
-        var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
-
-        var act = () => command.GetAndCheckEnvironment(EnvUrl, EnvironmentRole.Dev,
-            CancellationToken.None, resolvedProfile: profile);
-
-        (await act.Should().ThrowAsync<FlowlineException>())
-            .Where(e => e.ExitCode == ExitCode.ValidationFailed);
-    }
-
-    [Fact]
-    public async Task GetAndCheckEnvironmentAsync_SkipTypeGuardTrue_RoleDev_ProductionType_DoesNotThrow()
-    {
-        // KTD8: generate's own call passes skipTypeGuard:true so it can target Production.
-        var command = MakeCommandWithValidator(MakeValidator("Production"));
-        var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
-
-        var (info, _) = await command.GetAndCheckEnvironment(EnvUrl, EnvironmentRole.Dev,
-            CancellationToken.None, resolvedProfile: profile, skipTypeGuard: true);
-
-        info.Type.Should().Be("Production");
-    }
-
-    [Fact]
-    public async Task GetAndCheckEnvironmentAsync_RoleNull_ProductionType_SkipTypeGuardFalse_DoesNotThrow()
-    {
-        // KD3's "use this URL once" result carries Role:null — there is then no role to check the
-        // environment's type against, so the Prod/non-Prod guard is skipped even though skipTypeGuard
-        // wasn't explicitly requested. Safe because EnvironmentTargetResolver already vetted the URL
-        // before ever returning a use-once result.
-        var command = MakeCommandWithValidator(MakeValidator("Production"));
-        var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
-
-        var act = () => command.GetAndCheckEnvironment(EnvUrl, null,
-            CancellationToken.None, resolvedProfile: profile);
-
-        await act.Should().NotThrowAsync();
-    }
-
-    [Fact]
-    public async Task GetAndCheckEnvironmentAsync_DevOnlyTrue_RoleNull_ProductionType_Throws()
-    {
-        // Push/pull's "use this URL once" result also carries Role:null, but push/pull are DEV-only
-        // commands — devOnly:true must still refuse Production even without a role to check.
-        var command = MakeCommandWithValidator(MakeValidator("Production"));
-        var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
-
-        var act = () => command.GetAndCheckEnvironment(EnvUrl, null,
-            CancellationToken.None, resolvedProfile: profile, devOnly: true);
-
-        (await act.Should().ThrowAsync<FlowlineException>())
-            .Where(e => e.ExitCode == ExitCode.ValidationFailed);
-    }
-
-    [Fact]
-    public async Task GetAndCheckEnvironmentAsync_EnvironmentNotFound_ThrowsConnectionFailed()
-    {
-        var command = MakeCommandWithValidator(MakeValidator(null));
-        command.ValidatorOverride = new FlowlineValidator(
-            new Flowline.Core.Validation.ValidationCacheStore(Path.Combine(Path.GetTempPath(), $"flowline-validation-cache-{Guid.NewGuid()}.json")),
-            new ValidationProbes { GetEnvironmentByProfileAsync = (_, _, _) => Task.FromResult<EnvironmentInfo?>(null) });
-        var profile = new PacProfile { Name = "Contoso", Resource = EnvUrl };
-
-        var act = () => command.GetAndCheckEnvironment(EnvUrl, EnvironmentRole.Dev,
-            CancellationToken.None, resolvedProfile: profile);
-
-        (await act.Should().ThrowAsync<FlowlineException>())
-            .Where(e => e.ExitCode == ExitCode.ConnectionFailed);
     }
 }
