@@ -104,7 +104,6 @@
 <li><a href="#i3">Make the written contract match the code</a> (implemented)</li>
 <li><a href="#i4">One test that enforces the surface rules over the real command tree</a></li>
 <li><a href="#i5">Name the settings verbs for what they do, and require a component name for writes</a> (decided)</li>
-<li><a href="#i6">Retire the <code>xrmcontext3</code> generator backend</a></li>
 </ol>
 </nav>
 
@@ -253,25 +252,11 @@ flowline settings set     &lt;target&gt; [name] [--type ...] [--value &lt;value&
 </dl>
 </article>
 
-<article class="idea" id="i6">
-<h3>6. Retire the <code>xrmcontext3</code> generator backend</h3>
-<div class="chips"><span>Axis D</span><span>Confidence 45%</span><span>Complexity Low</span></div>
-<dl>
-<dt>Description</dt>
-<dd><code>generate</code> carries four backends. <code>xrmcontext3</code> can't run unattended on a UNIVERSAL profile, and its own error message sends users to XrmContext v4. Deprecate it with a warning for one release, then remove it. Keep <code>generate</code> itself and the client credential flags (C10); this only shrinks the backends Flowline has to test and support.</dd>
-<dt>Basis</dt>
-<dd><code>direct:</code> "xrmcontext3 uses ADAL browser OAuth for UNIVERSAL profiles …" and "Alternatively, upgrade to XrmContext v4 using --generator xrmcontext" (<code>GenerateCommand.cs:368-372</code>).</dd>
-<dt>Rationale</dt>
-<dd>It is the one backend that breaks the unattended contract AGENTS.md says most runs depend on, and the code already recommends the replacement.</dd>
-<dt>Downsides</dt>
-<dd>No usage data, so the cost to anyone still on v3 output is unknown. The saving is real but small; this may not be worth a meeting on its own.</dd>
-</dl>
-</article>
 </section>
 
 <section id="rejection-summary">
 <h2>Rejection Summary</h2>
-<p>39 raw ideas from 5 frames, merged to 21 candidates, 6 survivors. Some rows below are sub-ideas folded out of a survivor rather than separate candidates. A separate verifier checked every basis against the repo.</p>
+<p>39 raw ideas from 5 frames, merged to 21 candidates, 5 survivors (a sixth was withdrawn after review, R17). Some rows below are sub-ideas folded out of a survivor rather than separate candidates. A separate verifier checked every basis against the repo.</p>
 <div class="table-wrap"><table>
 <thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
 <tbody>
@@ -290,7 +275,8 @@ flowline settings set     &lt;target&gt; [name] [--type ...] [--value &lt;value&
 <tr><td>R13</td><td>Three command kinds with their own grammar, grouped in help</td><td>Restates C1 as a taxonomy. The one rule it would enforce is already enforced by C1 and idea 4.</td></tr>
 <tr><td>R14</td><td>Drop <code>init --publisher-name</code></td><td>Below the meeting floor; nobody has hit it.</td></tr>
 <tr><td>R15</td><td>Expose the provision unmanaged guard as its own check</td><td>Not grounded in a user need.</td></tr>
-<tr><td>R16</td><td>Treat generate backends as Terraform-style providers</td><td>Duplicates idea 6 at higher cost. The premise that <code>--client-id</code> is xrmcontext3-only was refuted (<code>GenerateCommand.cs:196-203</code>).</td></tr>
+<tr><td>R16</td><td>Treat generate backends as Terraform-style providers</td><td>Duplicates the withdrawn xrmcontext3 idea (R17) at higher cost. The premise that <code>--client-id</code> is xrmcontext3-only was refuted (<code>GenerateCommand.cs:196-203</code>).</td></tr>
+<tr><td>R17</td><td>Retire the <code>xrmcontext3</code> generator backend</td><td>Withdrawn 2026-10-31: XrmContext v4 is not released yet, so <code>xrmcontext3</code> is the only released XrmContext and has no replacement to point users at.</td></tr>
 </tbody></table></div>
 </section>
 
