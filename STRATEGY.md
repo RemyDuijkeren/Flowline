@@ -33,6 +33,30 @@ config required. A consultant can start with `flowline push` on an existing clie
 project without committing to the full workflow; adopt `clone`, `sync`, and
 `deploy` when ready. Low adoption friction is a deliberate design choice.
 
+**Compose PAC, don't mirror it.** Flowline is the Git delivery loop on top of PAC
+CLI, PACX and the dotnet SDK, not a second copy of them. A command or flag earns a
+place when it does at least one of these: ties primitives into the clone → push →
+pull → deploy loop, guards against a loss the underlying tool would allow, or keeps
+state in the repo that the tool has nowhere to keep. A one-to-one pass-through of a
+single `pac`, `pacx` or `dotnet` verb fails the test, and the help names that verb
+instead. That is why there is no `pack` or `publish`, and why `deprovision` and
+`restore` stay open: each would add a guard PAC lacks (CLI surface review G1, G2,
+G4, G5, `docs/reviews/2026-09-08-cli-command-surface-design-review.md`).
+
+Every command, against the tool it overlaps:
+
+| Command | Overlaps | Passes because |
+|---|---|---|
+| `clone`, `pull`, `deploy`, `drift`, `diff` | `pac solution clone`, `sync`, `export`, `import` | Git state, version bump, change report, pre-deploy backup, DTAP and drift gates, orphan cleanup |
+| `push` | `pac plugin push`, `pacx plugin push`, `pacx webresources push` | Plugin steps registered from attributes, orphans removed, web resource dependencies linked |
+| `provision` | `pac admin copy` | Refuses to copy over a target whose unmanaged solutions would be lost |
+| `settings` | `pac solution create-settings`, `pacx workflow activate`, `pacx plugin step enable` | One git-tracked file per environment covering values and component state; `toggle` and `set` offer to record each change in that file |
+| `generate` | `pac modelbuilder build` | Types scoped to the solution's tables, choices saved in `.flowline`, hand-written files in `Plugins/Models/` kept on regenerate |
+| `init` | `pac solution init` (local only), `pacx solution create` | Solution, and a publisher when none matches, created in DEV in one run, then the repo scaffolded around them |
+| `scaffold` | `pac plugin init`, `pacx webresources init` | Project named after the solution file and added to it |
+| `status` | none | Configured environments, PAC auth and git state in one report |
+| `sln add` | `dotnet sln add` | `dotnet sln add` refuses a `.cdsproj` and exits 0 ([dotnet/sdk#47638](https://github.com/dotnet/sdk/issues/47638)). Delete it once that is fixed. |
+
 ## Who it's for
 
 **Primary:** Solo or small-team technical consultant — they're hiring Flowline to

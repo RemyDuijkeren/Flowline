@@ -205,3 +205,4 @@ When changing a command, walk this:
 - [ ] Result data in plain lines, not only styling
 - [ ] Re-running converges (or the state advance is deliberate and visible)
 - [ ] New flag named `--skip-<check>` for a read-only gate, `--no-<action>` for a write; unknown options still fail parsing
+- [ ] New command or flag passes the boundary test in [`STRATEGY.md`](../../../STRATEGY.md) ("Compose PAC, don't mirror it"); a pass-through of one `pac`, `pacx` or `dotnet` verb names that verb instead

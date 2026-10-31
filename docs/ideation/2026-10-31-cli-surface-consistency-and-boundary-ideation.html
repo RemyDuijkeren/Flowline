@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: Flowline CLI surface consistency and responsibility boundary</title>
+<style>
+  :root { --fg:#1d1f23; --muted:#5b6170; --line:#dde1e8; --bg:#fbfbfc; --card:#fff; --accent:#2a5bd7; --keep:#1f7a4d; --warn:#9a5b00; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e6e8ec; --muted:#a2a8b5; --line:#343842; --bg:#16181c; --card:#1d2026; --accent:#7ea2ff; --keep:#5fc596; --warn:#e0a54a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 52rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  h1 { font-size: 1.9rem; line-height:1.25; margin: 0 0 .4rem; }
+  h2 { font-size: 1.35rem; margin: 2.6rem 0 .8rem; padding-bottom:.3rem; border-bottom: 2px solid var(--line); }
+  h3 { font-size: 1.12rem; margin: 0 0 .5rem; }
+  .meta { color: var(--muted); margin: 0 0 1rem; }
+  details.docmeta { color:var(--muted); font-size:.9rem; margin-bottom:1.5rem; }
+  details.docmeta dl { display:grid; grid-template-columns:max-content 1fr; gap:.2rem 1rem; }
+  code { font: .9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: rgba(127,127,127,.12); padding: .05em .3em; border-radius: 3px; }
+  .table-wrap { overflow-x:auto; }
+  table { border-collapse: collapse; width:100%; font-size:.93rem; margin:.6rem 0 1rem; }
+  th, td { text-align:left; vertical-align:top; padding:.45rem .6rem; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; }
+  article.idea { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:1.1rem 1.25rem; margin:1.1rem 0; }
+  article.idea dl { margin:.4rem 0 0; }
+  article.idea dt { font-weight:600; margin-top:.6rem; }
+  article.idea dd { margin:.1rem 0 0; }
+  .chips { display:flex; gap:.5rem; flex-wrap:wrap; font-size:.85rem; color:var(--muted); margin:.1rem 0 .4rem; }
+  .chips span { border:1px solid var(--line); border-radius:999px; padding:.05rem .55rem; }
+  nav.jump ol { padding-left:1.3rem; }
+  .keep { color:var(--keep); font-weight:600; }
+  .warn { color:var(--warn); font-weight:600; }
+  ul.tight li { margin:.15rem 0; }
+  footer.composition-signal { margin-top:3rem; color:var(--muted); font-size:.85rem; border-top:1px solid var(--line); padding-top:.8rem; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>Ideation: Flowline CLI surface consistency and responsibility boundary</h1>
+  <p class="meta"><time datetime="2026-10-31">2026-10-31</time> · Focus: inconsistent CLI API choices to correct, and which commands belong to PAC, PACX or dotnet instead of Flowline</p>
+</header>
+<details class="docmeta">
+  <summary>Document metadata</summary>
+  <dl>
+    <dt>date</dt><dd>2026-10-31</dd>
+    <dt>topic</dt><dd>cli-surface-consistency-and-boundary</dd>
+    <dt>focus</dt><dd>look at the CLI API of Flowline and look for inconsistent API choices that should be corrected (and how to do that); which commands or parts should not be the responsibility of Flowline CLI but of other tools like PACX</dd>
+    <dt>mode</dt><dd>repo-grounded</dd>
+  </dl>
+</details>
+
+<section id="grounding-context">
+<h2>Grounding Context</h2>
+<h3>Codebase Context</h3>
+<p>Sixteen leaf commands registered in <code>src/Flowline/Program.cs:405-566</code>, with two branches (<code>settings</code>, <code>sln</code>) and StrictParsing on. Every global and per-command option was read from the settings classes on 2026-10-31.</p>
+<p><strong>Most of the obvious inconsistencies are already decided.</strong> <code>docs/reviews/2026-09-08-cli-command-surface-design-review.md</code> decided 33 findings on 2026-09-08, and the plan that followed shipped them. This run treats those decisions as binding and does not reopen them without new evidence:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Looks inconsistent</th><th>Decided as</th><th>ID</th></tr></thead>
+<tbody>
+<tr><td><code>--env</code> flag on some commands, positional <code>&lt;target&gt;</code> on others</td><td>Required input is positional, optional input with a default is a flag</td><td>C1</td></tr>
+<tr><td><code>--skip-*-check</code> next to <code>--no-*</code></td><td><code>--skip-</code> for read-only verdicts, <code>--no-</code> for writes. Rule is in the cli-for-agents skill (<code>SKILL.md:178-186</code>)</td><td>C4</td></tr>
+<tr><td><code>--dry-run</code> missing on pull, generate, provision, init, clone; deploy's dry run takes a backup</td><td>Rejected: git is the dry run for pull and generate, no value for the rest</td><td>C6</td></tr>
+<tr><td><code>--no-cache</code> also forces a fresh pack on deploy</td><td>Accepted, with the pack note moved into deploy's own description</td><td>C7</td></tr>
+<tr><td>Flags that silently save to <code>.flowline</code></td><td>Kept, changing a saved value needs a prompt or <code>--force config</code></td><td>C2</td></tr>
+<tr><td><code>--path</code> instead of a Flowline-specific name</td><td>Kept, it is PAC's own flag name</td><td>C15</td></tr>
+<tr><td>No <code>pack</code>, <code>publish</code>, <code>config</code> commands; no <code>--json</code></td><td>Rejected ("PAC has this one"); <code>--json</code> deferred until a real consumer</td><td>G1, G2, G3, G6</td></tr>
+<tr><td><code>sync</code> as a name for pull</td><td>Dropped (commit <code>c336423</code>); name reserved (<code>Program.cs:438</code>)</td><td>P4</td></tr>
+</tbody></table></div>
+<p><strong>What is new since the review:</strong> the <code>settings</code> branch (<code>push</code>, <code>pull</code>, <code>toggle</code>, <code>set</code>) shipped after P10 deferred its grammar. It brought a fourth way of naming the solution (<code>--solution-name</code>), a second meaning of <code>push</code>/<code>pull</code>, and a <code>--settings-file</code> flag that is an input on one verb and an output on the other.</p>
+<h3>Past learnings</h3>
+<ul class="tight">
+<li>The review used two rules for the PAC boundary without writing either: "PAC has this one" (G1, G2) and "the wrapper adds what PAC lacks" (G4, G5). Neither STRATEGY.md nor the cli-for-agents skill states a boundary rule (grep, 2026-10-31).</li>
+<li>STRATEGY.md:68-71 owns type generation: it "removes the last reason to keep spkl installed". STRATEGY.md:31 keeps <code>push</code> and <code>generate</code> usable without a project.</li>
+<li><code>sln add</code> exists because <code>dotnet sln add</code> refuses a <code>.cdsproj</code> and exits 0 (<code>SlnAddCommand.cs:19</code>, dotnet/sdk#47638).</li>
+</ul>
+<h3>External context</h3>
+<ul class="tight">
+<li>PACX (Greg.Xrm.Command) is active (1.2026.10.257, 19 Oct 2026). It is a Dataverse metadata toolkit, not Git ALM. It overlaps on <code>solution create</code>, <code>plugin push</code>, <code>plugin step enable|disable</code>, <code>webresources push|init</code>, <code>workflow activate|deactivate</code>, <code>forms</code>, <code>view</code>. <code>pacx settings</code> is org settings, not deployment settings.</li>
+<li>PAC overlaps on <code>solution clone|sync|export|unpack|pack|import|create-settings</code>, <code>plugin init|push</code>, <code>modelbuilder build</code>, <code>admin copy</code>. PAC's own option casing is inconsistent (<code>--outputDirectory</code> next to <code>--settings-file</code>).</li>
+<li>No surveyed tool combines a Git clone, push, pull and deploy loop with DEV branched from PROD. That loop is the part only Flowline has.</li>
+<li>clig.dev: same flag name for the same thing across subcommands; prefer flags over positionals; <code>-o/--output</code> for output.</li>
+</ul>
+</section>
+
+<section id="topic-axes">
+<h2>Topic Axes</h2>
+<ol type="A">
+<li>How a command names what it acts on (environment, solution, artifact)</li>
+<li>Flag vocabulary and semantics (skip/no, dry-run, force, persisted flags, output, cache)</li>
+<li>Command grammar (branches, aliases, verbs reused at two levels)</li>
+<li>What stays in Flowline vs PAC, PACX, dotnet, XrmToolBox</li>
+<li>Machine-drivable contract and doc drift</li>
+</ol>
+</section>
+
+<section id="ranked-ideas">
+<h2>Ranked Ideas</h2>
+<nav class="jump" aria-label="Ranked ideas">
+<ol>
+<li><a href="#i1">Write the boundary rule down and run every command through it</a> (implemented)</li>
+<li><a href="#i2">One spelling for the solution name: <code>--solution-name</code></a></li>
+<li><a href="#i3">Make the written contract match the code</a></li>
+<li><a href="#i4">One test that enforces the surface rules over the real command tree</a></li>
+<li><a href="#i5">Rename <code>settings push</code>/<code>pull</code> before the verbs set</a></li>
+<li><a href="#i6">Retire the <code>xrmcontext3</code> generator backend</a></li>
+</ol>
+</nav>
+
+<article class="idea" id="i1">
+<h3>1. Write the boundary rule down and run every command through it</h3>
+<div class="chips"><span>Axis D</span><span>Confidence 80%</span><span>Complexity Low</span><span class="keep">Implemented</span></div>
+<p class="implemented"><strong>Implemented 2026-10-31</strong> in the commit "docs(strategy): state the PAC boundary rule and check every command against it": the rule and the per-command table are in <code>STRATEGY.md</code> under "Compose PAC, don't mirror it", and the cli-for-agents review checklist links to it.</p>
+<dl>
+<dt>Description</dt>
+<dd>
+<p>Add a boundary section to STRATEGY.md with one admission test. A Flowline command earns its place when it composes PAC or dotnet primitives into the Git delivery loop, or adds a guard or state those tools lack. A one-to-one pass-through of a single <code>pac</code> or <code>pacx</code> verb is refused, and the help points at that verb instead. Link the test from the cli-for-agents checklist so new commands meet it before review.</p>
+<p>Running today's surface through it answers your second question. Every command passes, and the reason each one passes is the thing to write down:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>Overlapping tool</th><th>What Flowline adds</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><td>clone, pull, deploy, drift, diff</td><td><code>pac solution clone|sync|import</code></td><td>Git state, version bump, change report, backup, DTAP and drift gates, orphan delete</td><td class="keep">Keep (the product)</td></tr>
+<tr><td>push</td><td><code>pac plugin push</code>, <code>pacx plugin push</code>, <code>pacx webresources push</code></td><td>Attribute-driven step registration, orphan cleanup, NuGet packages, web resource dependencies</td><td class="keep">Keep, say why in help</td></tr>
+<tr><td>provision</td><td><code>pac admin copy</code></td><td>Blocks a copy over unmanaged solutions that would be lost (<code>ProvisionCommand.cs:145-162</code>), role to copy type</td><td class="keep">Keep</td></tr>
+<tr><td>settings toggle, set</td><td><code>pacx workflow activate</code>, <code>pacx plugin step enable</code></td><td>Eight component kinds behind one grammar, dry run, and an offer to write the change back into the settings file (<code>SettingsComponentCommands.cs:391-438</code>). PACX has no file.</td><td class="keep">Keep</td></tr>
+<tr><td>generate</td><td><code>pac modelbuilder build</code></td><td>Solution-scoped tables, saved settings, three other backends, safe overwrite of Plugins/Models</td><td class="keep">Keep (STRATEGY.md:68-71)</td></tr>
+<tr><td>sln add</td><td><code>dotnet sln add</code></td><td>Works around the SDK silently refusing a <code>.cdsproj</code> (<code>SlnAddCommand.cs:19</code>)</td><td class="warn">Keep until dotnet/sdk#47638 closes, then delete</td></tr>
+<tr><td>scaffold</td><td><code>pac plugin init</code>, <code>pacx webresources init</code></td><td>Templates bound to the solution file and the Flowline layout</td><td class="keep">Keep</td></tr>
+<tr><td>init</td><td><code>pac solution init</code> (local only), <code>pacx solution create</code></td><td>Publisher and solution created online in one step, then the repo scaffolded</td><td class="keep">Keep</td></tr>
+</tbody></table></div>
+</dd>
+<dt>Basis</dt>
+<dd><code>reasoned:</code> G1 and G2 were rejected because "PAC has this one", and G4 was deferred because "the wrapper adds what PAC lacks" (review). Neither rule is written anywhere: no boundary text in STRATEGY.md or <code>.claude/skills/cli-for-agents/SKILL.md</code> (grep). <code>direct:</code> the per-command gaps cite <code>SlnAddCommand.cs:19</code>, <code>ProvisionCommand.cs:152</code> and <code>SettingsComponentCommands.cs:391-438</code>, all read during verification. <code>external:</code> PACX wiki and PAC reference for the overlaps.</dd>
+<dt>Rationale</dt>
+<dd>The honest answer to "what should move to PACX" is: nothing today. Without a written rule, though, the question comes back each time PAC or PACX adds a verb. With the rule and the ledger, each recurrence takes a minute. The <code>sln add</code> row is the only one with an expiry date.</dd>
+<dt>Downsides</dt>
+<dd>A doc, not a code change, so it only helps if the review checklist points at it. The PACX overlap was checked against its wiki, not its source; whether PACX binds connection references or sets environment variable values is unverified.</dd>
+</dl>
+</article>
+
+<article class="idea" id="i2">
+<h3>2. One spelling for the solution name: <code>--solution-name</code></h3>
+<div class="chips"><span>Axis A</span><span>Confidence 70%</span><span>Complexity Medium</span></div>
+<dl>
+<dt>Description</dt>
+<dd>Outside a project, <code>push</code> and <code>generate</code> take the solution as an optional positional <code>[solution]</code>. The settings commands take the same thing as <code>--solution-name</code>. Inside a project, push and generate accept the positional and check it against <code>.flowline</code>. Settings refuses the flag outright. Use the settings shape on push and generate: <code>--solution-name</code>, accepted only without a project. The old positional then fails as an unexpected argument. Keep a positional only on <code>clone</code> and <code>init</code>, where it names the thing being cloned or created.</dd>
+<dt>Basis</dt>
+<dd><code>direct:</code> push validates a passed solution against config (<code>PushCommand.cs:97</code>), and generate does the same (<code>GenerateCommand.cs:122</code>). Settings: "--solution-name only applies outside a Flowline project. Inside one the solution comes from the project …" (<code>SettingsSupport.cs:77</code>). C1 says optional input is a flag, so the settings shape is the one that already follows the rule.</dd>
+<dt>Rationale</dt>
+<dd>This is the most likely guessed-wrong argument for an agent moving between commands, and the only one that differs in behaviour as well as spelling. It also leaves room for a later rule: no command accepts a solution name inside a project.</dd>
+<dt>Downsides</dt>
+<dd>Breaking for stand-alone users: <code>push ContosoCustomizations</code> is a registered help example (<code>Program.cs:436</code>), and the README and wiki use the positional. Stand-alone mode is the progressive-adoption path (STRATEGY.md:31), so the break lands on new users. A one-release error that names the new flag softens it.</dd>
+</dl>
+</article>
+
+<article class="idea" id="i3">
+<h3>3. Make the written contract match the code</h3>
+<div class="chips"><span>Axis E</span><span>Confidence 90%</span><span>Complexity Low</span></div>
+<dl>
+<dt>Description</dt>
+<dd>
+<p>One pass that brings the rules agents read in line with the shipped surface:</p>
+<ul class="tight">
+<li>cli-for-agents <code>SKILL.md:82</code> ("<code>--dry-run</code> on anything that writes") and checklist line 201 contradict C6. Scope the rule to what C6 kept: Dataverse writes that git can't undo.</li>
+<li>STRATEGY.md still says <code>sync</code> (lines 24, 33, 54, 60) and lists <code>init</code> as post-v1 (line 133).</li>
+<li><code>--client-id</code> and <code>--client-secret</code> help says "(XrmContext/XrmContext3 only)" (<code>GenerateCommand.cs:55,59</code>). The code also promotes the profile to a service principal for other generators (<code>GenerateCommand.cs:196-203</code>).</li>
+<li><code>diff --force x</code>, <code>scaffold --force x</code> and <code>sln add --force x</code> fail with "Use one of: ." and an empty list (<code>FlowlineSettings.cs:26</code>, empty default at <code>FlowlineCommand.cs:77</code>). <code>status</code> has a hand-written message for the same case. Give the empty-list case the status message.</li>
+</ul>
+</dd>
+<dt>Basis</dt>
+<dd><code>direct:</code> every line cited above was read during verification. The C6 decision text: "both are reversible with git … is the dry run" (review, C6).</dd>
+<dt>Rationale</dt>
+<dd>Agents treat the skill checklist as policy. An unscoped dry-run rule will get C6 reopened by accident at the next review, and STRATEGY.md sends readers looking for a command that is reserved and unregistered.</dd>
+<dt>Downsides</dt>
+<dd>No single item would justify a meeting. It belongs in the list because idea 4 can only enforce rules that are written correctly.</dd>
+</dl>
+</article>
+
+<article class="idea" id="i4">
+<h3>4. One test that enforces the surface rules over the real command tree</h3>
+<div class="chips"><span>Axis B</span><span>Confidence 75%</span><span>Complexity Medium</span></div>
+<dl>
+<dt>Description</dt>
+<dd>Walk the registered command tree from the same configuration the CLI uses and assert the decided rules instead of remembering them:
+<ul class="tight">
+<li>Every option has a description.</li>
+<li>A flag name (<code>--dry-run</code>, <code>--exit-code</code>, <code>--path</code>, <code>--solution-name</code>, <code>--settings-file</code>) has one type and one direction everywhere.</li>
+<li><code>--skip-</code> appears only on read-only gates.</li>
+<li>Every <code>--force</code> vocabulary is non-empty or the command rejects <code>--force</code> clearly.</li>
+<li>Aliases come from an allow-list, so <code>new</code> stays allowed under P11.</li>
+</ul>
+Known deviations go in a named allow-list with their decision ID, so the list only shrinks. Pair it with a short vocabulary table in the cli-for-agents skill: one row per concept (environment, solution, input artifact, output file, preview, exit-on-findings), the canonical spelling, and the allowed exceptions.</dd>
+<dt>Basis</dt>
+<dd><code>direct:</code> the parsing tests already build the real app: "every app here is built through CliConfiguration.Configure, the same method Program.cs calls" (<code>tests/Flowline.Tests/ProgramParsingTests.cs:8-9</code>). Those tests guard one old spelling each (for example the <code>--pluginFile</code> case); nothing guards a new one. The checklist rules exist only as prose (<code>SKILL.md:199-207</code>).</dd>
+<dt>Rationale</dt>
+<dd>The settings branch introduced three new inconsistencies within weeks of a full surface review. A review fixes the surface once; a test keeps it fixed. It would have caught the <code>--settings-file</code> direction split and the empty force list.</dd>
+<dt>Downsides</dt>
+<dd>Reading the command model from Spectre needs reflection over settings types, which costs test upkeep. Some rules (a flag's direction) need a hand-kept table and can't be inferred.</dd>
+</dl>
+</article>
+
+<article class="idea" id="i5">
+<h3>5. Rename <code>settings push</code>/<code>pull</code> before the verbs set</h3>
+<div class="chips"><span>Axis C</span><span>Confidence 55%</span><span>Complexity Medium</span></div>
+<dl>
+<dt>Description</dt>
+<dd>Root <code>push</code> registers code assets into DEV and root <code>pull</code> exports the solution from DEV. <code>settings push</code> applies a settings file to any environment and <code>settings pull</code> writes one from any environment. Same verbs, different objects, different environment rules. Rename the settings pair after what it does, the way KTD25 already named <code>toggle</code> and <code>set</code>: <code>settings apply</code> and <code>settings capture</code>. Each verb then appears once in the tree with one meaning. <code>--settings-file</code> is still an input on one and an output on the other, but "apply a file" and "capture to a file" make that direction obvious.</dd>
+<dt>Basis</dt>
+<dd><code>direct:</code> "Two component operations, named for what they do rather than for what they address (KTD25)" (<code>Program.cs:531-532</code>). P10 deferred the settings grammar; it shipped afterwards (commit <code>d0cddbe</code>), so this does not reopen a decision.</dd>
+<dt>Rationale</dt>
+<dd>An agent that learns <code>pull</code> as "DEV only, clean tree" carries that to <code>settings pull test</code> and gets it wrong. The settings branch is still pre-1.0 and has had one rename already, so a second costs little now and more later.</dd>
+<dt>Downsides</dt>
+<dd>Breaking, and the second rename of this branch in two months. Push/pull pairs well with git and PAC habits; apply/capture is clearer but less familiar. Leaving the names and adding one line to the branch description is the cheap fallback.</dd>
+</dl>
+</article>
+
+<article class="idea" id="i6">
+<h3>6. Retire the <code>xrmcontext3</code> generator backend</h3>
+<div class="chips"><span>Axis D</span><span>Confidence 45%</span><span>Complexity Low</span></div>
+<dl>
+<dt>Description</dt>
+<dd><code>generate</code> carries four backends. <code>xrmcontext3</code> can't run unattended on a UNIVERSAL profile, and its own error message sends users to XrmContext v4. Deprecate it with a warning for one release, then remove it. Keep <code>generate</code> itself and the client credential flags (C10); this only shrinks the backends Flowline has to test and support.</dd>
+<dt>Basis</dt>
+<dd><code>direct:</code> "xrmcontext3 uses ADAL browser OAuth for UNIVERSAL profiles …" and "Alternatively, upgrade to XrmContext v4 using --generator xrmcontext" (<code>GenerateCommand.cs:368-372</code>).</dd>
+<dt>Rationale</dt>
+<dd>It is the one backend that breaks the unattended contract AGENTS.md says most runs depend on, and the code already recommends the replacement.</dd>
+<dt>Downsides</dt>
+<dd>No usage data, so the cost to anyone still on v3 output is unknown. The saving is real but small; this may not be worth a meeting on its own.</dd>
+</dl>
+</article>
+</section>
+
+<section id="rejection-summary">
+<h2>Rejection Summary</h2>
+<p>39 raw ideas from 5 frames, merged to 21 candidates, 6 survivors. Some rows below are sub-ideas folded out of a survivor rather than separate candidates. A separate verifier checked every basis against the repo.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+<tbody>
+<tr><td>R1</td><td>Hand <code>settings toggle</code>/<code>set</code> to PACX</td><td>Basis refuted: both offer to write the change back into the settings file (<code>SettingsComponentCommands.cs:391-438</code>); PACX has no file. Recorded as a keep in idea 1.</td></tr>
+<tr><td>R2</td><td>Split <code>--no-cache</code> into pre-flight and repack flags</td><td>Already decided: C7 accepted the dual meaning and moved the pack note into deploy's description. C4 keeps <code>--no-cache</code> as a convention.</td></tr>
+<tr><td>R3</td><td>Make <code>settings pull [target]</code> required or a flag</td><td>Same shape as <code>clone [solution]</code> and <code>init [name]</code>. The omission is deliberate and runs a sweep (<code>SettingsPullCommand.cs:20-21</code>, R16).</td></tr>
+<tr><td>R4</td><td>Rename <code>settings pull --from</code> to <code>--path</code></td><td>C15 keeps <code>--path</code> for a packed zip; <code>--from</code> also takes a folder, and P10 named <code>--from</code> as the shape. Low stakes.</td></tr>
+<tr><td>R5</td><td>Move every output to <code>-o|--output</code></td><td>Lossy: <code>-o</code> is a folder on generate and scaffold, while diff's <code>--write</code> and settings pull write files, and bare <code>--write</code> means CHANGES.md. Swaps one inconsistency for another.</td></tr>
+<tr><td>R6</td><td>Drop <code>[solution]</code> from push and generate entirely</td><td>Refuted: stand-alone mode needs it (STRATEGY.md:31). Replaced by idea 2.</td></tr>
+<tr><td>R7</td><td>Offline commands stop inheriting <code>--force</code></td><td>Reopens C7 ("diff, scaffold, sln add stay on the base") without new evidence. The real defect, the empty "Use one of: ." message, is in idea 3.</td></tr>
+<tr><td>R8</td><td>Delete or justify the <code>new</code> alias</td><td>P11 endorsed it. Covered by the alias allow-list in idea 4.</td></tr>
+<tr><td>R9</td><td><code>--json</code> on drift and diff</td><td>Reopens G6 with no named consumer.</td></tr>
+<tr><td>R10</td><td><code>flowline-&lt;verb&gt;</code> extensions on PATH</td><td>No command currently fails the boundary test, so there is nothing to host. Speculative.</td></tr>
+<tr><td>R11</td><td><code>flowline pac -- &lt;args&gt;</code> passthrough</td><td>Would bypass the DEV-only guards and the force vocabulary; G1/G2 already send users to PAC directly.</td></tr>
+<tr><td>R12</td><td>Ship <code>settings</code> as a separate extension</td><td>Too expensive for the value; cuts against the single-CLI, progressive-adoption posture.</td></tr>
+<tr><td>R13</td><td>Three command kinds with their own grammar, grouped in help</td><td>Restates C1 as a taxonomy. The one rule it would enforce is already enforced by C1 and idea 4.</td></tr>
+<tr><td>R14</td><td>Drop <code>init --publisher-name</code></td><td>Below the meeting floor; nobody has hit it.</td></tr>
+<tr><td>R15</td><td>Expose the provision unmanaged guard as its own check</td><td>Not grounded in a user need.</td></tr>
+<tr><td>R16</td><td>Treat generate backends as Terraform-style providers</td><td>Duplicates idea 6 at higher cost. The premise that <code>--client-id</code> is xrmcontext3-only was refuted (<code>GenerateCommand.cs:196-203</code>).</td></tr>
+</tbody></table></div>
+</section>
+
+<footer class="composition-signal">Composed 2026-10-31 by ce-ideate from the user's request: inconsistent Flowline CLI API choices and the PAC/PACX responsibility boundary.</footer>
+</main>
+</body>
+</html>
