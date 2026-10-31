@@ -100,7 +100,7 @@
 <nav class="jump" aria-label="Ranked ideas">
 <ol>
 <li><a href="#i1">Write the boundary rule down and run every command through it</a> (implemented)</li>
-<li><a href="#i2">One spelling for the solution name: <code>--solution-name</code></a> (step 1 implemented)</li>
+<li><a href="#i2">One spelling for the solution name: <code>--solution-name</code></a> (implemented)</li>
 <li><a href="#i3">Make the written contract match the code</a> (implemented)</li>
 <li><a href="#i4">One test that enforces the surface rules over the real command tree</a></li>
 <li><a href="#i5">Name the settings verbs for what they do, and require a component name for writes</a> (decided)</li>
@@ -140,8 +140,8 @@
 
 <article class="idea" id="i2">
 <h3>2. One spelling for the solution name: <code>--solution-name</code></h3>
-<div class="chips"><span>Axis A</span><span>Confidence 70%</span><span>Complexity Medium</span><span class="keep">Step 1 implemented</span></div>
-<p class="implemented"><strong>Step 1 implemented 2026-10-31</strong> in commit <code>46db17d</code>: inside a project, the settings commands now accept a <code>--solution-name</code> that matches the project and reject a different one, the same check push and generate use. Step 2, replacing the <code>[solution]</code> positional on push and generate with <code>--solution-name</code>, is still open and waits for a breaking release.</p>
+<div class="chips"><span>Axis A</span><span>Confidence 70%</span><span>Complexity Medium</span><span class="keep">Implemented</span></div>
+<p class="implemented"><strong>Step 1 implemented 2026-10-31</strong> in commit <code>46db17d</code>: inside a project, the settings commands now accept a <code>--solution-name</code> that matches the project and reject a different one, the same check push and generate use. Step 2 implemented 2026-10-31 in commit <code>0052ada</code>: push and generate take <code>-n|--solution-name</code> and no positional, the settings commands gain <code>-n</code>, and clone and init show their positional as <code>[solution-name]</code>. No alias: <code>push Contoso</code> fails naming <code>--solution-name Contoso</code>, or <code>--env</code> when the word is an environment.</p>
 <dl>
 <dt>Description</dt>
 <dd>Outside a project, <code>push</code> and <code>generate</code> take the solution as an optional positional <code>[solution]</code>. The settings commands take the same thing as <code>--solution-name</code>. Inside a project, push and generate accept the positional and check it against <code>.flowline</code>. Settings refuses the flag outright. Use the settings shape on push and generate: <code>--solution-name</code>, accepted outside a project, or inside one when it matches the project. The old positional then fails as an unexpected argument. Keep a positional only on <code>clone</code> and <code>init</code>, where it names the thing being cloned or created.</dd>

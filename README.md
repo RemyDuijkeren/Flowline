@@ -70,7 +70,7 @@ flowline deploy test
 flowline deploy prod
 ```
 
-Starting from scratch instead? `flowline init <name>` creates the publisher and solution in Dataverse, then scaffolds the repo the same way — see [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init).
+Starting from scratch instead? `flowline init <solution-name>` creates the publisher and solution in Dataverse, then scaffolds the repo the same way — see [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init).
 
 For full setup, auth, and project workflow: **[Getting Started](https://github.com/RemyDuijkeren/Flowline/wiki/01-Getting-Started)**
 
@@ -107,7 +107,7 @@ public class CreditLimitValidationUpdatePlugin : IPlugin
 Already have a built assembly? Push it standalone, no cloned project needed:
 
 ```bash
-flowline push ContosoSales --plugin-file ./bin/Release/Plugins.dll --env https://contoso-dev.crm4.dynamics.com
+flowline push --solution-name ContosoSales --plugin-file ./bin/Release/Plugins.dll --env https://contoso-dev.crm4.dynamics.com
 ```
 
 **[Flowline.Attributes reference](src/Flowline.Attributes/README.md)** · **[Push Plugins and Custom APIs wiki](https://github.com/RemyDuijkeren/Flowline/wiki/05-Push-Plugins-and-Custom-APIs)**
@@ -121,7 +121,7 @@ flowline push ContosoSales --plugin-file ./bin/Release/Plugins.dll --env https:/
 Point it at a build output folder, and it creates, updates, and removes web resources to match, standalone, no cloned project needed:
 
 ```bash
-flowline push ContosoSales --webresources ./dist --env https://contoso-dev.crm4.dynamics.com
+flowline push --solution-name ContosoSales --webresources ./dist --env https://contoso-dev.crm4.dynamics.com
 ```
 
 Beyond the sync itself, Flowline reads `// flowline:...` comment annotations straight out of your built files and uses them to auto-wire Dataverse metadata that would otherwise mean a Maker Portal visit:
@@ -145,13 +145,13 @@ export function onChangeCreditlimit(executionContext) { ... }
 
 | Command                                                                                                            | What it does                                                                                                                                                                                                   |
 |--------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`clone [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#clone)                    | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively                                                                                                    |
-| [`init [name]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init)                          | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo; run with no name to be prompted                                                                                     |
-| [`push [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#push)                      | Build and sync code assets to DEV; or push standalone with `--plugin-file` / `--webresources`                                                                                                                  |
+| [`clone [solution-name]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#clone)               | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively                                                                                                    |
+| [`init [solution-name]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init)                 | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo; run with no name to be prompted                                                                                     |
+| [`push`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#push)                                 | Build and sync code assets to DEV; or push standalone with `--plugin-file` / `--webresources`                                                                                                                  |
 | [`pull`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#pull)                                 | Pull the current solution state from DEV into source control                                                                                                                                                   |
 | [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#deploy)                    | Pack from the repo and import into `test`, `uat`, `prod`, or a URL; or deploy a pre-built zip standalone with `--path`                                                                                         |
 | [`provision [dev\|test\|uat]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#provision)      | Provision a DEV, TEST or UAT environment by copying from production                                                                                                                                            |
-| [`generate [solution]`](https://github.com/RemyDuijkeren/Flowline/wiki/11-Generate-Early-Bound-Types)              | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)                                                                                                                            |
+| [`generate`](https://github.com/RemyDuijkeren/Flowline/wiki/11-Generate-Early-Bound-Types)                         | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)                                                                                                                            |
 | [`drift <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#drift)                      | Compare committed source, or a pre-built zip with `--path`, against a live environment; read-only. Exits 0 unless `--exit-code` is passed. Use `diff` for the git-history axis                                 |
 | [`diff [from] [to]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#diff)                     | Report which solution components changed between two git refs (positional, or a range like `A..B`); no Dataverse connection, no auth, no network. The git-axis counterpart to `drift`                          |
 | [`settings <operation>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#settings)             | Read or change one environment's configuration. `push` applies a settings file and `pull` writes one; `toggle` switches one component on or off and `set` sets one value or binding, without touching the file |
