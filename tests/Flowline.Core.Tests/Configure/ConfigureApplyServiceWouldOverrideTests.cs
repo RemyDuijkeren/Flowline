@@ -5,7 +5,7 @@ using Flowline.Core.Configure;
 namespace Flowline.Core.Tests.Configure;
 
 /// <summary>
-/// KTD12: the inline surface warns that the next push will undo the change it just made, and the honest
+/// KTD12: the inline surface warns that the next apply will undo the change it just made, and the honest
 /// question is whether a push would actually move the component — not whether the file mentions it. An
 /// empty value is skipped by the apply tiers, and a file that already declares what was just written
 /// would apply the same thing again. Warning in either case trains an operator to ignore the warning.

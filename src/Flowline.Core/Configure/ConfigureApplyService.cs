@@ -183,7 +183,7 @@ public sealed class ConfigureApplyService
     /// said what the variable or the binding should be, so a fresh environment gets neither.
     ///
     /// Both halves are the same question — what would this environment not get back — and the answer is
-    /// exactly the set <c>settings pull</c> would add, which is why that is the remedy named.
+    /// exactly the set <c>settings capture</c> would add, which is why that is the remedy named.
     ///
     /// Forms and views are excluded outright by <see cref="ConfigurableComponentKinds.IsCaptured"/>
     /// (KTD29).
@@ -210,7 +210,7 @@ public sealed class ConfigureApplyService
     /// Whether the next apply of this document would change one named component back (KTD12).
     /// </summary>
     /// <remarks>
-    /// The inline surface warns that the next push will undo the change it just made, and the honest
+    /// The inline surface warns that the next apply will undo the change it just made, and the honest
     /// question is not whether the file mentions the component but whether a push would move it. Two
     /// things make it not.
     ///

@@ -310,7 +310,7 @@ public class FormAndViewStateTests
     // The bug this pins: a run that switched a component checked whether the file disagreed by consulting
     // a map that listed only cloud flows, classic workflows and plugin steps. For every other class the
     // answer was "the file says nothing", so the run never offered to bring the file into line and the
-    // next push silently undid the change. Found by switching a view off, declaring it off, then switching
+    // next apply silently undid the change. Found by switching a view off, declaring it off, then switching
     // it back on and being asked nothing.
     //
     // Written over every state class rather than over the ones that were broken, because the defect was

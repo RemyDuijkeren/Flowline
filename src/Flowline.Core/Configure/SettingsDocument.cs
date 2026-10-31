@@ -61,7 +61,7 @@ public sealed class SettingsDocument
     /// and they drifted: the apply path's own copy listed cloud flows, classic workflows and plugin steps
     /// and answered "no section" for everything else. The effect was silent and specific — a run that
     /// switched a business rule, a business process flow, an action, a form or a view never noticed that
-    /// the file declared the opposite, so it never offered to fix it and the next push quietly undid the
+    /// the file declared the opposite, so it never offered to fix it and the next apply quietly undid the
     /// change.
     ///
     /// Anything that needs to find a class's section goes through here, so a class added to the document

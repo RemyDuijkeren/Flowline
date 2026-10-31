@@ -18,10 +18,10 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 /// <summary>Captures an environment's configuration into a settings file, or every configured one.</summary>
-public class SettingsPullCommand(
+public class SettingsCaptureCommand(
     CommandServices services,
     DataverseConnector dataverseConnector)
-    : SettingsCommandBase<SettingsPullCommand.Settings>(services, dataverseConnector)
+    : SettingsCommandBase<SettingsCaptureCommand.Settings>(services, dataverseConnector)
 {
     public sealed class Settings : SettingsSettings
     {
@@ -73,7 +73,7 @@ public class SettingsPullCommand(
         if (!projectFound)
             throw new FlowlineException(ExitCode.ValidationFailed,
                 "No environment named, and no Flowline project to read the configured ones from. " +
-                "Pass an environment: 'flowline settings pull <target>'.");
+                "Pass an environment: 'flowline settings capture <target>'.");
 
         if (!string.IsNullOrWhiteSpace(settings.SettingsFile))
             throw new FlowlineException(ExitCode.ValidationFailed, SettingsSupport.BuildSweepDestinationError());
@@ -95,8 +95,8 @@ public class SettingsPullCommand(
         {
             Console.CannotContinue(
                 "Nothing picked, so nothing was captured.",
-                "Re-run 'flowline settings pull' and pick at least one environment, or name one: "
-                + "'flowline settings pull test'.");
+                "Re-run 'flowline settings capture' and pick at least one environment, or name one: "
+                + "'flowline settings capture test'.");
             return (int)ExitCode.Success;
         }
 
@@ -129,7 +129,7 @@ public class SettingsPullCommand(
     /// (R16, KTD21).
     /// </summary>
     /// <remarks>
-    /// An unattended run fails naming the argument, the same as <c>settings push</c>, because the bare
+    /// An unattended run fails naming the argument, the same as <c>settings apply</c>, because the bare
     /// word is the widest and slowest thing this command does: capturing every configured environment
     /// means an auth flow and a Dataverse connection per role. A CLI's no-argument form should not be its
     /// broadest, and a script that meant one environment should hear about it before waiting for four.
@@ -144,7 +144,7 @@ public class SettingsPullCommand(
         // caller must never reach a prompt it cannot answer, which hangs the run rather than failing it.
         if (!IsInteractive())
             throw new FlowlineException(ExitCode.ValidationFailed,
-                "No environment named. Pass one: 'flowline settings pull <target>'. " +
+                "No environment named. Pass one: 'flowline settings capture <target>'. " +
                 $"This project configures {string.Join(", ", configured.Select(r => r.Keyword()))}.");
 
         var prompt = new MultiSelectionPrompt<EnvironmentRole>()

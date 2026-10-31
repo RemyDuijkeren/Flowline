@@ -87,7 +87,7 @@ public static class SettingsSupport
     /// operation added there and forgotten here only means the hint stays quiet for that one, which is
     /// the failure direction that costs nothing.
     /// </remarks>
-    static readonly string[] s_operations = ["push", "pull", "toggle", "set"];
+    static readonly string[] s_operations = ["apply", "capture", "toggle", "set"];
 
     /// <summary>
     /// The operation names that used to exist, and what each one is now (KTD25).
@@ -387,9 +387,9 @@ public static class SettingsSupport
     public static string BuildUndeclaredWarning(int count) =>
         count == 1
             ? "1 component isn't recorded in the settings file, so a fresh deploy wouldn't reproduce it. "
-              + "Run 'flowline settings pull' to record it, or --verbose to see it."
+              + "Run 'flowline settings capture' to record it, or --verbose to see it."
             : $"{count} components aren't recorded in the settings file, so a fresh deploy wouldn't "
-              + "reproduce them. Run 'flowline settings pull' to record them, or --verbose to list them.";
+              + "reproduce them. Run 'flowline settings capture' to record them, or --verbose to list them.";
 
     /// <summary>A capture's dry run leaves a file unwritten, not an environment untouched.</summary>
     public static string BuildPullDryRunMessage(string path) =>

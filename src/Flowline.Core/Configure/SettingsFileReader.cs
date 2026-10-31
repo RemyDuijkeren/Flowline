@@ -30,7 +30,7 @@ public static class SettingsFileReader
             // into the run log on any syntax error.
             throw new FlowlineException(ExitCode.ConfigInvalid,
                 $"The settings file isn't valid JSON — line {ex.LineNumber + 1}, position {ex.BytePositionInLine + 1}. " +
-                "Fix it, or re-run 'flowline settings pull <env>' to rewrite it.", ex);
+                "Fix it, or re-run 'flowline settings capture <env>' to rewrite it.", ex);
         }
 
         if (root is not JsonObject obj)
@@ -137,7 +137,7 @@ public static class SettingsFileReader
     {
         if (!File.Exists(path))
             throw new FlowlineException(ExitCode.NotFound,
-                $"No settings file at '{path}'. Run 'flowline settings pull <env>' to create one.");
+                $"No settings file at '{path}'. Run 'flowline settings capture <env>' to create one.");
 
         return Parse(File.ReadAllText(path));
     }

@@ -564,7 +564,7 @@ public class SettingsCommandSurfaceTests : IDisposable
     // ── R16: what a pull with no environment does ────────────────────────────
 
     sealed class PullProbe(CommandServices services, DataverseConnector connector)
-        : SettingsPullCommand(services, connector)
+        : SettingsCaptureCommand(services, connector)
     {
         public TestConsole Out => (TestConsole)Console;
 
@@ -591,7 +591,7 @@ public class SettingsCommandSurfaceTests : IDisposable
 
         var thrown = (await act.Should().ThrowAsync<FlowlineException>()).Which;
         thrown.ExitCode.Should().Be(ExitCode.ValidationFailed);
-        thrown.Message.Should().Contain("settings pull <target>").And.Contain("dev").And.Contain("prod");
+        thrown.Message.Should().Contain("settings capture <target>").And.Contain("dev").And.Contain("prod");
     }
 
     // Everything starts selected, so one Enter still captures the lot. The change makes the sweep

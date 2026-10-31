@@ -110,8 +110,8 @@ public class FlowlineSettingsTests
     [Theory]
     [InlineData(typeof(DeployCommand.Settings))]
     [InlineData(typeof(DriftCommand.Settings))]
-    [InlineData(typeof(SettingsPushCommand.Settings))]
-    [InlineData(typeof(SettingsPullCommand.Settings))]
+    [InlineData(typeof(SettingsApplyCommand.Settings))]
+    [InlineData(typeof(SettingsCaptureCommand.Settings))]
     public void PositionalTargetCommands_DoNotExposeEnv(Type settings)
     {
         settings.GetProperty(nameof(EnvironmentSettings.Env)).Should().BeNull();

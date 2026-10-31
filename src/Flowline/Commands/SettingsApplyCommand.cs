@@ -13,10 +13,10 @@ using Spectre.Console.Cli;
 namespace Flowline.Commands;
 
 /// <summary>Applies a per-environment settings file to a Dataverse environment.</summary>
-public class SettingsPushCommand(
+public class SettingsApplyCommand(
     CommandServices services,
     DataverseConnector dataverseConnector)
-    : SettingsCommandBase<SettingsPushCommand.Settings>(services, dataverseConnector)
+    : SettingsCommandBase<SettingsApplyCommand.Settings>(services, dataverseConnector)
 {
     public sealed class Settings : SettingsSettings
     {
@@ -46,7 +46,7 @@ public class SettingsPushCommand(
         if (!location.Exists)
             throw new FlowlineException(ExitCode.NotFound,
                 $"No settings file at '{ConsolePath.FormatRelativePath(location.Path, RootFolder)}'. " +
-                $"Run 'flowline settings pull {settings.Target}' to create one.");
+                $"Run 'flowline settings capture {settings.Target}' to create one.");
 
         var mode = settings.DryRun ? RunMode.DryRun : RunMode.Normal;
         var (service, _) = await ConnectToDataverseAsync(DataverseConnector, env.EnvironmentUrl!, cancellationToken, profile);

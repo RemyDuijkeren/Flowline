@@ -272,7 +272,7 @@ public class SettingsCommandTests : IDisposable
 
         // The full invocation, not the bare operation: a suggestion an agent can paste has to include
         // the executable.
-        message.Should().Contain("flowline settings pull");
+        message.Should().Contain("flowline settings capture");
     }
 
     // ── Force vocabulary (KTD10) ─────────────────────────────────────────────
@@ -346,7 +346,7 @@ public class SettingsCommandTests : IDisposable
         var attempted = new List<EnvironmentRole>();
         var reported = new List<EnvironmentRole>();
 
-        var failed = await SettingsPullCommand.CaptureEachAsync(
+        var failed = await SettingsCaptureCommand.CaptureEachAsync(
             [EnvironmentRole.Dev, EnvironmentRole.Test, EnvironmentRole.Prod],
             role =>
             {
@@ -366,7 +366,7 @@ public class SettingsCommandTests : IDisposable
     [Fact]
     public async Task ASweep_WhereEveryEnvironmentAnswers_ReportsNoFailures()
     {
-        var failed = await SettingsPullCommand.CaptureEachAsync(
+        var failed = await SettingsCaptureCommand.CaptureEachAsync(
             [EnvironmentRole.Dev, EnvironmentRole.Prod],
             _ => Task.CompletedTask,
             (_, _) => throw new Xunit.Sdk.XunitException("nothing failed, so nothing should be reported"),
@@ -382,7 +382,7 @@ public class SettingsCommandTests : IDisposable
     {
         var reported = new List<EnvironmentRole>();
 
-        var act = async () => await SettingsPullCommand.CaptureEachAsync(
+        var act = async () => await SettingsCaptureCommand.CaptureEachAsync(
             [EnvironmentRole.Dev, EnvironmentRole.Test],
             _ => throw new OperationCanceledException(),
             (role, _) => reported.Add(role),
@@ -484,7 +484,7 @@ public class SettingsCommandTests : IDisposable
         var hint = SettingsSupport.BuildArgumentOrderHint(["settings", "dev"]);
 
         hint.Should().Contain("is an environment, not an operation");
-        hint.Should().Contain("push").And.Contain("toggle").And.Contain("set");
+        hint.Should().Contain("apply").And.Contain("capture").And.Contain("toggle").And.Contain("set");
     }
 
     // Wrong twice over: the environment first and a retired name second. The retired name is the more
@@ -514,7 +514,7 @@ public class SettingsCommandTests : IDisposable
     {
         SettingsSupport.BuildArgumentOrderHint(["settings", "toggle", "dev"]).Should().BeNull();
         SettingsSupport.BuildArgumentOrderHint(["settings", "set", "dev"]).Should().BeNull();
-        SettingsSupport.BuildArgumentOrderHint(["settings", "push", "prod"]).Should().BeNull();
+        SettingsSupport.BuildArgumentOrderHint(["settings", "apply", "prod"]).Should().BeNull();
     }
 
     [Fact]

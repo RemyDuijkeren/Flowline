@@ -46,7 +46,7 @@ public static class ComponentValueWriter
     {
         if (string.Equals(declaredValue, ConfigurePullService.SecretPlaceholder, StringComparison.Ordinal))
             return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,
-                $"'{component.Name}' still holds the pull placeholder — set its real value in the settings file, or in the maker portal.");
+                $"'{component.Name}' still holds the capture placeholder — set its real value in the settings file, or in the maker portal.");
 
         if (ConfigurePullService.IsUnreadableSecret(component))
             return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,
@@ -113,7 +113,7 @@ public static class ComponentValueWriter
     {
         if (string.Equals(connectionId, ConfigurePullService.SecretPlaceholder, StringComparison.Ordinal))
             return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,
-                $"'{component.Name}' still holds the pull placeholder — set its real value in the settings file, or in the maker portal.");
+                $"'{component.Name}' still holds the capture placeholder — set its real value in the settings file, or in the maker portal.");
 
         if (ConfigurePullService.IsUnreadableSecret(component))
             return new ComponentOutcome(component.Kind, component.Name, ComponentOutcomeKind.Skipped,

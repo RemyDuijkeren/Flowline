@@ -88,6 +88,44 @@ public class ProgramParsingTests
         act.Should().Throw<CommandParseException>().WithMessage("*Unknown command 'sync'*");
     }
 
+    // The settings verbs were renamed with no alias, so the old spellings must stop parsing rather than
+    // quietly keep working.
+    [Theory]
+    [InlineData("push")]
+    [InlineData("pull")]
+    public void SettingsPushAndPull_AreNotCommands(string retired)
+    {
+        var app = BuildRealApp(out _);
+
+        var act = () => app.Run(["settings", retired, "test"]);
+
+        act.Should().Throw<CommandParseException>().WithMessage($"*Unknown command '{retired}'*");
+    }
+
+    [Fact]
+    public void SettingsHelp_ListsApplyAndCapture_AndNotTheOldVerbs()
+    {
+        var app = BuildRealApp(out var console);
+
+        app.Run(["settings", "--help"]);
+
+        var output = console.Output;
+        output.Should().Contain("apply").And.Contain("capture");
+        output.Should().NotContain("settings push").And.NotContain("settings pull");
+    }
+
+    [Theory]
+    [InlineData("apply")]
+    [InlineData("capture")]
+    public void SettingsApplyAndCaptureHelp_ShowExamplesWithTheirOwnVerb(string verb)
+    {
+        var app = BuildRealApp(out var console);
+
+        app.Run(["settings", verb, "--help"]);
+
+        console.Output.Should().Contain($"flowline settings {verb} test");
+    }
+
     [Fact]
     public void PullHelp_RendersPullInTheUsageLine()
     {

@@ -15,7 +15,7 @@ public enum SingleComponentActionKind
     /// <summary>Already in the requested state or value. Nothing was written.</summary>
     Unchanged,
 
-    /// <summary>The write was refused before it reached Dataverse — an empty value, a pull placeholder, or an unreadable secret.</summary>
+    /// <summary>The write was refused before it reached Dataverse — an empty value, a capture placeholder, or an unreadable secret.</summary>
     Skipped,
 
     /// <summary>The write was attempted and Dataverse refused it.</summary>

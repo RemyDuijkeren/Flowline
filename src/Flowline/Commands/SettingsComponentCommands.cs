@@ -191,7 +191,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         // warning printed under it reads as belonging to the next command.
         //
         // Unchanged counts. A component already in the state the file disagrees with is exactly when the
-        // next push moves it, and skipping the warning there hid the case most worth warning about — the
+        // next apply moves it, and skipping the warning there hid the case most worth warning about — the
         // operator sees "already matches" and concludes there is nothing to reconcile.
         if (isWrite && outcome.Action is SingleComponentActionKind.Applied or SingleComponentActionKind.Unchanged)
             await ReconcileWithTheFileAsync(outcome, settings, role, standalone, mode, cancellationToken);
@@ -199,7 +199,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         if (isWrite)
             Console.Done(mode.IsReportOnly()
                 ? "Dry run complete — nothing was written. Run without --dry-run to apply."
-                : $"Done. The settings file still decides this on the next push. {SettingsSupport.Kaomoji}");
+                : $"Done. The settings file still decides this on the next apply. {SettingsSupport.Kaomoji}");
 
         return (int)SettingsComponentOutcomes.ExitCodeFor(outcome);
     }
@@ -299,7 +299,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
 
 
     /// <summary>
-    /// Warns that the next push will put this component back the way the file says (R4, R15, KTD12).
+    /// Warns that the next apply will put this component back the way the file says (R4, R15, KTD12).
     /// </summary>
     /// <remarks>
     /// The test is whether a push would actually act on the component, not merely whether the file names
@@ -335,7 +335,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         {
             Console.Warning(
                 $"Couldn't check {Markup.Escape(Path.GetFileName(location.Path))} — {Markup.Escape(ex.Message)} " +
-                "The change was made; whether the next 'flowline settings push' puts it back is unknown.");
+                "The change was made; whether the next 'flowline settings apply' puts it back is unknown.");
             return;
         }
 
@@ -366,14 +366,14 @@ public abstract class SettingsComponentCommandBase<TSettings>(
         if (!CanOffer(mode))
         {
             Console.Warning(
-                $"{file} declares {Markup.Escape(name)} differently — the next 'flowline settings push' will " +
+                $"{file} declares {Markup.Escape(name)} differently — the next 'flowline settings apply' will " +
                 $"put it back. Edit {file} to declare it, or re-run at a terminal without --dry-run to be " +
                 "offered the change.");
             return;
         }
 
         await OfferAsync(document, location.Path, kind, name, writtenEnabled, writtenValue, file,
-            $"{file} declares {Markup.Escape(name)} differently, so the next 'flowline settings push' will " +
+            $"{file} declares {Markup.Escape(name)} differently, so the next 'flowline settings apply' will " +
             "put it back. Change the file?", allowRemove: true, ct);
     }
 
@@ -431,7 +431,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
             // one thing worth saying: a bare "couldn't change it" sends nobody anywhere.
             Console.Warning(
                 $"Couldn't record {Markup.Escape(name)} in {file} — it has no {SettingsComponentNames.Singular(kind)} " +
-                "section. Run 'flowline settings pull' to rebuild the file, or add the entry by hand.");
+                "section. Run 'flowline settings capture' to rebuild the file, or add the entry by hand.");
             return;
         }
 
@@ -748,7 +748,7 @@ internal static class SettingsComponentOutcomes
     /// </summary>
     /// <remarks>
     /// A refusal is <see cref="ExitCode.ValidationFailed"/>: the caller asked for something the command
-    /// will not do — an empty value, a pull placeholder, a secret it cannot read — and the fix is to change
+    /// will not do — an empty value, a capture placeholder, a secret it cannot read — and the fix is to change
     /// the invocation.
     ///
     /// A failed write is <see cref="ExitCode.PartialSuccess"/>, matching the file-apply path so 18 means

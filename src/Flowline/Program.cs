@@ -516,19 +516,19 @@ namespace Flowline
                     "omit the name to list or pick one, and narrow with --type. They run any time, " +
                     "against components already present in the target.");
 
-                settings.AddCommand<SettingsPushCommand>("push")
+                settings.AddCommand<SettingsApplyCommand>("apply")
                         .WithDescription("Apply a settings file to an environment. Touches only the components the file names, and is safe to re-run.")
-                        .WithExample("settings", "push", "test")
-                        .WithExample("settings", "push", "prod", "--dry-run")
-                        .WithExample("settings", "push", "test", "--settings-file", "settings.test.json");
+                        .WithExample("settings", "apply", "test")
+                        .WithExample("settings", "apply", "prod", "--dry-run")
+                        .WithExample("settings", "apply", "test", "--settings-file", "settings.test.json");
 
-                settings.AddCommand<SettingsPullCommand>("pull")
+                settings.AddCommand<SettingsCaptureCommand>("capture")
                         // Omitting the environment stopped meaning "sweep them all" when that form became
                         // a prompt at a terminal and a typed failure in a script. The bare example went
                         // with it: it read as a scriptable form and is not one.
                         .WithDescription("Write a settings file from an environment. Omit the environment at a terminal to pick from the ones the project configures; scripts must name one.")
-                        .WithExample("settings", "pull", "test")
-                        .WithExample("settings", "pull", "https://contoso-test.crm4.dynamics.com/", "--solution-name", "ContosoCustomizations");
+                        .WithExample("settings", "capture", "test")
+                        .WithExample("settings", "capture", "https://contoso-test.crm4.dynamics.com/", "--solution-name", "ContosoCustomizations");
 
                 // Two component operations, named for what they do rather than for what they address
                 // (KTD25). The kind is a filter, so the process family can grow — business rules, business
