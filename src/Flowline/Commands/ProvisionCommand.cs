@@ -127,7 +127,7 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
             Console.Skip($"Environment already exists — [link]{targetEnv.EnvironmentUrl}[/]");
         }
 
-        if (targetEnv.Type == "Production")
+        if (EnvironmentTarget.CheckType(environmentRole, targetEnv.Type) == EnvironmentTypeMismatch.Production)
         {
             Console.Error("Can't overwrite a Production environment");
             return (int)ExitCode.ValidationFailed;

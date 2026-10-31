@@ -64,13 +64,10 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         var envInfo = await getEnvironmentInfoByUrl(value, cancellationToken);
         var envType = envInfo?.Type;
 
-        if (onlyRole == EnvironmentRole.Dev && string.Equals(envType, "Production", StringComparison.OrdinalIgnoreCase))
-            throw RoleOnlyRefusal($"'{value}' is a Production environment", EnvironmentRole.Dev);
-
-        // provision's mirror of the check above: a source that isn't Production-typed can't be copied
-        // from as prod, whatever role it looks like it plays.
-        if (onlyRole == EnvironmentRole.Prod && envType is not null && !string.Equals(envType, "Production", StringComparison.OrdinalIgnoreCase))
-            throw RoleOnlyRefusal($"'{value}' is a {envType} environment", EnvironmentRole.Prod);
+        // A DEV-only command refuses a Production URL, and provision refuses a source that isn't
+        // Production-typed, whatever role either looks like it plays.
+        if (onlyRole is { } typeRole && EnvironmentTarget.CheckType(typeRole, envType) != EnvironmentTypeMismatch.None)
+            throw RoleOnlyRefusal($"'{value}' is a {envType} environment", typeRole);
 
         var inference = EnvironmentRoleInference.Infer(value, envType, envInfo?.DisplayName);
 

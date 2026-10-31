@@ -56,6 +56,35 @@ public class EnvironmentTargetTests
         message.Should().Contain("Pass the environment URL instead");
     }
 
+    // ── Which environment type a role may point at ───────────────────────────
+
+    [Theory]
+    [InlineData(EnvironmentRole.Prod, "Production", EnvironmentTypeMismatch.None)]
+    [InlineData(EnvironmentRole.Prod, "production", EnvironmentTypeMismatch.None)]
+    [InlineData(EnvironmentRole.Prod, "Sandbox", EnvironmentTypeMismatch.NotProduction)]
+    [InlineData(EnvironmentRole.Uat, "Production", EnvironmentTypeMismatch.Production)]
+    [InlineData(EnvironmentRole.Test, "Production", EnvironmentTypeMismatch.Production)]
+    [InlineData(EnvironmentRole.Dev, "Production", EnvironmentTypeMismatch.Production)]
+    [InlineData(EnvironmentRole.Uat, "Sandbox", EnvironmentTypeMismatch.None)]
+    [InlineData(EnvironmentRole.Dev, "Developer", EnvironmentTypeMismatch.None)]
+    public void CheckType_RoleAgainstType(EnvironmentRole role, string type, EnvironmentTypeMismatch expected) =>
+        EnvironmentTarget.CheckType(role, type).Should().Be(expected);
+
+    // An unknown type can't prove a mismatch, so it never refuses.
+    [Theory]
+    [InlineData(EnvironmentRole.Prod)]
+    [InlineData(EnvironmentRole.Dev)]
+    public void CheckType_UnknownType_IsAllowed(EnvironmentRole role) =>
+        EnvironmentTarget.CheckType(role, null).Should().Be(EnvironmentTypeMismatch.None);
+
+    [Fact]
+    public void CheckType_NoRole_DevOnly_Production_IsRefused() =>
+        EnvironmentTarget.CheckType(null, "Production", devOnly: true).Should().Be(EnvironmentTypeMismatch.Production);
+
+    [Fact]
+    public void CheckType_NoRole_Production_IsAllowed() =>
+        EnvironmentTarget.CheckType(null, "Production").Should().Be(EnvironmentTypeMismatch.None);
+
     // ── A role's saved URL ───────────────────────────────────────────────────
 
     [Fact]

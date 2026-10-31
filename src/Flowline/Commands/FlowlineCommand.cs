@@ -319,12 +319,11 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         if (env == null)
             throw new FlowlineException(ExitCode.ConnectionFailed, $"{label} environment not found — check the URL or your PAC login.");
 
-        if (!skipTypeGuard)
+        switch (skipTypeGuard ? EnvironmentTypeMismatch.None : EnvironmentTarget.CheckType(role, env.Type, devOnly))
         {
-            if (role == EnvironmentRole.Prod && env.Type != "Production")
+            case EnvironmentTypeMismatch.NotProduction:
                 throw new FlowlineException(ExitCode.ValidationFailed, "That environment isn't Production type — verify the URL in .flowline points to a Production environment.");
-
-            if (env.Type == "Production" && (devOnly || (role is { } r && r != EnvironmentRole.Prod)))
+            case EnvironmentTypeMismatch.Production:
                 throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
         }
 

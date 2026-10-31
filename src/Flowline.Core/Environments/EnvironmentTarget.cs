@@ -36,6 +36,28 @@ public static class EnvironmentTarget
         $"'{target}' is a role name, and roles resolve from .flowline, but there's no Flowline project here. " +
         "Pass the environment URL instead.";
 
+    /// <summary>Whether an environment of <paramref name="environmentType"/> may play <paramref name="role"/>.</summary>
+    /// <remarks>
+    /// PROD must be a Production environment and every other role must not be. <paramref name="devOnly"/>
+    /// covers a DEV-only command handed a URL that belongs to no role. An unknown type never refuses: a
+    /// lookup that returned no type can't prove a mismatch. Each caller words its own refusal, because the
+    /// fix differs (<c>--env</c>, <c>.flowline</c>, or a target provision won't overwrite).
+    /// </remarks>
+    public static EnvironmentTypeMismatch CheckType(EnvironmentRole? role, string? environmentType, bool devOnly = false)
+    {
+        if (environmentType is null)
+            return EnvironmentTypeMismatch.None;
+
+        var isProduction = string.Equals(environmentType, "Production", StringComparison.OrdinalIgnoreCase);
+
+        if (role == EnvironmentRole.Prod)
+            return isProduction ? EnvironmentTypeMismatch.None : EnvironmentTypeMismatch.NotProduction;
+
+        return isProduction && (devOnly || role is not null)
+            ? EnvironmentTypeMismatch.Production
+            : EnvironmentTypeMismatch.None;
+    }
+
     /// <summary>
     /// The URL saved under <paramref name="role"/>, or a failure that names the <c>.flowline</c> key to fix.
     /// </summary>
@@ -60,4 +82,16 @@ public static class EnvironmentTarget
 
         return url;
     }
+}
+
+/// <summary>How an environment's type disagrees with the role it is asked to play.</summary>
+public enum EnvironmentTypeMismatch
+{
+    None,
+
+    /// <summary>A Production environment where a non-production role, or a DEV-only command, expected otherwise.</summary>
+    Production,
+
+    /// <summary>A non-Production environment under the PROD role.</summary>
+    NotProduction
 }
