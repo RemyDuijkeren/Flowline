@@ -263,12 +263,9 @@ public class CloneCommand(CommandServices services,
 
         // (Label, Role) rather than SelectionPrompt<EnvironmentRole> directly — a bare Enter must land on
         // whatever's listed first, and a raw enum choice risks resolving to default(T) instead.
-        var choices = new (string Label, EnvironmentRole Role)[]
-        {
-            ("Dev", EnvironmentRole.Dev),
-            ("Test", EnvironmentRole.Test),
-            ("UAT", EnvironmentRole.Uat),
-        };
+        var choices = new[] { EnvironmentRole.Dev, EnvironmentRole.Test, EnvironmentRole.Uat }
+            .Select(r => (Label: r.Label(), Role: r))
+            .ToArray();
         var prompt = new SelectionPrompt<(string Label, EnvironmentRole Role)>()
             .Title(FlowlineConsoleExtensions.Question($"Save [bold]{env.DisplayName}[/] under which .flowline role?"))
             .UseConverter(c => c.Label)

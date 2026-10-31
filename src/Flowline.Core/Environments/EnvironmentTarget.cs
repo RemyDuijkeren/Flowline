@@ -13,11 +13,11 @@ namespace Flowline.Core.Environments;
 /// </remarks>
 public static class EnvironmentTarget
 {
-    static readonly string s_roleList = string.Join(", ", EnvironmentRoles.All.Select(r => r.Keyword()));
+    static readonly string[] s_keywords = EnvironmentRoles.All.Select(r => r.Keyword()).ToArray();
+    static readonly string s_roleList = string.Join(", ", s_keywords);
 
     /// <summary>The placeholder a fix line shows for a target: <c>&lt;dev|test|uat|prod|url&gt;</c>.</summary>
-    public static readonly string TargetPlaceholder =
-        $"<{string.Join('|', EnvironmentRoles.All.Select(r => r.Keyword()))}|url>";
+    public static readonly string TargetPlaceholder = $"<{string.Join('|', s_keywords)}|url>";
 
     /// <summary>An absolute http or https URL. A bare host is not one: pass the full URL.</summary>
     public static bool IsUrl(string value) =>

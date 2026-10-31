@@ -48,7 +48,7 @@ public sealed class EnvironmentService(
         // and Spectre.Console throws if a prompt runs while a Status display is active.
         var profile = resolvedProfile ?? await profiles.ResolveAsync(url, cancellationToken);
         var env = await console.Status().FlowlineSpinner().StartAsync(
-            $"Checking {(role is { } r ? r.Label().ToLowerInvariant() : "environment")} [bold]{Markup.Escape(url)}[/]...",
+            $"Checking {(role is { } r ? r.Keyword() : "environment")} [bold]{Markup.Escape(url)}[/]...",
             _ => validator.GetEnvironmentInfoByUrlAsync(url, profile, options, options.NoCache, cancellationToken));
 
         if (env == null)
