@@ -101,7 +101,7 @@
 <ol>
 <li><a href="#i1">Write the boundary rule down and run every command through it</a> (implemented)</li>
 <li><a href="#i2">One spelling for the solution name: <code>--solution-name</code></a> (step 1 implemented)</li>
-<li><a href="#i3">Make the written contract match the code</a></li>
+<li><a href="#i3">Make the written contract match the code</a> (implemented)</li>
 <li><a href="#i4">One test that enforces the surface rules over the real command tree</a></li>
 <li><a href="#i5">Rename <code>settings push</code>/<code>pull</code> before the verbs set</a></li>
 <li><a href="#i6">Retire the <code>xrmcontext3</code> generator backend</a></li>
@@ -178,7 +178,8 @@
 
 <article class="idea" id="i3">
 <h3>3. Make the written contract match the code</h3>
-<div class="chips"><span>Axis E</span><span>Confidence 90%</span><span>Complexity Low</span></div>
+<div class="chips"><span>Axis E</span><span>Confidence 90%</span><span>Complexity Low</span><span class="keep">Implemented</span></div>
+<p class="implemented"><strong>Implemented 2026-10-31</strong> in commit <code>2d05e9d</code>: the dry-run rule, the STRATEGY.md drift and the empty <code>--force</code> message. The <code>--client-id</code>/<code>--client-secret</code> item was dropped: only the XrmContext generators read those values (<code>XrmContextGenerator.cs:43</code>), so the help text is accurate.</p>
 <dl>
 <dt>Description</dt>
 <dd>
@@ -186,7 +187,7 @@
 <ul class="tight">
 <li>cli-for-agents <code>SKILL.md:82</code> ("<code>--dry-run</code> on anything that writes") and checklist line 201 contradict C6. Scope the rule to what C6 kept: Dataverse writes that git can't undo.</li>
 <li>STRATEGY.md still says <code>sync</code> (lines 24, 33, 54, 60) and lists <code>init</code> as post-v1 (line 133).</li>
-<li><code>--client-id</code> and <code>--client-secret</code> help says "(XrmContext/XrmContext3 only)" (<code>GenerateCommand.cs:55,59</code>). The code also promotes the profile to a service principal for other generators (<code>GenerateCommand.cs:196-203</code>).</li>
+<li><s><code>--client-id</code> and <code>--client-secret</code> help says "(XrmContext/XrmContext3 only)" (<code>GenerateCommand.cs:55,59</code>). The code also promotes the profile to a service principal for other generators (<code>GenerateCommand.cs:196-203</code>).</s> Refuted: the promoted profile is only consumed by the XrmContext generators, so the help is right.</li>
 <li><code>diff --force x</code>, <code>scaffold --force x</code> and <code>sln add --force x</code> fail with "Use one of: ." and an empty list (<code>FlowlineSettings.cs:26</code>, empty default at <code>FlowlineCommand.cs:77</code>). <code>status</code> has a hand-written message for the same case. Give the empty-list case the status message.</li>
 </ul>
 </dd>
