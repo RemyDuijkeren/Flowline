@@ -42,7 +42,7 @@ public enum ExitCode
     /// </summary>
     VersionConflict = 14,
 
-    /// <summary>Validation failed: drift detected, missing dependencies, schema mismatch, or flags that contradict each other. Check error output.</summary>
+    /// <summary>Validation failed: drift detected, missing dependencies, schema mismatch, flags that contradict each other, or input an unattended run must supply is missing or malformed (an environment or component name). Check error output.</summary>
     ValidationFailed = 15,
 
     /// <summary>An operation timed out: a Dataverse request got no response, or the PAC CLI 60-minute operation limit was exceeded. The write may still have landed — re-run the command to check and finish, or check environment health.</summary>

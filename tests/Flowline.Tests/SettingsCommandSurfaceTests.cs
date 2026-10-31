@@ -13,6 +13,7 @@ using Flowline.Tests;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console;
+using Spectre.Console.Cli;
 using Spectre.Console.Testing;
 
 namespace Flowline.Commands;
@@ -68,6 +69,10 @@ public class SettingsCommandSurfaceTests : IDisposable
             PromptForTargetAsync(current, settings, new EnvironmentInfo(), CancellationToken.None);
 
         public bool Writes(Settings settings) => IsWrite(settings);
+
+        public Task<int> Run(Settings settings, params string[] args) =>
+            ExecuteFlowlineAsync(new CommandContext(args, new NoRemainingArguments(), "toggle", null), settings,
+                CancellationToken.None);
 
         public static EnvironmentRole? ResolveRole(
             string target, bool standalone, string? name, IReadOnlyList<string> args) =>
@@ -694,5 +699,97 @@ public class SettingsCommandSurfaceTests : IDisposable
     {
         StateProbe.ResolveRole("prod", standalone: false, null, []).Should().Be(EnvironmentRole.Prod);
         StateProbe.ResolveRole("https://contoso.crm4.dynamics.com", standalone: true, null, []).Should().BeNull();
+    }
+
+    // ── A scripted write with no name ────────────────────────────────────────
+
+    sealed class NoRemainingArguments : IRemainingArguments
+    {
+        public ILookup<string, string?> Parsed { get; } = Array.Empty<string>().ToLookup(x => x, x => (string?)x);
+        public IReadOnlyList<string> Raw { get; } = [];
+    }
+
+    sealed class SetProbe(CommandServices services, DataverseConnector connector)
+        : SettingsSetCommand(services, connector)
+    {
+        public Task<int> Run(Settings settings, params string[] args) =>
+            ExecuteFlowlineAsync(new CommandContext(args, new NoRemainingArguments(), "set", null), settings,
+                CancellationToken.None);
+    }
+
+    static SetProbe MakeSetProbe()
+    {
+        var (console, connector, profiles) = Deps(interactive: false);
+        return new SetProbe(new CommandServices(console, new FlowlineRuntimeOptions(), profiles,
+            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()), TestValidator.Create()), connector);
+    }
+
+    // Stand-alone with a URL that can never resolve: if the check did not stop the run first, it would go
+    // on to the environment lookup and fail there with a different error.
+    const string Unreachable = "https://contoso.invalid/";
+
+    [Fact]
+    public async Task AScriptedToggleWithNoName_FailsBeforeTheEnvironmentIsResolved()
+    {
+        var probe = MakeStateProbe(interactive: false);
+        var settings = new SettingsToggleCommand.Settings { Target = Unreachable, SolutionName = "Contoso", Off = true };
+
+        var act = () => probe.Run(settings, "settings", "toggle", Unreachable, "--solution-name", "Contoso", "--off");
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .WithMessage($"Name the component to turn off: 'flowline settings toggle {Unreachable} <name> --solution-name Contoso --off'.");
+    }
+
+    // A dry run previews a write, so it has to fail where the real write would.
+    [Fact]
+    public async Task AScriptedDryRunWriteWithNoName_FailsTheSameWay()
+    {
+        var probe = MakeStateProbe(interactive: false);
+        var settings = new SettingsToggleCommand.Settings
+        {
+            Target = Unreachable, SolutionName = "Contoso", On = true, DryRun = true,
+            Type = SettingsToggleCommand.StateType.Flow,
+        };
+
+        var act = () => probe.Run(settings,
+            "settings", "toggle", Unreachable, "--solution-name", "Contoso", "--type", "flow", "--on", "--dry-run");
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .WithMessage("Name the flow to turn on: *<name>*--dry-run'.");
+    }
+
+    [Fact]
+    public async Task AScriptedSetWithNoName_NamesTheKindAndHidesTheValue()
+    {
+        var probe = MakeSetProbe();
+        var settings = new SettingsSetCommand.Settings
+        {
+            Target = Unreachable, SolutionName = "Contoso", Value = "s3cret",
+            Type = SettingsSetCommand.ValueType.EnvVar,
+        };
+
+        var act = () => probe.Run(settings,
+            "settings", "set", Unreachable, "--solution-name", "Contoso", "--type", "envvar", "--value", "s3cret");
+
+        var thrown = (await act.Should().ThrowAsync<FlowlineException>()).Which;
+        thrown.ExitCode.Should().Be(ExitCode.ValidationFailed);
+        thrown.Message.Should().StartWith("Name the environment variable to set:")
+            .And.Contain("--value <value>").And.NotContain("s3cret");
+    }
+
+    // A bad target is the first thing wrong; asking for a name would suggest a line with the component
+    // name still in the environment's place.
+    [Fact]
+    public async Task ABadTargetAndNoName_ReportsTheTarget()
+    {
+        var probe = MakeStateProbe(interactive: false);
+        var settings = new SettingsToggleCommand.Settings { Target = "ApprovalFlow", SolutionName = "Contoso", Off = true };
+
+        var act = () => probe.Run(settings, "settings", "toggle", "ApprovalFlow", "--solution-name", "Contoso", "--off");
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .WithMessage("'ApprovalFlow' isn't an environment*");
     }
 }

@@ -512,8 +512,9 @@ namespace Flowline
                 settings.SetDescription(
                     "Read or change one environment's configuration: environment variable values, " +
                     "connection references, and flow, workflow, plugin step, form and view state. " +
-                    "Component operations take the environment, then optionally the component name; " +
-                    "omit the name to list or pick one, and narrow with --type. They run any time, " +
+                    "Component operations take the environment, then the component name: leave it out " +
+                    "to list or pick one, but a script that changes a component must name it. Narrow " +
+                    "with --type. They run any time, " +
                     "against components already present in the target.");
 
                 settings.AddCommand<SettingsApplyCommand>("apply")

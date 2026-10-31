@@ -24,7 +24,7 @@ public abstract class SettingsComponentSettings : SettingsSettings
     public string Target { get; set; } = null!;
 
     [CommandArgument(1, "[name]")]
-    [Description("Component to address. Omit to pick one")]
+    [Description("Component to address. Omit it to list or pick one; a script that changes a component must name it")]
     public string? Name { get; set; }
 }
 
@@ -63,6 +63,9 @@ public abstract class SettingsComponentCommandBase<TSettings>(
 
     /// <summary>Whether this invocation writes, as opposed to reading the current state or value.</summary>
     protected abstract bool IsWrite(TSettings settings);
+
+    /// <summary>What the write does, as the verb in "Name the flow to turn off".</summary>
+    protected abstract string WriteVerb(TSettings settings);
 
     /// <summary>
     /// Runs the read or write behind a spinner, so the run says what it is waiting on.
@@ -108,6 +111,15 @@ public abstract class SettingsComponentCommandBase<TSettings>(
 
         var role = ResolveRoleOrThrow(settings.Target, standalone, settings.Name, context.Arguments);
 
+        // A scripted write with no name has nothing to write to. Listing instead, as a read does, exited 0
+        // and left the script believing the write happened. Checked before the environment is resolved,
+        // because everything above is local and the script should not wait on Dataverse to hear it. At a
+        // terminal the picker below still asks, then writes what was picked.
+        if (IsWrite(settings) && string.IsNullOrWhiteSpace(settings.Name) && !IsInteractive())
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                SettingsSupport.BuildMissingNameError(
+                    SettingsComponentNames.Singular(kinds), WriteVerb(settings), settings.Target, context.Arguments));
+
         var (env, profile) = await ResolveEnvironmentAsync(settings.Target, role, settings, cancellationToken);
         var solutionName = await ResolveSolutionNameAsync(settings, standalone, null, env, cancellationToken);
 
@@ -140,8 +152,9 @@ public abstract class SettingsComponentCommandBase<TSettings>(
             var hiddenNote = hidden == 0 ? null
                 : $"Forms and views not shown ({hidden}). Pass --type form or --type view to list them.";
 
-            // No name in an unattended run is an inventory question, not a malformed invocation: the
-            // answer is the list, and a run that prints what was asked for succeeded.
+            // No name in an unattended read is an inventory question, not a malformed invocation: the
+            // answer is the list, and a run that prints what was asked for succeeded. A write never gets
+            // here unattended; it failed above, naming the argument.
             if (!IsInteractive())
             {
                 ListCandidates(kinds, shown);
@@ -918,6 +931,8 @@ public class SettingsToggleCommand(
 
     protected override bool IsWrite(Settings settings) => settings.On || settings.Off;
 
+    protected override string WriteVerb(Settings settings) => settings.On ? "turn on" : "turn off";
+
     const string LeaveIt = "leave it as it is";
 
     protected override async Task<bool> PromptForTargetAsync(
@@ -994,6 +1009,8 @@ public class SettingsSetCommand(
     };
 
     protected override bool IsWrite(Settings settings) => settings.Value is not null;
+
+    protected override string WriteVerb(Settings settings) => "set";
 
     protected override Task<bool> PromptForTargetAsync(
         SingleComponentOutcome current, Settings settings, EnvironmentInfo environment,

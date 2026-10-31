@@ -265,6 +265,25 @@ public static class SettingsSupport
         return $"'{target}' isn't an environment. Pass a role (dev, test, uat, prod) or the full https:// URL.";
     }
 
+    /// <summary>The message a scripted write with no component name earns.</summary>
+    /// <remarks>
+    /// Without a name an unattended run used to list the components and exit 0, so a script that passed
+    /// <c>--off</c> believed something was off and nothing had changed. The suggestion is the caller's own
+    /// line with <c>&lt;name&gt;</c> after the environment, so <c>--type</c> and <c>--dry-run</c> survive
+    /// the paste.
+    /// </remarks>
+    public static string BuildMissingNameError(string noun, string verb, string target, IReadOnlyList<string> args)
+    {
+        var targetAt = PositionalIndex(args, target, after: -1);
+        if (targetAt < 0)
+            return $"Name the {noun} to {verb}: 'flowline settings <operation> {target} <name>'.";
+
+        var withName = args.ToList();
+        withName.Insert(targetAt + 1, "<name>");
+
+        return $"Name the {noun} to {verb}: '{Suggestion(withName)}'.";
+    }
+
     /// <summary>Where a positional value sits in the invocation, searching after the operation.</summary>
     /// <remarks>
     /// Matched by value because an option may come before the positionals (<c>--type flow prod</c>), so

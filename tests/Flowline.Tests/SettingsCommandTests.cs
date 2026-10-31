@@ -647,6 +647,40 @@ public class SettingsCommandTests : IDisposable
             .And.NotContain("comes first");
     }
 
+    // ── A scripted write with no name ────────────────────────────────────────
+
+    // A script that passed --off with no name used to get the component list and exit 0, so it believed
+    // something was turned off and nothing was.
+    [Fact]
+    public void AWriteWithNoName_IsAnsweredWithTheCallersLineAndAName()
+    {
+        var message = SettingsSupport.BuildMissingNameError(
+            "flow", "turn off", "prod", ["settings", "toggle", "prod", "--off"]);
+
+        message.Should().Be("Name the flow to turn off: 'flowline settings toggle prod <name> --off'.");
+    }
+
+    // The suggestion keeps every flag, so pasting it after filling in the name still previews rather
+    // than writes when the caller asked for a dry run.
+    [Fact]
+    public void TheSuggestion_KeepsTheCallersFlags_WhereverTheyAre()
+    {
+        var message = SettingsSupport.BuildMissingNameError(
+            "flow", "turn on", "prod", ["settings", "toggle", "--type", "flow", "prod", "--on", "--dry-run"]);
+
+        message.Should().Contain("'flowline settings toggle --type flow prod <name> --on --dry-run'");
+    }
+
+    [Theory]
+    [InlineData(new[] { "settings", "set", "prod", "--value", "https://api.contoso.com" }, "--value <value>")]
+    [InlineData(new[] { "settings", "set", "prod", "--value=https://api.contoso.com" }, "--value=<value>")]
+    public void TheSuggestion_NeverRepeatsTheValue(string[] args, string expected)
+    {
+        var message = SettingsSupport.BuildMissingNameError("component", "set", "prod", args);
+
+        message.Should().Contain($"prod <name> {expected}").And.NotContain("api.contoso.com");
+    }
+
     // ── An unknown --type ────────────────────────────────────────────────────
 
     // The parser answers with "Failed to convert 'bogus' to Nullable`1", which leaks a CLR type name and
