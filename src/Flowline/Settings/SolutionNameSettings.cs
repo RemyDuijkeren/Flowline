@@ -38,7 +38,7 @@ public class SolutionNameSettings : EnvironmentSettings
             return null;
 
         var word = args[1];
-        var flag = SettingsSupport.LooksLikeTarget(word) ? "--env" : "--solution-name";
+        var flag = SettingsSupport.IsEnvironmentTarget(word) ? "--env" : "--solution-name";
         // The line is repeated back to the console, so a --client-secret value in it is masked.
         var rest = SubprocessCapture.RedactSensitiveArgs(
             string.Join(' ', new[] { flag, word }.Concat(args.Skip(2)).Select(SettingsSupport.Quote)));

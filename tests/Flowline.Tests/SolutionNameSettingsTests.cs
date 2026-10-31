@@ -56,7 +56,7 @@ public class SolutionNameSettingsTests
     [InlineData("push", "--env", "dev", "Contoso")]
     [InlineData("push")]
     [InlineData("deploy", "prod")]
-    [InlineData("settings", "push", "test")]
+    [InlineData("settings", "apply", "test")]
     public void AnythingElse_IsLeftToTheParser(params string[] args)
     {
         SolutionNameSettings.BuildPositionalHint(args).Should().BeNull();

@@ -13,8 +13,8 @@ namespace Flowline.Commands;
 /// Options every <c>settings</c> operation that touches an environment carries.
 /// </summary>
 /// <remarks>
-/// The environment positional is deliberately not here (KTD1). <c>push</c> and the five component kinds
-/// require it, <c>pull</c> makes it optional for the all-roles sweep, and one
+/// The environment positional is deliberately not here (KTD1). <c>apply</c> and the component operations
+/// require it, <c>capture</c> makes it optional for the all-roles sweep, and one
 /// <see cref="CommandArgumentAttribute"/> cannot be both — so each leaf declares its own at position 0 and
 /// only the shared options live on the base.
 /// </remarks>
@@ -164,7 +164,7 @@ public static class SettingsSupport
         }
 
         // 'settings dev': an environment where an operation belongs, with no operation anywhere.
-        if (LooksLikeTarget(first))
+        if (IsEnvironmentTarget(first))
             return $"'{first}' is an environment, not an operation. The operation comes first: " +
                    $"flowline settings <operation> {Quote(first)}. " +
                    $"Operations are {string.Join(", ", s_operations)}.";
@@ -225,16 +225,91 @@ public static class SettingsSupport
     static bool IsOperation(string token) =>
         s_operations.Contains(token, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Whether a token is the kind of thing a <c>&lt;target&gt;</c> accepts.</summary>
+    /// <summary>Whether a token is the kind of thing a <c>&lt;target&gt;</c> accepts: a role or an http(s) URL.</summary>
     /// <remarks>
-    /// Deliberately narrow. A token that is neither a role nor a URL is more likely a mistyped operation
-    /// than a transposed environment, and Spectre's own "unknown command" serves that better than a
-    /// confident guess would.
+    /// Deliberately narrow, and the same rule <c>--env</c> applies: a bare host with no scheme is not a URL
+    /// here either. A token that is neither is more likely a mistyped operation or a component name in the
+    /// wrong place than an environment, so nothing downstream should treat it as one.
     /// </remarks>
-    internal static bool LooksLikeTarget(string token) =>
+    public static bool IsEnvironmentTarget(string token) =>
         EnvironmentRoles.TryParse(token) is not null
-        || token.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-        || token.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        || (Uri.TryCreate(token, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps));
+
+    /// <summary>The message a target that is neither a role nor a URL earns, before anything resolves it.</summary>
+    /// <remarks>
+    /// Without this the token went to the PAC profile lookup as a URL, and a component name typed where
+    /// the environment belongs came back as "No PAC auth profile found for ApprovalFlow", with advice to
+    /// authenticate against it.
+    ///
+    /// When the component name is the environment, the two were swapped, and the line to run is the
+    /// caller's own with the two exchanged. Otherwise there is nothing to swap with, so it says what a
+    /// target is.
+    /// </remarks>
+    public static string BuildNotAnEnvironmentError(string target, string? name, IReadOnlyList<string> args)
+    {
+        if (name is not null && IsEnvironmentTarget(name))
+        {
+            var swapped = args.ToArray();
+            var targetAt = PositionalIndex(swapped, target, after: -1);
+            var nameAt = PositionalIndex(swapped, name, after: targetAt);
+
+            if (targetAt >= 0 && nameAt >= 0)
+            {
+                (swapped[targetAt], swapped[nameAt]) = (swapped[nameAt], swapped[targetAt]);
+                return $"'{target}' isn't an environment, and '{name}' is. The environment comes first: " +
+                       $"'{Suggestion(swapped)}'.";
+            }
+        }
+
+        return $"'{target}' isn't an environment. Pass a role (dev, test, uat, prod) or the full https:// URL.";
+    }
+
+    /// <summary>Where a positional value sits in the invocation, searching after the operation.</summary>
+    /// <remarks>
+    /// Matched by value because an option may come before the positionals (<c>--type flow prod</c>), so
+    /// position alone says nothing. An option value equal to the positional would be found first; that
+    /// takes a component named after its own <c>--type</c> value, and the suggestion is only advice.
+    /// </remarks>
+    static int PositionalIndex(IReadOnlyList<string> args, string value, int after)
+    {
+        var operationAt = Enumerable.Range(0, args.Count).FirstOrDefault(i => IsOperation(args[i]), -1);
+
+        for (var i = Math.Max(after, operationAt) + 1; i < args.Count; i++)
+            if (args[i] == value)
+                return i;
+
+        return -1;
+    }
+
+    /// <summary>The caller's invocation as a line to paste, with any <c>--value</c> replaced.</summary>
+    /// <remarks>
+    /// The value is never repeated: an environment variable value can be a secret, and this line ends up
+    /// in CI logs and the log file. The caller still has their own command line to copy it from.
+    /// </remarks>
+    static string Suggestion(IReadOnlyList<string> args)
+    {
+        var tokens = new List<string>(args.Count);
+
+        for (var i = 0; i < args.Count; i++)
+        {
+            if (args[i].StartsWith("--value=", StringComparison.OrdinalIgnoreCase))
+            {
+                tokens.Add("--value=<value>");
+                continue;
+            }
+
+            tokens.Add(Quote(args[i]));
+
+            if (string.Equals(args[i], "--value", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Count)
+            {
+                tokens.Add("<value>");
+                i++;
+            }
+        }
+
+        return "flowline " + string.Join(' ', tokens);
+    }
 
     // A component name routinely has spaces in it, so a suggestion that can be pasted has to keep them
     // together.

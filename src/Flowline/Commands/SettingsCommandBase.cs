@@ -62,13 +62,22 @@ public abstract class SettingsCommandBase<TSettings>(
     /// A role keyword has nothing to resolve against outside a project: the config is a bare
     /// <see cref="ProjectConfig"/> there, so every role would fall through to a config-shaped "URL is
     /// required" pointing at a <c>.flowline</c> that was never expected to exist.
+    ///
+    /// Anything that is neither a role nor an http(s) URL fails here too, before a PAC profile is looked
+    /// up for it. The component operations pass their name and the invocation, so a swapped order is
+    /// answered with the line to run.
     /// </remarks>
-    protected static EnvironmentRole? ResolveRoleOrThrow(string target, bool standalone)
+    protected static EnvironmentRole? ResolveRoleOrThrow(
+        string target, bool standalone, string? name = null, IReadOnlyList<string>? args = null)
     {
         var role = DriftCommand.TryResolveRole(target);
 
         if (standalone && role is not null)
             throw new FlowlineException(ExitCode.ConfigInvalid, SettingsSupport.BuildStandaloneRoleError(target));
+
+        if (role is null && !SettingsSupport.IsEnvironmentTarget(target))
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                SettingsSupport.BuildNotAnEnvironmentError(target, name, args ?? []));
 
         return role;
     }

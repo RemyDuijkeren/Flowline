@@ -157,7 +157,7 @@ public class FlowlineSettingsTests
     [Theory]
     [InlineData(typeof(PushCommand.Settings))]
     [InlineData(typeof(GenerateCommand.Settings))]
-    [InlineData(typeof(SettingsPullCommand.Settings))]
+    [InlineData(typeof(SettingsCaptureCommand.Settings))]
     public void SolutionName_HasTheSameOptionAndDescriptionEverywhere(Type settings)
     {
         var property = settings.GetProperty("SolutionName")!;

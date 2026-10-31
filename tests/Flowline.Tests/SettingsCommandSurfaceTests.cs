@@ -68,6 +68,10 @@ public class SettingsCommandSurfaceTests : IDisposable
             PromptForTargetAsync(current, settings, new EnvironmentInfo(), CancellationToken.None);
 
         public bool Writes(Settings settings) => IsWrite(settings);
+
+        public static EnvironmentRole? ResolveRole(
+            string target, bool standalone, string? name, IReadOnlyList<string> args) =>
+            ResolveRoleOrThrow(target, standalone, name, args);
     }
 
     static StateProbe MakeStateProbe(bool interactive)
@@ -653,11 +657,42 @@ public class SettingsCommandSurfaceTests : IDisposable
         SettingsSupport.ResolveComponentStandalone(_dir).Should().BeFalse();
     }
 
-    // Push keeps the flag-keyed rule, because there the flag is what distinguishes the two modes.
+    // Apply keeps the flag-keyed rule, because there the flag is what distinguishes the two modes.
     [Fact]
-    public void TheComponentRuleAndThePushRule_DifferOutsideAProjectWithNoFlag()
+    public void TheComponentRuleAndTheApplyRule_DifferOutsideAProjectWithNoFlag()
     {
         SettingsSupport.ResolveComponentStandalone(_dir).Should().BeTrue();
         SettingsSupport.ResolveStandalone(null, null, _dir).Should().BeFalse();
+    }
+
+    // ── A target that is not an environment ──────────────────────────────────
+
+    // Fails before anything reaches the PAC profile lookup, which used to answer a swapped component name
+    // with "No PAC auth profile found for ApprovalFlow" and exit 4.
+    [Fact]
+    public void ATargetThatIsNotAnEnvironment_FailsAsInvalidInput()
+    {
+        var act = () => StateProbe.ResolveRole(
+            "ApprovalFlow", standalone: false, "prod", ["settings", "toggle", "ApprovalFlow", "prod", "--off"]);
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .WithMessage("*flowline settings toggle prod ApprovalFlow --off*");
+    }
+
+    // The role-outside-a-project answer is the more useful one, so it keeps its place in front.
+    [Fact]
+    public void ARoleOutsideAProject_StillGetsTheStandaloneAnswer()
+    {
+        var act = () => StateProbe.ResolveRole("prod", standalone: true, null, ["settings", "toggle", "prod"]);
+
+        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ConfigInvalid);
+    }
+
+    [Fact]
+    public void ARoleOrAUrl_ResolvesAsBefore()
+    {
+        StateProbe.ResolveRole("prod", standalone: false, null, []).Should().Be(EnvironmentRole.Prod);
+        StateProbe.ResolveRole("https://contoso.crm4.dynamics.com", standalone: true, null, []).Should().BeNull();
     }
 }

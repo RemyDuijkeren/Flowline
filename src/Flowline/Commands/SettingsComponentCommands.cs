@@ -106,7 +106,7 @@ public abstract class SettingsComponentCommandBase<TSettings>(
             throw new FlowlineException(ExitCode.ConfigInvalid,
                 "Couldn't tell which solution this is. Pass --solution-name.");
 
-        var role = ResolveRoleOrThrow(settings.Target, standalone);
+        var role = ResolveRoleOrThrow(settings.Target, standalone, settings.Name, context.Arguments);
 
         var (env, profile) = await ResolveEnvironmentAsync(settings.Target, role, settings, cancellationToken);
         var solutionName = await ResolveSolutionNameAsync(settings, standalone, null, env, cancellationToken);

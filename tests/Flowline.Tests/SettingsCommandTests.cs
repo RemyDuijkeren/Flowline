@@ -553,6 +553,100 @@ public class SettingsCommandTests : IDisposable
         routes.Should().NotThrow();
     }
 
+    // ── A target that is not an environment ──────────────────────────────────
+
+    // Anything that is neither a role nor an http(s) URL used to reach the PAC profile lookup as if it were
+    // a URL, which answered a swapped component name with "pac auth create --environment ApprovalFlow".
+    [Theory]
+    [InlineData("prod")]
+    [InlineData("PROD")]
+    [InlineData("uat")]
+    [InlineData("https://contoso.crm4.dynamics.com")]
+    [InlineData("http://localhost:5555/")]
+    public void ARoleOrAnHttpUrl_IsAnEnvironment(string target)
+    {
+        SettingsSupport.IsEnvironmentTarget(target).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("ApprovalFlow")]
+    [InlineData("contoso-test.crm4.dynamics.com")]
+    [InlineData("ftp://contoso")]
+    [InlineData("staging")]
+    public void AnythingElse_IsNotAnEnvironment(string target)
+    {
+        SettingsSupport.IsEnvironmentTarget(target).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ASwappedOrder_IsAnsweredWithTheLineToRun()
+    {
+        var message = SettingsSupport.BuildNotAnEnvironmentError(
+            "ApprovalFlow", "prod", ["settings", "toggle", "ApprovalFlow", "prod", "--off"]);
+
+        message.Should().Contain("environment comes first")
+            .And.Contain("'flowline settings toggle prod ApprovalFlow --off'");
+    }
+
+    [Fact]
+    public void ASwappedUrl_GoesFirstInTheSuggestion()
+    {
+        var message = SettingsSupport.BuildNotAnEnvironmentError(
+            "contoso_ApiUrl", "https://contoso.crm4.dynamics.com/",
+            ["settings", "set", "contoso_ApiUrl", "https://contoso.crm4.dynamics.com/"]);
+
+        message.Should().Contain("'flowline settings set https://contoso.crm4.dynamics.com/ contoso_ApiUrl'");
+    }
+
+    // An option before the positionals is legal, so the suggestion cannot assume where they sit.
+    [Fact]
+    public void ASwappedOrderWithAnOptionFirst_SwapsThePositionalsNotTheOption()
+    {
+        var message = SettingsSupport.BuildNotAnEnvironmentError(
+            "ApprovalFlow", "prod", ["settings", "toggle", "--type", "flow", "ApprovalFlow", "prod", "--off"]);
+
+        message.Should().Contain("'flowline settings toggle --type flow prod ApprovalFlow --off'");
+    }
+
+    // A value can be a secret, and this line lands in CI logs and the log file.
+    [Theory]
+    [InlineData("--value", "secret123")]
+    [InlineData("--value=secret123", null)]
+    public void ASwappedSet_NeverRepeatsTheValue(string option, string? value)
+    {
+        string[] args = value is null
+            ? ["settings", "set", "contoso_Key", "prod", option]
+            : ["settings", "set", "contoso_Key", "prod", option, value];
+
+        var message = SettingsSupport.BuildNotAnEnvironmentError("contoso_Key", "prod", args);
+
+        message.Should().NotContain("secret123").And.Contain("<value>");
+    }
+
+    [Fact]
+    public void ASwappedNameWithSpaces_StaysQuoted()
+    {
+        var message = SettingsSupport.BuildNotAnEnvironmentError(
+            "Nightly reconciliation", "prod", ["settings", "toggle", "Nightly reconciliation", "prod", "--off"]);
+
+        message.Should().Contain("'flowline settings toggle prod \"Nightly reconciliation\" --off'");
+    }
+
+    // Nothing to swap with: the second word is not an environment either.
+    [Theory]
+    [InlineData("Nightly reconciliation")]
+    [InlineData(null)]
+    public void ABadTargetWithNoEnvironmentToSwap_GetsTheGenericMessage(string? name)
+    {
+        var message = SettingsSupport.BuildNotAnEnvironmentError(
+            "ApprovalFlow", name, ["settings", "toggle", "ApprovalFlow", "--off"]);
+
+        message.Should().Contain("'ApprovalFlow' isn't an environment")
+            .And.Contain("dev, test, uat, prod")
+            .And.Contain("https://")
+            .And.NotContain("comes first");
+    }
+
     // ── An unknown --type ────────────────────────────────────────────────────
 
     // The parser answers with "Failed to convert 'bogus' to Nullable`1", which leaks a CLR type name and
