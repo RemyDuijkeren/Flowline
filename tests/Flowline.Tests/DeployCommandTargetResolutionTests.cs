@@ -2,7 +2,11 @@ using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Config;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Environments;
+using Flowline.Core.Models;
+using Flowline.Core.Validation;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -96,5 +100,47 @@ public class DeployCommandTargetResolutionTests
 
         DeployCommand.ResolveTarget("https://contoso-uat.crm4.dynamics.com", config, standalone: true)
             .Should().Be(("https://contoso-uat.crm4.dynamics.com", (EnvironmentRole?)null));
+    }
+
+    // The role the target resolved to travels into the environment check, so deploy by role refuses an
+    // environment of the wrong type. Losing the role on the way would let the deploy through silently.
+    [Fact]
+    public async Task CheckTarget_RoleTarget_AppliesTheEnvironmentTypeGuard()
+    {
+        var config = new ProjectConfig { UatUrl = "https://contoso-uat.crm4.dynamics.com/" };
+        var target = DeployCommand.ResolveTarget("uat", config);
+
+        var act = () => DeployCommand.CheckTargetAsync(MakeEnvironments("Production"), target, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Which.Message.Should().Contain("UatUrl");
+    }
+
+    [Fact]
+    public async Task CheckTarget_UrlTarget_IsNotTypeChecked()
+    {
+        var target = DeployCommand.ResolveTarget("https://contoso.crm4.dynamics.com/", new ProjectConfig());
+
+        var (info, _) = await DeployCommand.CheckTargetAsync(MakeEnvironments("Production"), target, CancellationToken.None);
+
+        info.Type.Should().Be("Production");
+    }
+
+    static EnvironmentService MakeEnvironments(string environmentType)
+    {
+        var console = new TestConsole();
+        var options = new FlowlineRuntimeOptions();
+        var validator = TestValidator.Create(new ValidationProbes
+        {
+            GetEnvironmentByProfileAsync = (_, url, _) =>
+                Task.FromResult<EnvironmentInfo?>(new EnvironmentInfo { EnvironmentUrl = url, DisplayName = "Contoso", Type = environmentType })
+        });
+        var profiles = new ProfileResolutionService(console, new DataverseConnector(console, new HttpClient()), options)
+        {
+            FindBestProfileOverride = url => new ProfileFound(new PacProfile { Name = "Contoso", Resource = url }),
+            IsProfileActiveOverride = _ => true
+        };
+        return new EnvironmentService(console, profiles, validator, options);
     }
 }

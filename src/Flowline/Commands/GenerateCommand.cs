@@ -201,7 +201,7 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
         SolutionInfo remoteSln;
         if (standaloneMode)
         {
-            await Environments.CheckByUrlAsync(devUrl, EnvironmentRole.Dev, cancellationToken, resolvedProfile);
+            await Environments.CheckByUrlAsync(devUrl, null, cancellationToken, resolvedProfile, devOnly: true);
             remoteSln = await GetAndCheckStandaloneSolutionAsync(solutionName, devUrl, cancellationToken);
         }
         else

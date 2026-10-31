@@ -279,7 +279,7 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
 
         if (standaloneMode)
         {
-            (devEnv, profile) = await Environments.CheckByUrlAsync(environmentUrl, EnvironmentRole.Dev, cancellationToken).ConfigureAwait(false);
+            (devEnv, profile) = await Environments.CheckByUrlAsync(environmentUrl, null, cancellationToken, devOnly: true).ConfigureAwait(false);
             slnInfo = await GetAndCheckStandaloneSolutionAsync(standaloneParams.SolutionName!, environmentUrl, cancellationToken).ConfigureAwait(false);
             solutionName = standaloneParams.SolutionName!;
         }

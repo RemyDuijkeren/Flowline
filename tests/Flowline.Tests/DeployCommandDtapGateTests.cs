@@ -12,6 +12,20 @@ public class DeployCommandDtapGateTests
 
     // ── Tier resolution: happy paths ──────────────────────────────────────────
 
+    // The predecessor's URL comes from .flowline too, so a non-URL there names the key instead of
+    // reaching the PAC profile lookup.
+    [Fact]
+    public void ResolveDtapGate_PredecessorSavedValueIsNotAUrl_ThrowsValidationFailedNamingTheKey()
+    {
+        var config = Config(prod: "https://prod.crm.dynamics.com/", uat: "not-a-url");
+
+        var act = () => DeployCommand.ResolveDtapGate(config, "https://prod.crm.dynamics.com/");
+
+        act.Should().Throw<FlowlineException>()
+           .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+           .Which.Message.Should().Contain("UatUrl");
+    }
+
     [Fact]
     public void ResolveDtapGate_ChecksUat_WhenTargetIsProdAndUatConfigured()
     {

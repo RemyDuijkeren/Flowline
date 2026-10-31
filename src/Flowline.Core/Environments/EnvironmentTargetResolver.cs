@@ -27,7 +27,7 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
         CancellationToken cancellationToken)
     {
         var value = string.IsNullOrWhiteSpace(envOption)
-            ? onlyRole?.ToString().ToLowerInvariant() ?? "dev"
+            ? onlyRole?.Keyword() ?? "dev"
             : envOption.Trim();
 
         // Role keyword (R5): resolves straight from .flowline, never touches Dataverse.
@@ -198,5 +198,5 @@ public class EnvironmentTargetResolver(IAnsiConsole console)
 
     static FlowlineException RoleOnlyRefusal(string detail, EnvironmentRole role) =>
         new(ExitCode.ValidationFailed,
-            $"{detail} — this command only accepts {role.UpperLabel()}. Use --env {role.ToString().ToLowerInvariant()} or a {role.UpperLabel()} environment URL.");
+            $"{detail} — this command only accepts {role.UpperLabel()}. Use --env {role.Keyword()} or a {role.UpperLabel()} environment URL.");
 }

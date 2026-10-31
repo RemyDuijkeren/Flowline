@@ -111,7 +111,8 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
     {
         var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
         var standalone = IsStandalone(settings);
-        var (targetUrl, targetRole) = ResolveTarget(settings.Target, Config, standalone);
+        var target = ResolveTarget(settings.Target, Config, standalone);
+        var targetUrl = target.Url;
 
         // U3/KTD2: standalone only, and hoisted this high only because standalone builds its
         // ProjectSolution from this manifest instead of Config, and `sln` is consumed below (target
@@ -158,7 +159,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
             await ValidateGitCleanAsync(deploymentInputPaths, cancellationToken);
         }
 
-        var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(targetUrl, targetRole, sln, settings, cancellationToken);
+        var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(target, sln, settings, cancellationToken);
 
         // Resolve the DTAP gate's version cheaply (artifact manifest, cache entry, or local Solution.xml) so the
         // gate keeps failing fast before any expensive work — packing itself is deferred past the gate below.
@@ -394,10 +395,17 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         return (role is { } r ? EnvironmentTarget.RequireRoleUrl(config, r) : target, role);
     }
 
+    // The resolved target goes into the environment check whole, so its role always reaches the
+    // environment-type guard: a role must point at the right kind of environment, a URL is taken as given.
+    internal static Task<(EnvironmentInfo Info, PacProfile Profile)> CheckTargetAsync(
+        EnvironmentService environments, (string Url, EnvironmentRole? Role) target, CancellationToken ct) =>
+        environments.CheckByUrlAsync(target.Url, target.Role, ct);
+
     private async Task<(EnvironmentInfo TargetEnv, bool ExistingSolution, PacProfile Profile)> ValidateTargetAsync(
-        string targetUrl, EnvironmentRole? targetRole, ProjectSolution sln, Settings settings, CancellationToken ct)
+        (string Url, EnvironmentRole? Role) target, ProjectSolution sln, Settings settings, CancellationToken ct)
     {
-        var (targetEnv, profile) = await Environments.CheckByUrlAsync(targetUrl, targetRole, ct);
+        var targetUrl = target.Url;
+        var (targetEnv, profile) = await CheckTargetAsync(Environments, target, ct);
 
         var existingSolution = await Console.Status().FlowlineSpinner().StartAsync(
             $"Checking [bold]{sln.UniqueName}[/]...",
@@ -852,30 +860,26 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
 
         if (isProd)
         {
-            (predecessorUrl, predecessorLabel) = FirstConfigured(
-                (config.UatUrl, "UAT"),
-                (config.TestUrl, "Test"),
-                (config.DevUrl, "Dev"));
+            (predecessorUrl, predecessorLabel) = FirstConfigured(EnvironmentRole.Uat, EnvironmentRole.Test, EnvironmentRole.Dev);
         }
         else if (isUat)
         {
-            (predecessorUrl, predecessorLabel) = FirstConfigured(
-                (config.TestUrl, "Test"),
-                (config.DevUrl, "Dev"));
+            (predecessorUrl, predecessorLabel) = FirstConfigured(EnvironmentRole.Test, EnvironmentRole.Dev);
         }
         else if (isTest)
         {
-            (predecessorUrl, predecessorLabel) = FirstConfigured(
-                (config.DevUrl, "Dev"));
+            (predecessorUrl, predecessorLabel) = FirstConfigured(EnvironmentRole.Dev);
         }
 
         return string.IsNullOrEmpty(predecessorUrl)
             ? new DtapGateDecision(DtapGateOutcome.Skip)
             : new DtapGateDecision(DtapGateOutcome.Check, predecessorUrl, predecessorLabel);
 
-        static (string? Url, string? Label) FirstConfigured(params (string? Url, string Label)[] candidates) =>
-            candidates.Select(c => (c.Url, c.Label))
-                      .FirstOrDefault(c => !string.IsNullOrEmpty(c.Url));
+        // The predecessor's URL comes from .flowline, so it gets the same check as any saved role URL.
+        (string? Url, string? Label) FirstConfigured(params EnvironmentRole[] candidates) =>
+            candidates.Where(r => !string.IsNullOrEmpty(config.GetUrl(r)))
+                      .Select(r => ((string?)EnvironmentTarget.RequireRoleUrl(config, r), (string?)r.Label()))
+                      .FirstOrDefault();
     }
 
     internal static string ReadLocalSolutionVersion(string dataverseSolutionFolder)

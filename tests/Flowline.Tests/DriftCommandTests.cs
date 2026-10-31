@@ -2,7 +2,12 @@ using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
 using Flowline.Core.Config;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Environments;
+using Flowline.Core.Updates;
+using Flowline.Diagnostics;
+using Spectre.Console.Cli;
+using Spectre.Console.Testing;
 using Flowline.Core.OrphanCleanup;
 using Flowline.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -160,5 +165,53 @@ public class DriftCommandTests
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         Directory.Exists(dir).Should().BeFalse();
+    }
+
+    // ── A target that is neither a role nor a URL fails first ────────────────────────────────────────
+
+    sealed class DriftProbe(CommandServices services)
+        : DriftCommand(services, new DataverseConnector(services.Console, new HttpClient()),
+            new OrphanCleanupService(services.Console, []))
+    {
+        public Task<int> Run(Settings settings) =>
+            ExecuteFlowlineAsync(new CommandContext(["drift", settings.Target], new NoArgs(), "drift", null), settings,
+                CancellationToken.None);
+
+        sealed class NoArgs : IRemainingArguments
+        {
+            public ILookup<string, string?> Parsed => Array.Empty<string>().ToLookup(x => x, x => (string?)x);
+            public IReadOnlyList<string> Raw => [];
+        }
+    }
+
+    static DriftProbe MakeDriftProbe()
+    {
+        var console = new TestConsole();
+        var connector = new DataverseConnector(console, new HttpClient());
+        return new DriftProbe(new CommandServices(console, new FlowlineRuntimeOptions(),
+            new ProfileResolutionService(console, connector, new FlowlineRuntimeOptions()),
+            NullLoggerFactory.Instance, new SubprocessCapture(console), new NuGetVersionClient(new HttpClient()), TestValidator.Create()));
+    }
+
+    // Used to reach the PAC profile lookup as a URL and come back as exit 4 with advice to authenticate.
+    [Fact]
+    public async Task ATargetThatIsNotARoleOrUrl_ExitsValidationFailedWithTheDriftLine()
+    {
+        var act = () => MakeDriftProbe().Run(new DriftCommand.Settings { Target = "staging" });
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Which.Message.Should().Contain("'staging'").And.Contain("flowline drift <dev|test|uat|prod|url>");
+    }
+
+    // The target is diagnosed before the artifact, so a bad target and a missing zip report the target.
+    [Fact]
+    public async Task ABadTargetWithAMissingArtifact_ReportsTheTargetFirst()
+    {
+        var act = () => MakeDriftProbe().Run(new DriftCommand.Settings { Target = "staging", Path = "missing.zip" });
+
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Which.Message.Should().Contain("'staging'");
     }
 }

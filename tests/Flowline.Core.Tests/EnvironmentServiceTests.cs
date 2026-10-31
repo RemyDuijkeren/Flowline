@@ -70,15 +70,18 @@ public class EnvironmentServiceTests
         await act.Should().NotThrowAsync();
     }
 
-    // push and pull are DEV-only, so they refuse Production even without a role.
+    // push and pull are DEV-only, so they refuse Production even without a role. Stand-alone push and
+    // generate land here too: with no .flowline, the fix is the URL they passed, not a saved key.
     [Fact]
-    public async Task CheckByUrl_DevOnly_NoRole_ProductionType_Throws()
+    public async Task CheckByUrl_DevOnly_NoRole_ProductionType_ThrowsPointingAtEnv()
     {
         var (service, _) = MakeService("Production");
 
         var act = () => service.CheckByUrlAsync(EnvUrl, null, CancellationToken.None, s_profile, devOnly: true);
 
-        (await act.Should().ThrowAsync<FlowlineException>()).Where(e => e.ExitCode == ExitCode.ValidationFailed);
+        (await act.Should().ThrowAsync<FlowlineException>())
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed)
+            .Which.Message.Should().Contain("--env").And.NotContain(".flowline");
     }
 
     [Fact]
@@ -163,6 +166,17 @@ public class EnvironmentServiceTests
     }
 
     // ── Resolve a role or a URL ──────────────────────────────────────────────
+
+    // A URL names its environment outright, so there is no role to check its type against.
+    [Fact]
+    public async Task Resolve_Url_SkipsTheTypeGuard()
+    {
+        var (service, _) = MakeService("Production");
+
+        var (info, _) = await service.ResolveAsync(new ProjectConfig(), EnvUrl, null, CancellationToken.None);
+
+        info.Type.Should().Be("Production");
+    }
 
     [Fact]
     public async Task Resolve_Role_AppliesTheTypeGuard()

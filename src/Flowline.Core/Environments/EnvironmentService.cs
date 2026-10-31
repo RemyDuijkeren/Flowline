@@ -66,7 +66,7 @@ public sealed class EnvironmentService(
                 throw new FlowlineException(ExitCode.ValidationFailed,
                     $"{typed.ConfigKey()} in .flowline points to a Production environment, but {typed.UpperLabel()} must not. Point it at a sandbox.");
             case EnvironmentTypeMismatch.Production:
-                throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment — use a sandbox or dev instead.");
+                throw new FlowlineException(ExitCode.ValidationFailed, "That's a Production environment. Pass --env with a sandbox or dev environment's URL instead.");
         }
 
         console.Ok($"{(role is { } ok ? $"{ok.Label()} env" : "Env")} [bold]{Markup.Escape(env.DisplayName ?? url)}[/] ({Markup.Escape(env.EnvironmentUrl ?? url)}) exists");
