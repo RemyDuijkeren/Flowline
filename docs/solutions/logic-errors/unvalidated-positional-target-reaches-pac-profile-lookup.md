@@ -66,10 +66,10 @@ Error: 'ApprovalFlow' isn't an environment, and 'prod' is. The environment comes
 Otherwise:
 
 ```text
-Error: 'ApprovalFlow' isn't an environment. Pass a role (dev, test, uat, prod) or the full https:// URL.
+Error: 'ApprovalFlow' isn't a role (dev, test, uat, prod) or a URL. Put the environment first: flowline settings <operation> <dev|test|uat|prod|url>
 ```
 
-Tests: `tests/Flowline.Tests/SettingsCommandTests.cs:582` (swapped line) and `tests/Flowline.Tests/SettingsCommandSurfaceTests.cs:678` (exit 15 through the role check).
+Tests: `tests/Flowline.Tests/SettingsCommandTests.cs` (swapped line), `tests/Flowline.Tests/SettingsCommandSurfaceTests.cs` (exit 15 through the role check) and `tests/Flowline.Core.Tests/EnvironmentTargetTests.cs` (the shared rule).
 
 ## Why This Works
 
@@ -77,18 +77,18 @@ The profile lookup never validates its input as a URL. `ProfileResolutionService
 
 ## Prevention
 
-The guard exists in three places, each written separately, and one command still lacks it:
+The guard is defined once, in Core, and every command that takes an environment goes through it:
 
-| Path | Guard |
+| Piece | Where |
 |---|---|
-| `--env` on push, pull, generate, clone, init, provision | `src/Flowline.Core/Environments/EnvironmentTargetResolver.cs:58-63` |
-| `deploy <target>` | `src/Flowline/Commands/DeployCommand.cs:409-414` |
-| `settings apply/capture/toggle/set <target>` | `src/Flowline/Commands/SettingsCommandBase.cs:78-80` |
-| `drift <target>` | **None.** `src/Flowline/Commands/DriftCommand.cs:180-184` passes a non-role token straight to the profile lookup |
+| What a target is (role or http(s) URL), its messages, the check a positional target gets, a role's saved URL | `src/Flowline.Core/Environments/EnvironmentTarget.cs` |
+| Looking the environment up, with the environment-type guard | `src/Flowline.Core/Environments/EnvironmentService.cs`, reached from every command as `Environments` |
+| `--env` on push, pull, generate, clone, init, provision | `src/Flowline.Core/Environments/EnvironmentTargetResolver.cs`, which calls the shared rule |
 
-- Any new command that takes an environment positional checks role-or-http(s)-URL before calling the profile lookup, and fails with exit 15, never 4.
-- `drift staging` still reproduces the original symptom. Fixing it is a one-line call to the same predicate; consolidating the three copies into one shared check is the larger cleanup that would stop the next command from missing it.
-- Adding a role keyword means updating the role parser that all of these read through (`DriftCommand.TryResolveRole` delegates to `EnvironmentRoles.TryParse`); see `docs/solutions/conventions/flowline-add-environment-2026-06-06.md`.
+`deploy`, `drift` and the `settings` operations check their positional with `EnvironmentTarget.Check` before anything resolves it. A role's saved value is checked as a URL too, so a bad `.flowline` entry fails with exit 15 naming the key instead of reaching the profile lookup.
+
+- A new command that takes an environment positional calls `EnvironmentTarget.Check` and then the environment service. It does not write its own check.
+- Adding a role keyword means updating the role parser that all of these read through (`EnvironmentRoles.TryParse`); see `docs/solutions/conventions/flowline-add-environment-2026-06-06.md`.
 - Exit 4 promises that `pac auth create` is the fix (`docs/solutions/architecture-patterns/ai-agent-consumable-cli-contract-2026-06-07.md`). Reserve it for inputs that really are environment URLs.
 
 Related: `docs/solutions/integration-issues/linux-pac-profile-casing-and-token-cache-mismatch.md` (another case where the profile lookup's error points at the wrong fix).
