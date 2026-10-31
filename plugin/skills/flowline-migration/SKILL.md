@@ -47,7 +47,7 @@ Every guide follows the same two-phase strategy: **Phase 1 (standalone)** replac
 - **Read this before guiding:** ALM Accelerator assumed a shared DEV environment with PR-gated promotion; Flowline assumes the team owns DEV and DEV is truth. If the user's team does *not* own DEV (shared maker environment, ISV/AppSource model), Flowline is not the right fit — say so and stop, don't force the migration.
 - ALM Accelerator didn't define its own plugin registration attributes — it deployed whatever assembly existed. If the project also uses spkl/Daxif/PACX attributes underneath, run that tool's migration guide for the attribute replacement step first.
 - `flowline clone` replaces the canvas-app export → ADO branch commit flow in one command; `flowline deploy {env}` replaces the pipeline's pack + import stages.
-- Per-environment deployment settings (connection references, env vars) map to `flowline settings push <target>`, run after `deploy`.
+- Per-environment deployment settings (connection references, env vars) map to `flowline settings apply <target>`, run after `deploy`.
 - No generated CI/CD templates yet — the wiki guide has GitHub Actions and Azure Pipelines starting points to adapt.
 
 ### From PACX (`Flowline.wiki/19-Migration-from-PACX.md`)

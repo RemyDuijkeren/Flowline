@@ -71,25 +71,29 @@ routine post-deploy step.
    runs every pre-flight (DTAP gate, git-clean, drift, pack, solution checker, orphan report) plus a
    labeled backup, then stops before importing; it ends with `Dry run complete`.
 
-6. `flowline settings push <env>` after a deploy, when the environment needs values or component state a
+6. `flowline settings apply <env>` after a deploy, when the environment needs values or component state a
    deploy can't carry: environment variable values, connection reference bindings, and the cloud flows,
    classic workflows or plugin steps that must be off. It reads `Solution/deploymentSettings.<env>.json`
    and touches only what that file names — `CloudFlows`, `Workflows` and `PluginSteps` are name-to-boolean
    maps, and business process flows and business rules are outside its reach entirely. Re-running it changes nothing, so it is safe on every pipeline run; `--dry-run` reports
-   the change set and writes nothing. `flowline settings pull <env>` writes the file from the
+   the change set and writes nothing. `flowline settings capture <env>` writes the file from the
    environment instead — use it to create the first one, then commit it. Name the environment: omitting it
    exits 15 in a non-interactive run, and only at a terminal does it offer a pick of the configured ones.
    After writing, it reports how many entries still have no value; at a terminal it offers to fill those
    in, non-interactively it only counts them.
 
-   To change a single component without the file, use `flowline settings state <env> <name> --on|--off`
-   or `flowline settings value <env> <name> --value <v>`. Narrow either with `--type`: on `state` that is
-   `flow`, `workflow`, `rule`, `bpf`, `action` or `plugin`; on `value`, `envvar` or `connref`. A name is
-   matched across every class the command covers, and a name matching two stops the run naming both.
-   Leave the flag off and it reads and prints the current state instead. Leave the name off in a
-   non-interactive run and it lists the components and exits 0 — `state` with each one's state and type,
-   `value` with names only. The file still wins on the next push for the classes it declares; business
-   rules, business process flows and actions are switchable but never in a file, so nothing puts them back.
+   To change a single component without the file, use `flowline settings toggle <env> <name> --on|--off`
+   or `flowline settings set <env> <name> --value <v>`. The environment comes first: a first argument
+   that is neither a role nor a URL exits 15 before anything is read, and when the two were
+   swapped the error prints the corrected line. Narrow either with `--type`: on `toggle` that is `flow`,
+   `workflow`, `rule`, `bpf`, `action`, `plugin`, `form` or `view`; on `set`, `envvar` or `connref`. A
+   name is matched across every class the command covers, and a name matching two stops the run naming
+   both. Leave the flag off and it reads and prints the current state instead. Leave the name off in a
+   non-interactive read and it lists the components and exits 0 — `toggle` with each one's state and
+   type, `set` with names only. Leave the name off a non-interactive write (`--on`, `--off`, `--value`)
+   and it exits 15, printing your command with `<name>` to fill in. The file still wins on the next
+   `settings apply` for the classes it declares; business rules, business process flows and actions are
+   switchable but never in a file, so nothing puts them back.
 
 `flowline drift <env>` is the read-only preview of what a deploy would flag — safe against prod at any
 time. `flowline diff` is the same question on the git axis: which components changed between two points
@@ -221,15 +225,15 @@ Exit codes are a stable public API — they don't change meaning across Flowline
 | 12 | DirtyWorkingDirectory | Uncommitted git changes block the operation | `git commit` or `git stash` first (`pull` also accepts `--force dirty`; `deploy` does not) |
 | 13 | BuildFailed | `dotnet build` or PAC pack failed | Fix the build errors and retry |
 | 14 | VersionConflict | Reserved: allocated in this contract but never thrown by any command | — |
-| 15 | ValidationFailed | Missing dependencies, invalid `--force` value, an unknown option, schema mismatch, or contradictory flags | Read the error; a flag conflict names both flags, an unknown option names it |
+| 15 | ValidationFailed | Missing dependencies, invalid `--force` value, an unknown option, schema mismatch, contradictory flags, a `settings` target that is neither a role nor a URL, or a scripted `settings toggle`/`set` write with no component name | Read the error; a flag conflict names both flags, an unknown option names it, and a missing name or swapped order prints the line to run |
 | 16 | Timeout | PAC CLI 60-minute limit exceeded | Retry; check environment health |
 | 17 | ForceRequired | Destructive operation needs explicit confirmation, including a declined confirmation prompt (e.g. `deploy`'s first-import prompt, `provision`'s overwrite prompt) | Add the `--force <specifier>` the message names |
-| 18 | PartialSuccess | `deploy` imported but some orphan cleanup failed, `settings push` couldn't apply some components, or a `settings pull` sweep couldn't reach an environment | One failure and every failure share this code — read the printed counts. Fix what the output names and re-run; both commands are safe to repeat |
-| 19 | Inconclusive | A check couldn't run to completion — `drift`'s empty-input guard skipped the comparison, a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault), or every component a `settings push` file declared was missing from the target | Not a pass/fail signal — read the printed reason. For `settings push` it usually means the wrong settings file or the wrong environment |
+| 18 | PartialSuccess | `deploy` imported but some orphan cleanup failed, `settings apply` couldn't write some components, or a `settings capture` sweep couldn't reach an environment | One failure and every failure share this code — read the printed counts. Fix what the output names and re-run; both commands are safe to repeat |
+| 19 | Inconclusive | A check couldn't run to completion — `drift`'s empty-input guard skipped the comparison, a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault), or every component a `settings apply` file declared was missing from the target | Not a pass/fail signal — read the printed reason. For `settings apply` it usually means the wrong settings file or the wrong environment |
 | 20 | WriteTargetOccupied | A file already occupies a path the command would write to (e.g. `scaffold` meeting an existing template file) | Nothing is broken — something valid is in the way. Move the named file aside, or run the command somewhere else |
 | 21 | AssemblyNotRegistered | Deploy imported, but a plug-in package holds an assembly with no registration in the target, or one registered with no plugin types | Create the `pluginassembly` record under that package (sandbox isolation, matching version/culture/public key token), then deploy again so the content write populates its plugin types — repeats every deploy until that record exists |
 | 22 | ChangesFound | `drift --exit-code` or `diff --exit-code` found changes | **Not a failure**: the comparison ran and something differs. Only returned when `--exit-code` is passed; without it a run with changes still exits 0 (`drift`'s default). Branch on it instead of parsing output |
-| 130 | Cancelled | Ctrl+C / SIGINT | An interrupted `settings push` still prints the components it applied before stopping; re-run to finish |
+| 130 | Cancelled | Ctrl+C / SIGINT | An interrupted `settings apply` still prints the components it applied before stopping; re-run to finish |
 
 Codes 2 and 5 are intentionally unused.
 

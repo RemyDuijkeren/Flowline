@@ -35,11 +35,11 @@ hung process, not an error. Same rule elsewhere:
 [SecretResolver.cs:29](../../../src/Flowline/Services/SecretResolver.cs#L29).
 
 **Environment: positional when required, a flag when it has a default.** A command with no safe
-default environment takes it as the positional `<target>` (`deploy`, `drift`, `settings push`,
+default environment takes it as the positional `<target>` (`deploy`, `drift`, `settings apply`,
 `settings toggle`, `settings set`). A command that defaults to one takes `-e|--env` from
 `EnvironmentSettings` (`push`, `pull`, `generate` default to DEV). Never a required `--env`: a flag
 nobody may omit is a positional argument in disguise. Existing exceptions: `clone` takes `-e` but
-defaults only when one environment is configured, and `settings pull` takes an optional `[target]`
+defaults only when one environment is configured, and `settings capture` takes an optional `[target]`
 that prompts at a terminal and fails in a script.
 
 ## 2. Confirmations go through `ConfirmGated`

@@ -103,7 +103,7 @@
 <li><a href="#i2">One spelling for the solution name: <code>--solution-name</code></a> (implemented)</li>
 <li><a href="#i3">Make the written contract match the code</a> (implemented)</li>
 <li><a href="#i4">One test that enforces the surface rules over the real command tree</a></li>
-<li><a href="#i5">Name the settings verbs for what they do, and require a component name for writes</a> (decided)</li>
+<li><a href="#i5">Name the settings verbs for what they do, and require a component name for writes</a> (implemented)</li>
 </ol>
 </nav>
 
@@ -224,8 +224,9 @@ Known deviations go in a named allow-list with their decision ID, so the list on
 
 <article class="idea" id="i5">
 <h3>5. Name the settings verbs for what they do, and require a component name for writes</h3>
-<div class="chips"><span>Axis C</span><span>Confidence 70%</span><span>Complexity Medium</span><span class="keep">Decided: apply/capture, positional name</span></div>
-<p class="implemented"><strong>Decided 2026-10-31:</strong> rename <code>settings push</code>/<code>pull</code> to <code>settings apply</code>/<code>capture</code> (option A over separate top-level commands and over keeping push/pull), keep the component name positional, and make writes require it (option N1 over a <code>--component</code> flag). Breaking is accepted for a better long-term surface. Not implemented yet.</p>
+<div class="chips"><span>Axis C</span><span>Confidence 70%</span><span>Complexity Medium</span><span class="keep">Implemented</span></div>
+<p class="implemented"><strong>Decided 2026-10-31:</strong> rename <code>settings push</code>/<code>pull</code> to <code>settings apply</code>/<code>capture</code> (option A over separate top-level commands and over keeping push/pull), keep the component name positional, and make writes require it (option N1 over a <code>--component</code> flag). Breaking is accepted for a better long-term surface.</p>
+<p class="implemented"><strong>Implemented 2026-10-31</strong> in the commits "rename settings push to apply and settings pull to capture" and "require the component name for a scripted toggle or set write". The old verbs fail as unknown commands, with no redirect hint. The swapped order, unverified above, did not fail clearly: the component name reached the PAC profile lookup as a URL and exited 4 with advice to authenticate against it. The commit "reject a target that is neither a role nor a URL before any auth lookup" makes it exit 15 with the corrected line.</p>
 <dl>
 <dt>Description</dt>
 <dd>

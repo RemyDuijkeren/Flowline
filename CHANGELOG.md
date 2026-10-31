@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-- **`settings state` is renamed `settings toggle`, and `settings value` is renamed `settings set`.** Arguments and flags are unchanged. No aliases.
+- **`settings state` is renamed `settings toggle`, `settings value` is renamed `settings set`, `settings push` is renamed `settings apply`, and `settings pull` is renamed `settings capture`.** Arguments and flags are unchanged. No aliases: the old names fail as unknown commands.
+- **`settings toggle` and `settings set` need the component name to write in a script.** With `--on`, `--off` or `--value` and no name, a non-interactive run exits 15 and prints your command with `<name>` to fill in, instead of listing the components and exiting 0 without writing anything. `--dry-run` fails the same way. At a terminal you still pick one from the list, and a read with no name still lists.
 - **The `sync` alias for `pull` is removed.** Use `flowline pull`.
 - **`push` and `generate` take the solution as `-n|--solution-name` instead of a positional.** `flowline push Contoso` becomes `flowline push --solution-name Contoso`, the same option the `settings` commands use. No alias: the old form fails with a message naming the flag to use, or `--env` when the word was an environment such as `dev`.
 
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`settings` commands accept `-n` as the short form of `--solution-name`.**
 - **`clone` and `init` show their positional as `[solution-name]`**, the name the flag has on the other commands. How it is passed is unchanged.
+- **A `settings` target that is neither a role nor an `http(s)://` URL fails up front with exit 15**, instead of failing at the PAC profile lookup (usually exit 4, with advice to authenticate against it). When the environment and the component name were swapped, the error prints the corrected line. A host with no scheme is rejected the same way `--env` rejects it: pass the full URL.
 - **`settings` commands accept `--solution-name` inside a Flowline project when it names the project's own solution.** A different name is still an error, now naming both, the way `push` and `generate` already handle a solution name. A stand-alone script keeps working when run from inside a project.
 - **`settings toggle` leaves forms and views out of its list unless `--type form` or `--type view` is given.** A line says how many it left out, and a form or view named in full still resolves.
 - **Log files hide more.** Environment URLs and email addresses were already replaced by a salted hash; filesystem paths, solution names and Git branch names now are too. A path keeps its shape, so `/home/<hash>/Projects/<hash>/Solution` still tells you what the layout was without naming you or your client.
