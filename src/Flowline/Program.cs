@@ -543,7 +543,7 @@ namespace Flowline
                         .WithExample("settings", "toggle", "prod", "contoso_AutoNumber", "--on");
 
                 settings.AddCommand<SettingsSetCommand>("set")
-                        .WithDescription("Set an environment variable's value or bind a connection reference, or read either. Requires a non-empty value.")
+                        .WithDescription("Set an environment variable's value or bind a connection reference, or read either. Requires a non-empty value. Every value at once: 'capture'.")
                         .WithExample("settings", "set", "prod", "contoso_ApiUrl", "--value", "https://api.contoso.com")
                         .WithExample("settings", "set", "test", "--type", "connref")
                         .WithExample("settings", "set", "test", "contoso_ApiUrl");
