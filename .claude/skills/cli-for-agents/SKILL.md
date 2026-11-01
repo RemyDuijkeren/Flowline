@@ -68,7 +68,7 @@ purpose: `-f|--force <SPECIFIER>`, repeatable, `all` for everything the command 
 
 - Read it with `settings.HasForce("<specifier>")` — never `settings.Force.Any()`.
 - New hazard → new specifier, added to that command's `ValidForceSpecifiers` override
-  ([PushCommand.cs:79-81](../../../src/Flowline/Commands/PushCommand.cs#L79-L81),
+  ([PushCommand.cs:472-474](../../../src/Flowline/Commands/PushCommand.cs#L472-L474),
   [DeployCommand.cs:95-96](../../../src/Flowline/Commands/DeployCommand.cs#L95-L96),
   [PullCommand.cs:42-43](../../../src/Flowline/Commands/PullCommand.cs#L42-L43),
   [ProvisionCommand.cs:43-44](../../../src/Flowline/Commands/ProvisionCommand.cs#L43-L44), whose
@@ -95,7 +95,7 @@ A new command that writes to an environment gets `--dry-run` unless one of those
 to it.
 
 Preview must run the whole pre-flight and stop before the write:
-[PushCommand.cs:70](../../../src/Flowline/Commands/PushCommand.cs#L70),
+[PushSettings.cs:41](../../../src/Flowline/Settings/PushSettings.cs#L41),
 [DeployCommand.cs:55](../../../src/Flowline/Commands/DeployCommand.cs#L55).
 Precedence is settled — dry-run wins over every other mode flag
 ([DeployCommand.cs:686](../../../src/Flowline/Commands/DeployCommand.cs#L686)). Follow it.
@@ -156,10 +156,10 @@ Every command also registers `.WithExample(...)` — examples pattern-match bett
 new command without at least one is incomplete. One argument per string:
 
 ```csharp
-config.AddCommand<PushCommand>("push")
-      .WithDescription("...")
-      .WithExample("push")
-      .WithExample("push", "ContosoCustomizations", "--scope", "webresources");
+push.AddCommand<PushPluginsCommand>("plugins")
+    .WithDescription("...")
+    .WithExample("push", "plugins")
+    .WithExample("push", "plugins", "--assembly-only");
 ```
 
 ## 8. Output: text lines + exit code, no `--json`

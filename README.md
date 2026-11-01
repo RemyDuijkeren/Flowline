@@ -107,7 +107,7 @@ public class CreditLimitValidationUpdatePlugin : IPlugin
 Already have a built assembly? Push it standalone, no cloned project needed:
 
 ```bash
-flowline push --solution-name ContosoSales --plugin-file ./bin/Release/Plugins.dll --env https://contoso-dev.crm4.dynamics.com
+flowline push plugins --path ./bin/Release/Plugins.dll --solution-name ContosoSales --env https://contoso-dev.crm4.dynamics.com
 ```
 
 **[Flowline.Attributes reference](src/Flowline.Attributes/README.md)** · **[Push Plugins and Custom APIs wiki](https://github.com/RemyDuijkeren/Flowline/wiki/05-Push-Plugins-and-Custom-APIs)**
@@ -121,7 +121,7 @@ flowline push --solution-name ContosoSales --plugin-file ./bin/Release/Plugins.d
 Point it at a build output folder, and it creates, updates, and removes web resources to match, standalone, no cloned project needed:
 
 ```bash
-flowline push --solution-name ContosoSales --webresources ./dist --env https://contoso-dev.crm4.dynamics.com
+flowline push webresources --path ./dist --solution-name ContosoSales --env https://contoso-dev.crm4.dynamics.com
 ```
 
 Beyond the sync itself, Flowline reads `// flowline:...` comment annotations straight out of your built files and uses them to auto-wire Dataverse metadata that would otherwise mean a Maker Portal visit:
@@ -147,7 +147,7 @@ export function onChangeCreditlimit(executionContext) { ... }
 |--------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [`clone [solution-name]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#clone)               | Bootstrap an existing solution from Dataverse into the repo; run with no solution to pick one interactively                                                                                                    |
 | [`init [solution-name]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init)                 | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo; run with no name to be prompted                                                                                     |
-| [`push`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#push)                                 | Build and sync code assets to DEV; or push standalone with `--plugin-file` / `--webresources`                                                                                                                  |
+| [`push`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#push)                                 | Build and sync code assets to DEV; `push plugins` or `push webresources` for one target, or standalone with `--path`                                                                                           |
 | [`pull`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#pull)                                 | Pull the current solution state from DEV into source control                                                                                                                                                   |
 | [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#deploy)                    | Pack from the repo and import into `test`, `uat`, `prod`, or a URL; or deploy a pre-built zip standalone with `--path`                                                                                         |
 | [`provision [dev\|test\|uat]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#provision)      | Provision a DEV, TEST or UAT environment by copying from production                                                                                                                                            |

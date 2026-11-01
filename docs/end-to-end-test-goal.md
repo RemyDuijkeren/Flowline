@@ -193,22 +193,24 @@ against an already-cloned, pushed or synced folder) where relevant.
 
 **Project mode** (inside a Flowline project folder):
 
-- Full push (default scope), dry-run and real. Idempotent re-run gives "Nothing to push — already up
+- Bare `push` (every target), dry-run and real. Idempotent re-run gives "Nothing to push — already up
   to date."
-- Each `--scope` individually: `all`, `webresources`, `plugins`, `assemblyonly`.
-- `--scope assemblyonly --scope plugins` together: rejected (mutually exclusive).
-- `--no-delete`, `--no-build`, `--no-publish`, each prints its own "skipping (--flag active)" line.
+- Each target on its own: `push plugins`, `push plugins --assembly-only`, `push webresources` and its
+  alias `push wr`.
+- Target-only flags on the wrong command are rejected by the parser: `push --assembly-only`,
+  `push plugins --no-publish`, `push wr --assembly-only`.
+- `--no-delete`, `--no-build`, `push webresources --no-publish`, each prints its own "skipping
+  (--flag active)" line.
 - Non-interactive gates: an unrecognized form-event handler requires `--force delete-form-handlers`;
   an orphaned plugin assembly requires `--force delete-orphans`. Both must name the flag, not hang.
 - Real create, update and delete paths. Drive them by actually adding a `[Step]` class, editing a web
   resource, and deleting one.
 
-**Standalone mode** (`--pluginFile` / `--webresources`, from *outside* a project folder):
+**Standalone mode** (`push plugins --path` / `push webresources --path`, from *outside* a project folder):
 
 - Rejected when run inside a Flowline project folder.
-- Solution name required as the first positional.
-- `--scope plugins` and `assemblyonly` require `--pluginFile`; `--scope webresources` requires
-  `--webresources`. The error must name the missing flag.
+- Solution name required as `--solution-name`.
+- Bare `push` outside a project, or a subcommand without `--path`, fails naming the stand-alone form.
 - **Standalone's pushed set is the single artifact**, so every *other* assembly in the solution is an
   orphan by definition, and `--force delete-orphans` would delete a live sibling. Deliberate, not a
   bug, but it makes standalone the cheapest way to manufacture an orphan on demand for testing.
@@ -269,8 +271,8 @@ against an already-cloned, pushed or synced folder) where relevant.
 - **Two WebResources candidates**: an exact top-score tie throws `ConfigInvalid` naming both. A
   *weaker* second candidate is correctly not flagged, because the resolver picks the clear winner.
   Design, not a bug.
-- **Zero plugin projects**: default scope skips silently; explicit `--scope plugins` errors.
-- **Zero WebResources projects**: loud warning, plugins still pushed, no throw.
+- **Zero plugin projects**: bare `push` skips silently; `push plugins` errors.
+- **Zero WebResources projects**: bare `push` warns and still pushes plugins; `push webresources` errors.
 - **Orphan and drift across renames**: the old assembly or package name becomes a genuine orphan, so
   push must name it and gate deletion behind `--force delete-orphans`.
 
@@ -325,8 +327,8 @@ Don't re-report these.
   `false`. The help's DEFAULT column shows what *bare* `--managed` resolves to. Don't "fix" without
   re-running `ManagedFlagBindingTests`.
 - `clone` requires an existing git repo first.
-- `push` scope and flag-mismatch validation runs *after* env-URL and auth resolution, so reaching it
-  live needs a resolvable `--dev` first.
+- A `push` option on the wrong target fails at parse time, before any env-URL or auth resolution, so
+  it needs no live environment to reproduce.
 - `deploy` resolves the project *before* validating the target.
 - The git repo and remote pre-flight is TTL-cached, so "No remote configured" shows on the first run
   and not the next. An agent diffing two runs will notice.

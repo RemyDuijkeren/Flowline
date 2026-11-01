@@ -66,6 +66,6 @@ Flowline only manages one solution per project root. If you need more than one s
 
 #### 5. Non-Scaffolded Layouts
 
-Flowline finds each project through the solution file, not by fixed folder or file names — so renamed or relocated folders keep working as long as the solution file still references them. A repo with no solution file at all is an error on every command except `clone`; use stand-alone mode (`flowline push --pluginFile <dll>`) instead.
+Flowline finds each project through the solution file, not by fixed folder or file names — so renamed or relocated folders keep working as long as the solution file still references them. A repo with no solution file at all is an error on every command except `clone`; use stand-alone mode (`flowline push plugins --path <dll>`) instead.
 
 Renaming an existing plugins project to match the standard naming changes the built assembly's name. Dataverse identifies assemblies by name, so the next `push` registers it as a new assembly and leaves the old one (and its steps) behind as an orphan — `push` reports these, and `--force delete-orphans` clears them.

@@ -20,7 +20,8 @@ No `.flowline`? Route in this order:
 1. **Migration candidate** — `spkl.json`, a Daxif `_Config.fsx`/`*.daxif`, a `.pacxproj`, or an ALM
    Accelerator pipeline: defer to the `flowline-migration` skill. Don't offer `clone`/`init`.
 2. **Plugin-DLL-only task** (register a compiled assembly, no project wanted): standalone mode —
-   `flowline push --solution-name <SolutionName> --plugin-file <dll|nupkg> --env <url>`, or `--webresources <folder>`.
+   `flowline push plugins --path <dll|nupkg> --solution-name <SolutionName> --env <url>`, or
+   `flowline push webresources --path <folder> ...` for web resources. One target per call.
    No `clone`, no `.flowline`. The solution must already exist in the environment.
 3. **The solution already exists in Dataverse** → `flowline clone <SolutionName> --env <url>`. Bare
    `flowline clone` picks interactively (environment, then one of its unmanaged solutions). Clone only
@@ -173,9 +174,10 @@ some cleanup failed.
 
 ## Flags worth knowing
 
-- `push`: `--scope all|plugins|assemblyonly|webresources`, `--plugin-file <dll|nupkg>`,
-  `--webresources <path>`, `--no-build`, `--no-delete`, `--no-publish`, `--dry-run`, `--env <role|url>`
-  (DEV only).
+- `push`: bare `push` pushes every target the project has. `push plugins` and `push webresources`
+  (alias `wr`) push one. Every form takes `--no-build`, `--no-delete`, `--dry-run`, `--env <role|url>`
+  (DEV only). `push plugins` adds `--assembly-only`, `push webresources` adds `--no-publish`, and both
+  take `--path` for standalone mode.
 - `deploy`: `--dry-run`, `--path <zip>`, `--no-delete`, `--no-backup`, `--skip-dtap-check`,
   `--skip-solution-check`, `--skip-component-check`.
 - `pull`: `--bump patch|minor|major|none`, `--managed [false]`, `--no-build`,

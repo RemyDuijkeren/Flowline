@@ -117,11 +117,11 @@ it lands in `dist/` untouched and skips Rollup entirely.
 
 1. **Build.** `npm run build`, or `dotnet build` — the WebResources project runs `npm run build` as
    part of it. Push builds too unless you pass `--no-build`.
-2. **`flowline push --scope webresources --dry-run`** prints the plan without writing: which
+2. **`flowline push webresources --dry-run`** prints the plan without writing: which
    resources are added, updated, deleted, and which form handlers and dependencies get wired.
    Read the delete list — push makes Dataverse match `dist/` exactly.
-3. `--scope webresources` covers form-event registration too — one scope for both, including a
-   push that changed nothing but an annotation.
+3. `push webresources` (alias `wr`) covers form-event registration too — one target for both,
+   including a push that changed nothing but an annotation.
 4. Push refuses to run on a missing or empty `dist/`, because that would delete every web resource
    in the solution. If you hit that error, the build didn't produce output — fix that, don't work
    around it.
@@ -130,10 +130,10 @@ it lands in `dist/` untouched and skips Rollup entirely.
 
 ### Outside a Flowline project
 
-`flowline push --solution-name <solution> --webresources <path> --env <url>` pushes a loose
-folder with no `.flowline` and no repo. The solution name and `--env` are required, nothing is built, and
-`--scope webresources` *requires* `--webresources`. Inside a project folder the
-flag is rejected (exit 15) rather than guessed at — `cd` elsewhere or use project mode.
+`flowline push webresources --path <folder> --solution-name <solution> --env <url>` pushes a loose
+folder with no `.flowline` and no repo. The solution name and `--env` are required, and nothing is
+built. Inside a project folder `--path` is rejected (exit 15) rather than guessed at — `cd`
+elsewhere or drop `--path` and use project mode.
 
 ## Full reference
 

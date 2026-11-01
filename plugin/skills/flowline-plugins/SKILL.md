@@ -89,32 +89,32 @@ Declare parameters on the class with `[Input(name, FieldType, …)]` and `[Outpu
 
 1. `flowline generate` first when the schema changed **and** the plugin uses early-bound types — the generated classes in `Plugins/Models/` need to know the new columns before the plugin can reference them. Late-bound plugins (`Entity`, `entity["column"]`) never need it; skip straight to the build.
 2. `dotnet build` proves the code compiles, nothing more.
-3. **`flowline push --scope plugins --dry-run`** is what proves the *registration* is right:
+3. **`flowline push plugins --dry-run`** is what proves the *registration* is right:
 
    ```
-   flowline push --scope plugins --dry-run
+   flowline push plugins --dry-run
    ```
 
    It reads the built assembly and prints the plan without writing anything. Each step appears as `Message of table at Stage` — read that list against what you intended, because a class name that parsed into the wrong message or stage shows up here and nowhere else. It also surfaces the missing-`[Filter]`-on-Update warning and the blast radius before it can do damage.
 
-   `--scope plugins` keeps the run to plugin registration: no web resource build, no form events. Omit it to preview the whole push. Inside a Flowline project the flag stands alone; `--plugin-file` is only required in standalone mode (pushing a loose DLL from outside a project folder). `--scope plugins` and `--scope assemblyonly` are mutually exclusive.
+   `push plugins` keeps the run to plugin registration: no web resource build, no form events. Use bare `flowline push --dry-run` to preview the whole push. `--path` is only for standalone mode (pushing a loose DLL from outside a project folder). `--assembly-only` updates the assembly content and leaves its steps alone.
 4. `push` exiting 0 means registration succeeded, not that the step behaves. Exercise the actual operation before reporting the work done.
 
 ### Outside a Flowline project
 
-`push` also runs standalone against a loose assembly — no `.flowline`, no repo, no project layout. Useful for checking a build from CI, someone else's DLL, or a solution you haven't cloned:
+`push plugins` also runs standalone against a loose assembly — no `.flowline`, no repo, no project layout. Useful for checking a build from CI, someone else's DLL, or a solution you haven't cloned:
 
 ```
-flowline push --solution-name ContosoSales --plugin-file ./bin/Release/MyPlugins.dll --env https://contoso-dev.crm4.dynamics.com --dry-run
+flowline push plugins --path ./bin/Release/MyPlugins.dll --solution-name ContosoSales --env https://contoso-dev.crm4.dynamics.com --dry-run
 ```
 
 Three differences from project mode:
 
 - **The solution name is required** — there is no `.flowline` to read it from. Same for `--env`.
 - **Nothing is built.** Standalone reflects the assembly you point at, so build it yourself first; `--no-build` has no effect here.
-- **The scope follows the input.** Passing `--plugin-file` alone already scopes the run to plugins, so `--scope plugins` is redundant — and if you do pass it, it *requires* `--plugin-file`.
+- **One target per call.** `--path` belongs to the subcommand, so web resources are a separate `flowline push webresources --path <folder>` call.
 
-Run this from a folder that has no `.flowline` in it. Inside a project folder Flowline rejects `--plugin-file` and `--webresources` (exit 15) rather than guess which mode you meant — `cd` elsewhere, or drop the flags and use project mode.
+Run this from a folder that has no `.flowline` in it. Inside a project folder Flowline rejects `--path` (exit 15) rather than guess which mode you meant — `cd` elsewhere, or drop `--path` and use project mode.
 
 Renaming a class updates the same Dataverse step in place — identity is `(message, table filter, stage, mode)`, not the display name. Changing the message, table, stage, or mode is a genuinely different registration, so it recreates the step.
 
