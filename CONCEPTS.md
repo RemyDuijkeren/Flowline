@@ -68,6 +68,19 @@ One of the four named places a Flowline project addresses: `dev`, `test`, `uat`,
 ### Role inference
 The rule that assigns an [[Environment role]] to a URL that is not yet in `.flowline`, so the URL can be saved under a key without the user naming one. In order: a Production type is `prod` whatever the name says; then a keyword in the URL's host label (`dev`, `develop`, `development`; `test`, `tst`, `testing`, `qa`, `sit`; `uat`, `acc`, `acceptance`, `acceptatie`, `preprod`, `staging`, `stage`, `stg`), matched as a whole hyphen-separated token in any position with trailing digits ignored, last match wins; then the same keywords in the environment's display name; then a Developer type is `dev`. A Sandbox with no keyword hit is not inferred, because Dataverse reports a test or UAT sandbox with the same type as a DEV one. Interactive runs show a picker, with the inferred role pre-selected when there is one; non-interactive runs save an inferred role and print which key was written and why, and fail naming the key to add when nothing could be inferred.
 
+## Run Modes
+
+### Project mode
+A command run inside a Flowline project, meaning anywhere under a folder holding a `.flowline` file, which supplies the solution, the environments and the project layout. The nearest `.flowline` up to the repository root governs its whole subtree.
+
+### Stand-alone mode
+A command run outside any Flowline project, with every input passed as a flag and nothing read from or written to a `.flowline`. It exists so CI pipelines and teams that only want one step of Flowline can use it without adopting the project layout. A stand-alone push names one [[Push target]] and its pre-built artifact per call, and is refused inside a project rather than guessed at, so the two modes never mix.
+
+## Push
+
+### Push target
+One kind of asset `push` builds and syncs into DEV, such as plugin assemblies or web resources, each reachable as its own subcommand with only the options that apply to it. Bare `push` covers every target the project has and skips one it lacks; naming a target the project lacks is an error, because the user asked for nothing else.
+
 ## CLI Force Flag
 
 ### Force specifier
