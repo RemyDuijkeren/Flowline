@@ -15,7 +15,7 @@ resolution_type: code_fix
 severity: high
 related_components:
   - git-utils
-  - sync-command
+  - pull-command
 tags:
   - git
   - dirty-tree
@@ -24,7 +24,7 @@ tags:
   - crlf
   - cli-guard
   - cliwrap
-  - sync
+  - pull
 ---
 
 # pull (formerly sync) overwrote uncommitted src/ files without warning

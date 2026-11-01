@@ -7,7 +7,7 @@ namespace Flowline.Core.Deploy;
 // true whenever the target already had a prior version installed, which is also exactly the condition
 // under which a managed deploy imports as a Dataverse Upgrade (see DeployCommand.useStageAndUpgrade).
 // Consumers derive their own presentation from IncludeManaged/ExistsInTarget rather than being handed a
-// pre-rendered message — see OrphanCleanupService.BuildNoDeleteHint.
+// pre-rendered message — see OrphanCleanupService.BuildReportOnlyHint.
 public sealed record DeploySolutionInfo(
     string Name,
     string EnvironmentUrl,

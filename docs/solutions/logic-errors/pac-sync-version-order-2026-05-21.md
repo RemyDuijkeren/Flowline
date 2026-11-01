@@ -19,7 +19,7 @@ tags:
   - version-management
   - pac-cli
   - operation-ordering
-  - dataverse-sync
+  - pull-command
   - PullCommand
 ---
 
