@@ -204,6 +204,8 @@ command fails with the valid list.
 | Command | Valid specifiers |
 |---|---|
 | `push` | `delete-orphans`, `recreate-assembly`, `delete-form-handlers`, `config`, `all` |
+| `push plugins` | `delete-orphans`, `recreate-assembly`, `config`, `all` |
+| `push webresources` | `delete-form-handlers`, `config`, `all` |
 | `deploy` | `drift`, `first-import`, `delete-orphans`, `all` |
 | `pull` | `dirty`, `config`, `all` |
 | `provision` | `overwrite`, `config`, `all` |
