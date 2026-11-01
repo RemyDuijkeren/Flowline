@@ -288,4 +288,33 @@ public class PluginReaderTests
         Assert.Null(resultMissing.Assembly);
         Assert.Null(resultMissing.Snapshot);
     }
+
+    // -- Publisher-wide Custom API queries page past the first 5000 rows --
+
+    [Fact]
+    public async Task LoadSnapshotAsync_CustomApiQueriesSpanTwoPages_ReturnsEveryPage()
+    {
+        // The Custom API, request parameter and response property queries filter on the publisher
+        // prefix, not the assembly, so a large org can exceed one page. Page 1 says MoreRecords.
+        foreach (var entityName in new[] { "customapi", "customapirequestparameter", "customapiresponseproperty" })
+        {
+            _serviceMock.RetrieveMultipleAsync(Arg.Is(Matching<QueryExpression>(q => q.EntityName == entityName)), Arg.Any<CancellationToken>())
+                .Returns(ci =>
+                {
+                    var page = ci.Arg<QueryExpression>().PageInfo?.PageNumber ?? 1;
+                    var collection = new EntityCollection(new List<Entity> { new(entityName, Guid.NewGuid()) })
+                    {
+                        MoreRecords = page == 1,
+                        PagingCookie = page == 1 ? "cookie" : null
+                    };
+                    return Task.FromResult(collection);
+                });
+        }
+
+        var snapshot = await _reader.LoadSnapshotAsync(_serviceMock, Guid.NewGuid(), Metadata("AssemblyA"), "MySolution");
+
+        Assert.Equal(2, snapshot.CustomApis.Count);
+        Assert.Equal(2, snapshot.RequestParams.Count);
+        Assert.Equal(2, snapshot.ResponseProps.Count);
+    }
 }

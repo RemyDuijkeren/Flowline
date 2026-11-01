@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`--force` on `diff`, `scaffold` and `sln add` now says the command has nothing to force.** It used to end in "Use one of: ." with an empty list.
+- **`push` reads every Custom API under your publisher prefix, not just the first 5000.** In an environment with more Custom API records than that, the rest were missed, so `push` could try to create one that already existed or fail to clean up one source no longer declares.
 
 ## [0.20.0] - 2026-09-19
 

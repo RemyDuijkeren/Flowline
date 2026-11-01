@@ -1,6 +1,7 @@
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.PowerPlatform.Dataverse.Client;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Models;
 
 namespace Flowline.Core.Plugins;
@@ -393,8 +394,9 @@ public class PluginReader
             }
         };
 
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        return result.Entities.AsReadOnly();
+        // Publisher-wide by prefix, not assembly-scoped, so page past the 5000-row default.
+        var result = await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
+        return result.AsReadOnly();
     }
 
     async Task<IReadOnlyList<Entity>> GetRegisteredRequestParametersAsync(
@@ -408,8 +410,9 @@ public class PluginReader
         var apiLink = query.AddLink("customapi", "customapiid", "customapiid");
         apiLink.LinkCriteria.AddCondition("uniquename", ConditionOperator.BeginsWith, $"{prefix}_");
 
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        return result.Entities.AsReadOnly();
+        // Publisher-wide by prefix, not assembly-scoped, so page past the 5000-row default.
+        var result = await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
+        return result.AsReadOnly();
     }
 
     async Task<IReadOnlyList<Entity>> GetRegisteredResponsePropertiesAsync(
@@ -423,8 +426,9 @@ public class PluginReader
         var apiLink = query.AddLink("customapi", "customapiid", "customapiid");
         apiLink.LinkCriteria.AddCondition("uniquename", ConditionOperator.BeginsWith, $"{prefix}_");
 
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        return result.Entities.AsReadOnly();
+        // Publisher-wide by prefix, not assembly-scoped, so page past the 5000-row default.
+        var result = await service.RetrieveAllAsync(query, cancellationToken).ConfigureAwait(false);
+        return result.AsReadOnly();
     }
 
     async Task<string> GetPublisherPrefixAsync(

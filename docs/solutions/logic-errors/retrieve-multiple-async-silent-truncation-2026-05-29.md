@@ -95,6 +95,7 @@ var entities = await service.RetrieveAllAsync(query, cancellationToken);
 | `src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs` | `QuerySolutionComponentsAsync` | `solutioncomponent` (S_old query for orphan diff) |
 | `src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs` | `GetCrossSolutionMembershipAsync` | `solutioncomponent` (cross-solution membership check) |
 | `src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs` | `GetStillPresentAsync` | `solutioncomponent` (post-import re-check of deferred components) |
+| `src/Flowline.Core/Plugins/PluginReader.cs` | `GetRegisteredCustomApisAsync`, `GetRegisteredRequestParametersAsync`, `GetRegisteredResponsePropertiesAsync` | `customapi`, `customapirequestparameter`, `customapiresponseproperty` filtered by publisher prefix (not assembly-scoped) |
 | `src/Flowline.Core/OrphanCleanup/EntityDetectionHelper.cs` | `DetectByTableAsync` (formerly `IdentifyEntityDetectedTypesAsync`) | `customapi`, `customapirequestparameter`, `customapiresponseproperty`, `bot`, `connectionreference` |
 
 ### Call sites that don't need paging
@@ -103,7 +104,7 @@ var entities = await service.RetrieveAllAsync(query, cancellationToken);
 |------|--------|---------------|
 | `WebResourceReader` | `GetOwnershipAsync` | Queries `solutioncomponent` for a single `webresourceid` — always a small, bounded set |
 | `WebResourceReader` | `GetGlobalWebResourcesByNameAsync` | Input is a list of local orphan filenames you control — always bounded |
-| `PluginReader` | Most methods | Scoped to a specific assembly — steps, types, and images for one assembly are always far below 5000. The registered Custom API query is publisher-wide by `uniquename` prefix, not assembly-scoped |
+| `PluginReader` | Assembly-scoped methods | Scoped to a specific assembly — steps, types, and images for one assembly are always far below 5000. The publisher-wide Custom API queries page (see above) |
 
 ## Why This Works
 
