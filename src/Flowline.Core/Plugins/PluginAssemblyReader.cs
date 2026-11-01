@@ -127,7 +127,7 @@ public class PluginAssemblyReader(IAnsiConsole console)
     // net462/publish/ holding genuinely different content under the same filename (version drift);
     // picking an arbitrary one (enumeration order is unspecified) would then silently resolve some
     // packaged DLL's dependencies against the wrong version. Only the narrower drift case fails loud,
-    // mirroring PushCommand.ResolvePluginPushPath's ambiguous-.nupkg guard; identical duplicates dedupe
+    // mirroring PushSupport.ResolvePluginPushPath's ambiguous-.nupkg guard; identical duplicates dedupe
     // silently. Also fixes the previous double-dedup: this runs once against a materialized list,
     // instead of re-walking and re-deduping siblingDlls on every DLL in AnalyzePackage's loop.
     private static List<string> DedupeSiblingDlls(IEnumerable<string> dllPaths)

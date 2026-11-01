@@ -446,14 +446,14 @@ namespace Flowline
                 push.AddExample("push", PushWebResourcesCommand.Alias, "--path", "./dist", "--solution-name", "ContosoCustomizations");
 
                 push.AddCommand<PushPluginsCommand>(PushPluginsCommand.Name)
-                    .WithDescription("Build the plugin assemblies and register them in DEV, steps and Custom APIs included. Outside a Flowline project, push a pre-built .dll or .nupkg with --path. Also takes every option 'push -h' lists.")
+                    .WithDescription("Build the plugin assemblies and register them in DEV, steps and Custom APIs included. Outside a Flowline project, push a pre-built .dll or .nupkg with --path. Use 'flowline push -h' for the options every push command takes.")
                     .WithExample("push", PushPluginsCommand.Name)
                     .WithExample("push", PushPluginsCommand.Name, "--assembly-only")
                     .WithExample("push", PushPluginsCommand.Name, "--path", "./bin/Release/Plugins.dll", "--solution-name", "ContosoCustomizations");
 
                 push.AddCommand<PushWebResourcesCommand>(PushWebResourcesCommand.Name)
                     .WithAlias(PushWebResourcesCommand.Alias)
-                    .WithDescription("Build the web resources and sync them to DEV, form event handlers included. Outside a Flowline project, push a built folder with --path. Also takes every option 'push -h' lists. Alias: wr")
+                    .WithDescription("Build the web resources and sync them to DEV, form event handlers included. Outside a Flowline project, push a built folder with --path. Use 'flowline push -h' for the options every push command takes. Alias: wr")
                     .WithExample("push", PushWebResourcesCommand.Name)
                     .WithExample("push", PushWebResourcesCommand.Alias, "--no-publish")
                     .WithExample("push", PushWebResourcesCommand.Name, "--path", "./dist", "--solution-name", "ContosoCustomizations");

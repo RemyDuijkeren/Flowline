@@ -19,7 +19,7 @@ using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
 using Flowline.Settings;
 using Flowline.Utils;
-using static Flowline.Commands.PushCommand;
+using static Flowline.Commands.PushSupport;
 
 namespace Flowline.Commands;
 
@@ -32,7 +32,7 @@ namespace Flowline.Commands;
 /// target options, and this class does the rest. Bare push runs it once with every target, so one
 /// environment resolve, one connection and one finish line, never the subcommands one after another.
 /// <para>
-/// The static helpers live on <see cref="PushCommand"/> so callers and tests can reach them without a
+/// The static helpers live on <see cref="PushSupport"/> so callers and tests can reach them without a
 /// type argument.
 /// </para>
 /// </remarks>
@@ -340,10 +340,8 @@ public abstract class PushCommandBase<TSettings>(CommandServices services, Datav
         // R8/AE9: zero plugin projects is a valid, common state (a WebResources-only solution) under the
         // bare push — only `push plugins` means the user specifically wanted a plugin push, so only that
         // case is actually an error.
-        if (targets.Count == 0 && settings.TargetNamed)
-            throw new FlowlineException(ExitCode.NotFound,
-                "No plugin project found — nothing the solution file references builds an IPlugin or CodeActivity type. " +
-                "Run again with --verbose to see what got skipped.");
+        if (targets.Count == 0)
+            ThrowIfNamedTargetMissing(settings, NoPluginProjectMessage);
 
         return targets;
     }
@@ -426,10 +424,7 @@ public abstract class PushCommandBase<TSettings>(CommandServices services, Datav
         var layout = await SolutionFileLayout.LoadAsync(RootFolder, cancellationToken);
         if (layout.WebResourcesProjectPath is null)
         {
-            if (settings.TargetNamed)
-                throw new FlowlineException(ExitCode.NotFound,
-                    "No WebResources project found — the solution file references none. " +
-                    "Add one with 'flowline scaffold webresources', then push again.");
+            ThrowIfNamedTargetMissing(settings, NoWebResourcesProjectMessage);
 
             Console.Warning("No WebResources project found — skipping web resources. Plugins are still pushed.");
             return null;
@@ -479,7 +474,11 @@ public sealed class PushCommand(CommandServices services, DataverseConnector dat
         "No Flowline project here. To push without one, name the target and its build output: " +
         "'flowline push plugins --path <dll|nupkg> --solution-name <name>' or " +
         "'flowline push webresources --path <folder> --solution-name <name>'.";
+}
 
+/// <summary>The push engine's pure helpers, reachable without a command instance or type argument.</summary>
+public static class PushSupport
+{
     /// <summary>One plugin artifact ready to push, with the assembly name Dataverse should see.</summary>
     /// <param name="ProjectName">
     /// The solution-file project this came from — what the user has to go fix when the push fails, and
@@ -563,6 +562,22 @@ public sealed class PushCommand(CommandServices services, DataverseConnector dat
         IsPackagePush(pushPath)
             ? new PluginPushTarget(pushPath, assemblyName, projectName, new PluginAssemblyReader(console).AnalyzePackage(pushPath))
             : new PluginPushTarget(pushPath, assemblyName, projectName);
+
+    internal const string NoPluginProjectMessage =
+        "No plugin project found — nothing the solution file references builds an IPlugin or CodeActivity type. " +
+        "Run again with --verbose to see what got skipped.";
+
+    internal const string NoWebResourcesProjectMessage =
+        "No WebResources project found — the solution file references none. " +
+        "Add one with 'flowline scaffold webresources', then push again.";
+
+    // A named target the project doesn't have is an error: the user asked for nothing else. Bare push
+    // returns here and skips it, because a project without one of the targets is a normal shape.
+    internal static void ThrowIfNamedTargetMissing(PushSettings settings, string notFoundMessage)
+    {
+        if (settings.TargetNamed)
+            throw new FlowlineException(ExitCode.NotFound, notFoundMessage);
+    }
 
     // Safety guard: an empty 'dist' makes push compute deletes for every remote web
     // resource. Refuse before that can happen — independent of --no-build.

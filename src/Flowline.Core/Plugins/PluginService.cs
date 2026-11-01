@@ -1793,7 +1793,7 @@ public class PluginService(IAnsiConsole console)
     // timestamps into every zip entry, and the nuspec carries the MinVer version plus the git commit.
     // Any one of those defeats a byte hash on a build that recompiled nothing. No pack switch turns
     // them off — the psmdcp GUID comes from System.IO.Packaging. And it fires on every single push,
-    // not occasionally: PushCommand.ClearStalePackages deletes the .nupkg before the build, so pack's
+    // not occasionally: PushSupport.ClearStalePackages deletes the .nupkg before the build, so pack's
     // own incremental check never gets to skip and the container is always rebuilt from scratch.
     //
     // lib/ is the boundary because it is exactly what Dataverse consumes: a plugin package carries its

@@ -120,7 +120,7 @@ public class ReviewFixRegressionTests : IDisposable
     {
         var settings = new PushPluginsCommand.Settings { Path = path };
 
-        PushCommand.IsStandaloneMode(settings).Should().Be(expected);
+        PushSupport.IsStandaloneMode(settings).Should().Be(expected);
 
         foreach (var command in new[] { typeof(PushCommand), typeof(PushPluginsCommand), typeof(PushWebResourcesCommand) })
         {

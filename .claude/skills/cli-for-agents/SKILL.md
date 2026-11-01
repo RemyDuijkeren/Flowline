@@ -68,7 +68,7 @@ purpose: `-f|--force <SPECIFIER>`, repeatable, `all` for everything the command 
 
 - Read it with `settings.HasForce("<specifier>")` — never `settings.Force.Any()`.
 - New hazard → new specifier, added to that command's `ValidForceSpecifiers` override
-  ([PushCommand.cs:472-474](../../../src/Flowline/Commands/PushCommand.cs#L472-L474),
+  ([PushCommand.cs:467-469](../../../src/Flowline/Commands/PushCommand.cs#L467-L469),
   [DeployCommand.cs:95-96](../../../src/Flowline/Commands/DeployCommand.cs#L95-L96),
   [PullCommand.cs:42-43](../../../src/Flowline/Commands/PullCommand.cs#L42-L43),
   [ProvisionCommand.cs:43-44](../../../src/Flowline/Commands/ProvisionCommand.cs#L43-L44), whose

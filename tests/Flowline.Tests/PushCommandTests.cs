@@ -72,7 +72,7 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void IsStandaloneMode_BarePush_IsNeverStandalone()
     {
-        PushCommand.IsStandaloneMode(new PushCommand.Settings()).Should().BeFalse();
+        PushSupport.IsStandaloneMode(new PushCommand.Settings()).Should().BeFalse();
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public class PushCommandTests : IDisposable
     {
         var settings = new PushPluginsCommand.Settings { Path = "plugins.dll" };
 
-        PushCommand.IsStandaloneMode(settings).Should().BeTrue();
+        PushSupport.IsStandaloneMode(settings).Should().BeTrue();
     }
 
     [Fact]
@@ -88,13 +88,41 @@ public class PushCommandTests : IDisposable
     {
         var settings = new PushWebResourcesCommand.Settings { Path = "dist" };
 
-        PushCommand.IsStandaloneMode(settings).Should().BeTrue();
+        PushSupport.IsStandaloneMode(settings).Should().BeTrue();
     }
 
     [Fact]
     public void IsStandaloneMode_PushPluginsWithoutPath_ShouldReturnFalse()
     {
-        PushCommand.IsStandaloneMode(new PushPluginsCommand.Settings()).Should().BeFalse();
+        PushSupport.IsStandaloneMode(new PushPluginsCommand.Settings()).Should().BeFalse();
+    }
+
+    // -- A named target the project doesn't have is an error; bare push skips it --
+
+    [Fact]
+    public void ThrowIfNamedTargetMissing_PushPlugins_ThrowsNotFound()
+    {
+        var act = () => PushSupport.ThrowIfNamedTargetMissing(new PushPluginsCommand.Settings(), PushSupport.NoPluginProjectMessage);
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.NotFound && e.Message == PushSupport.NoPluginProjectMessage);
+    }
+
+    [Fact]
+    public void ThrowIfNamedTargetMissing_PushWebResources_ThrowsNotFound()
+    {
+        var act = () => PushSupport.ThrowIfNamedTargetMissing(new PushWebResourcesCommand.Settings(), PushSupport.NoWebResourcesProjectMessage);
+
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.NotFound && e.Message.Contains("flowline scaffold webresources"));
+    }
+
+    [Fact]
+    public void ThrowIfNamedTargetMissing_BarePush_Skips()
+    {
+        var act = () => PushSupport.ThrowIfNamedTargetMissing(new PushCommand.Settings(), PushSupport.NoWebResourcesProjectMessage);
+
+        act.Should().NotThrow();
     }
 
     [Fact]
@@ -102,7 +130,7 @@ public class PushCommandTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_root, ".flowline"), "{}");
 
-        var act = () => PushCommand.ValidateStandaloneMode(_root);
+        var act = () => PushSupport.ValidateStandaloneMode(_root);
 
         act.Should().Throw<FlowlineException>()
             .Where(e => e.ExitCode == ExitCode.ValidationFailed && e.Message.Contains("--path"));
@@ -111,7 +139,7 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void ValidateStandaloneMode_WithoutFlowlineFile_DoesNotThrow()
     {
-        var act = () => PushCommand.ValidateStandaloneMode(_root);
+        var act = () => PushSupport.ValidateStandaloneMode(_root);
 
         act.Should().NotThrow();
     }
@@ -121,7 +149,7 @@ public class PushCommandTests : IDisposable
     {
         var settings = new PushPluginsCommand.Settings { Path = "plugins.dll" };
 
-        var act = () => PushCommand.ResolveStandaloneSolutionName(settings);
+        var act = () => PushSupport.ResolveStandaloneSolutionName(settings);
 
         act.Should().Throw<FlowlineException>().WithMessage("*--solution-name*");
     }
@@ -168,7 +196,7 @@ public class PushCommandTests : IDisposable
         var dll = Path.Combine(_root, "plugins.dll");
         File.WriteAllText(dll, "");
 
-        PushCommand.ResolveStandalonePluginFilePath(dll).Should().Be(Path.GetFullPath(dll));
+        PushSupport.ResolveStandalonePluginFilePath(dll).Should().Be(Path.GetFullPath(dll));
     }
 
     [Fact]
@@ -177,7 +205,7 @@ public class PushCommandTests : IDisposable
         var file = Path.Combine(_root, "plugins.txt");
         File.WriteAllText(file, "");
 
-        var act = () => PushCommand.ResolveStandalonePluginFilePath(file);
+        var act = () => PushSupport.ResolveStandalonePluginFilePath(file);
 
         act.Should().Throw<FlowlineException>().WithMessage("--path must point to a .dll or .nupkg file.");
     }
@@ -190,7 +218,7 @@ public class PushCommandTests : IDisposable
         var file = Path.Combine(_root, "plugins.nupkg");
         File.WriteAllText(file, "");
 
-        PushCommand.ResolveStandalonePluginFilePath(file).Should().Be(Path.GetFullPath(file));
+        PushSupport.ResolveStandalonePluginFilePath(file).Should().Be(Path.GetFullPath(file));
     }
 
     // -- ResolvePluginPushPath (R1, KD1) --
@@ -210,7 +238,7 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(dll, "");
         File.WriteAllText(nupkg, "");
 
-        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(nupkg);
+        PushSupport.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(nupkg);
     }
 
     [Fact]
@@ -224,7 +252,7 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(dll, "");
         File.WriteAllText(nupkg, "");
 
-        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Dll).Should().Be(dll);
+        PushSupport.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Dll).Should().Be(dll);
     }
 
     [Fact]
@@ -238,7 +266,7 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(dll, "");
         File.WriteAllText(nupkg, "");
 
-        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Nupkg).Should().Be(nupkg);
+        PushSupport.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Nupkg).Should().Be(nupkg);
     }
 
     [Fact]
@@ -251,7 +279,7 @@ public class PushCommandTests : IDisposable
         var dll = Path.Combine(publishDir, "Plugins.dll");
         File.WriteAllText(dll, "");
 
-        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(dll);
+        PushSupport.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(dll);
     }
 
     [Fact]
@@ -263,7 +291,7 @@ public class PushCommandTests : IDisposable
         var dll = Path.Combine(publishDir, "Plugins.dll");
         File.WriteAllText(dll, "");
 
-        var act = () => PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Nupkg);
+        var act = () => PushSupport.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Nupkg);
 
         act.Should().Throw<Flowline.Core.FlowlineException>().WithMessage("*Nupkg*no .nupkg was found*");
     }
@@ -277,7 +305,7 @@ public class PushCommandTests : IDisposable
         var dll = Path.Combine(_root, "Plugins.dll");
         File.WriteAllText(dll, "");
 
-        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(dll);
+        PushSupport.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(dll);
     }
 
     [Fact]
@@ -294,7 +322,7 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg"), "");
         File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.1.nupkg"), "");
 
-        var act = () => PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto);
+        var act = () => PushSupport.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto);
 
         act.Should().Throw<Flowline.Core.FlowlineException>()
             .WithMessage("*Plugins.1.0.0.nupkg*Plugins.1.0.1.nupkg*");
@@ -312,7 +340,7 @@ public class PushCommandTests : IDisposable
         var dll = WritePluginDll("built");
         var nupkg = WriteNupkg("Plugins.1.0.0.nupkg", "packed from older code");
 
-        PushCommand.NeedsRepack(nupkg, dll, didBuild: true).Should().BeTrue();
+        PushSupport.NeedsRepack(nupkg, dll, didBuild: true).Should().BeTrue();
     }
 
     [Fact]
@@ -321,7 +349,7 @@ public class PushCommandTests : IDisposable
         var dll = WritePluginDll("built");
         var nupkg = WriteNupkg("Plugins.1.0.0.nupkg", "packed from older code");
 
-        var act = () => PushCommand.NeedsRepack(nupkg, dll, didBuild: false);
+        var act = () => PushSupport.NeedsRepack(nupkg, dll, didBuild: false);
 
         act.Should().Throw<Flowline.Core.FlowlineException>().WithMessage("*--no-build*");
     }
@@ -332,7 +360,7 @@ public class PushCommandTests : IDisposable
         var dll = WritePluginDll("built");
         var nupkg = WriteNupkg("Plugins.1.0.0.nupkg", "built");
 
-        PushCommand.NeedsRepack(nupkg, dll, didBuild: false).Should().BeFalse();
+        PushSupport.NeedsRepack(nupkg, dll, didBuild: false).Should().BeFalse();
     }
 
     [Fact]
@@ -341,7 +369,7 @@ public class PushCommandTests : IDisposable
         // No package to be stale against — the .dll IS what gets pushed.
         var dll = WritePluginDll("built");
 
-        PushCommand.NeedsRepack(dll, dll, didBuild: false).Should().BeFalse();
+        PushSupport.NeedsRepack(dll, dll, didBuild: false).Should().BeFalse();
     }
 
     string WritePluginDll(string content)
@@ -385,7 +413,7 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.1.nupkg"), "");
         File.WriteAllText(Path.Combine(publishDir, "Nested.2.0.0.nupkg"), "");
 
-        PushCommand.ClearStalePackages(buildOutputRoot);
+        PushSupport.ClearStalePackages(buildOutputRoot);
 
         Directory.GetFiles(buildOutputRoot, "*.nupkg", SearchOption.AllDirectories).Should().BeEmpty();
         File.Exists(dll).Should().BeTrue("only packages are cleared — the build output itself stays");
@@ -403,11 +431,11 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg"), "");
         File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.1.nupkg"), "");
 
-        PushCommand.ClearStalePackages(buildOutputRoot);
+        PushSupport.ClearStalePackages(buildOutputRoot);
         var repacked = Path.Combine(buildOutputRoot, "Plugins.1.0.2.nupkg");
         File.WriteAllText(repacked, ""); // stands in for what dotnet pack writes next
 
-        PushCommand.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(repacked);
+        PushSupport.ResolvePluginPushPath(dll, buildOutputRoot, PluginPackageMode.Auto).Should().Be(repacked);
     }
 
     [Fact]
@@ -418,7 +446,7 @@ public class PushCommandTests : IDisposable
         File.WriteAllText(Path.Combine(buildOutputRoot, "Plugins.1.0.0.nupkg"), "");
 
         var notes = new List<string>();
-        PushCommand.ClearStalePackages(buildOutputRoot, notes.Add);
+        PushSupport.ClearStalePackages(buildOutputRoot, notes.Add);
 
         notes.Should().ContainSingle(n => n.Contains("Plugins.1.0.0.nupkg"));
         // console.Verbose escapes what it is given, so a marked-up path would print its own tags.
@@ -428,14 +456,14 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void ClearStalePackages_MissingBuildOutputRoot_DoesNotThrow()
     {
-        var act = () => PushCommand.ClearStalePackages(Path.Combine(_root, "bin", "Release"));
+        var act = () => PushSupport.ClearStalePackages(Path.Combine(_root, "bin", "Release"));
 
         act.Should().NotThrow();
     }
 
     // -- U4: every confirmed project pushes in one invocation (R5, R6, KD4) --
 
-    static PushCommand.PluginPushTarget Target(string projectName, string assemblyName, params string[] extraPackageAssemblies) =>
+    static PushSupport.PluginPushTarget Target(string projectName, string assemblyName, params string[] extraPackageAssemblies) =>
         new($@"C:\{projectName}\bin\Release\{assemblyName}.dll",
             assemblyName,
             projectName,
@@ -455,9 +483,9 @@ public class PushCommandTests : IDisposable
         var (salesRoot, salesDll) = WriteProjectOutput("Sales", "Plugins.Sales", withNupkg: true);
         var (supportRoot, supportDll) = WriteProjectOutput("Support", "Plugins.Support", withNupkg: false);
 
-        PushCommand.ResolvePluginPushPath(salesDll, salesRoot, PluginPackageMode.Auto)
+        PushSupport.ResolvePluginPushPath(salesDll, salesRoot, PluginPackageMode.Auto)
                    .Should().Be(Path.Combine(salesRoot, "Plugins.Sales.1.0.0.nupkg"));
-        PushCommand.ResolvePluginPushPath(supportDll, supportRoot, PluginPackageMode.Auto)
+        PushSupport.ResolvePluginPushPath(supportDll, supportRoot, PluginPackageMode.Auto)
                    .Should().Be(supportDll);
     }
 
@@ -469,8 +497,8 @@ public class PushCommandTests : IDisposable
         var (salesRoot, salesDll) = WriteProjectOutput("Sales", "Plugins.Sales", withNupkg: true);
         var (supportRoot, supportDll) = WriteProjectOutput("Support", "Plugins.Support", withNupkg: false);
 
-        PushCommand.ResolvePluginPushPath(salesDll, salesRoot, PluginPackageMode.Dll).Should().Be(salesDll);
-        PushCommand.ResolvePluginPushPath(supportDll, supportRoot, PluginPackageMode.Dll).Should().Be(supportDll);
+        PushSupport.ResolvePluginPushPath(salesDll, salesRoot, PluginPackageMode.Dll).Should().Be(salesDll);
+        PushSupport.ResolvePluginPushPath(supportDll, supportRoot, PluginPackageMode.Dll).Should().Be(supportDll);
     }
 
     [Fact]
@@ -479,10 +507,10 @@ public class PushCommandTests : IDisposable
         var (salesRoot, salesDll) = WriteProjectOutput("Sales", "Plugins.Sales", withNupkg: true);
         var (supportRoot, supportDll) = WriteProjectOutput("Support", "Plugins.Support", withNupkg: false);
 
-        PushCommand.ResolvePluginPushPath(salesDll, salesRoot, PluginPackageMode.Nupkg)
+        PushSupport.ResolvePluginPushPath(salesDll, salesRoot, PluginPackageMode.Nupkg)
                    .Should().Be(Path.Combine(salesRoot, "Plugins.Sales.1.0.0.nupkg"));
 
-        var act = () => PushCommand.ResolvePluginPushPath(supportDll, supportRoot, PluginPackageMode.Nupkg);
+        var act = () => PushSupport.ResolvePluginPushPath(supportDll, supportRoot, PluginPackageMode.Nupkg);
         act.Should().Throw<Flowline.Core.FlowlineException>().WithMessage("*no .nupkg was found*");
     }
 
@@ -504,14 +532,14 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void CollectPushedAssemblyNames_WithTwoProjects_ShouldIncludeBothAssemblies()
     {
-        PushCommand.CollectPushedAssemblyNames([Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")])
+        PushSupport.CollectPushedAssemblyNames([Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")])
                    .Should().BeEquivalentTo(["Sales", "Support"]);
     }
 
     [Fact]
     public void CollectPushedAssemblyNames_WithSingleProject_ShouldIncludeOnlyThatAssembly()
     {
-        PushCommand.CollectPushedAssemblyNames([Target("Plugins", "Plugins")]).Should().BeEquivalentTo(["Plugins"]);
+        PushSupport.CollectPushedAssemblyNames([Target("Plugins", "Plugins")]).Should().BeEquivalentTo(["Plugins"]);
     }
 
     [Fact]
@@ -519,7 +547,7 @@ public class PushCommandTests : IDisposable
     {
         // A .nupkg project alongside a classic one: the classic project's orphan sweep is solution-wide,
         // so it needs the package's other assemblies by name or it reads them as having no local source.
-        PushCommand.CollectPushedAssemblyNames(
+        PushSupport.CollectPushedAssemblyNames(
         [
             Target("Plugins.Sales", "Sales", "Sales.Shared", "Sales.Workflows"),
             Target("Plugins.Support", "Support"),
@@ -529,7 +557,7 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void CollectPushedAssemblyNames_WithTheSameAssemblyNameTwice_ShouldDedupeIgnoringCase()
     {
-        PushCommand.CollectPushedAssemblyNames([Target("Plugins.A", "Shared"), Target("Plugins.B", "SHARED")])
+        PushSupport.CollectPushedAssemblyNames([Target("Plugins.A", "Shared"), Target("Plugins.B", "SHARED")])
                    .Should().ContainSingle();
     }
 
@@ -539,16 +567,16 @@ public class PushCommandTests : IDisposable
     public void DescribePluginPushHeader_WithSingleProject_ShouldReturnNull()
     {
         // R7 regression guard: a one-project solution must print exactly what it printed before U4.
-        PushCommand.DescribePluginPushHeader([Target("Plugins", "Plugins")], 0).Should().BeNull();
+        PushSupport.DescribePluginPushHeader([Target("Plugins", "Plugins")], 0).Should().BeNull();
     }
 
     [Fact]
     public void DescribePluginPushHeader_WithTwoProjects_ShouldNumberAndNameEachProject()
     {
-        PushCommand.PluginPushTarget[] targets = [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")];
+        PushSupport.PluginPushTarget[] targets = [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")];
 
-        PushCommand.DescribePluginPushHeader(targets, 0).Should().Be("#1 [bold]Plugins.Sales[/] — pushing");
-        PushCommand.DescribePluginPushHeader(targets, 1).Should().Be("#2 [bold]Plugins.Support[/] — pushing");
+        PushSupport.DescribePluginPushHeader(targets, 0).Should().Be("#1 [bold]Plugins.Sales[/] — pushing");
+        PushSupport.DescribePluginPushHeader(targets, 1).Should().Be("#2 [bold]Plugins.Support[/] — pushing");
     }
 
     // -- Per-project failure: names which one, and what the org holds now --
@@ -557,15 +585,15 @@ public class PushCommandTests : IDisposable
     public void DescribePluginPushFailure_WithSingleProject_ShouldReturnNull()
     {
         // R7: nothing to attribute, so the original exception reaches the user unwrapped.
-        PushCommand.DescribePluginPushFailure([Target("Plugins", "Plugins")], 0, "Build failed.").Should().BeNull();
+        PushSupport.DescribePluginPushFailure([Target("Plugins", "Plugins")], 0, "Build failed.").Should().BeNull();
     }
 
     [Fact]
     public void DescribePluginPushFailure_WithSecondOfTwoFailing_ShouldNameItAndWhatAlreadyLanded()
     {
-        PushCommand.PluginPushTarget[] targets = [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")];
+        PushSupport.PluginPushTarget[] targets = [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")];
 
-        var message = PushCommand.DescribePluginPushFailure(targets, 1, "Assembly registration failed.");
+        var message = PushSupport.DescribePluginPushFailure(targets, 1, "Assembly registration failed.");
 
         message.Should().Be("'Plugins.Support' failed to push: Assembly registration failed. " +
                             "Already in the org: Plugins.Sales. Fix 'Plugins.Support', then push again.");
@@ -576,10 +604,10 @@ public class PushCommandTests : IDisposable
     {
         // The others aren't skipped silently — the message says they weren't tried, which is a different
         // state from "pushed" and the user has to be able to tell them apart.
-        PushCommand.PluginPushTarget[] targets =
+        PushSupport.PluginPushTarget[] targets =
             [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support"), Target("Plugins.Ops", "Ops")];
 
-        var message = PushCommand.DescribePluginPushFailure(targets, 0, "Assembly registration failed.");
+        var message = PushSupport.DescribePluginPushFailure(targets, 0, "Assembly registration failed.");
 
         message.Should().Be("'Plugins.Sales' failed to push: Assembly registration failed. " +
                             "Not attempted: Plugins.Support, Plugins.Ops. Fix 'Plugins.Sales', then push again.");
@@ -588,10 +616,10 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void DescribePluginPushFailure_WithMiddleOfThreeFailing_ShouldReportBothPushedAndNotAttempted()
     {
-        PushCommand.PluginPushTarget[] targets =
+        PushSupport.PluginPushTarget[] targets =
             [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support"), Target("Plugins.Ops", "Ops")];
 
-        PushCommand.DescribePluginPushFailure(targets, 1, "Assembly registration failed.")
+        PushSupport.DescribePluginPushFailure(targets, 1, "Assembly registration failed.")
                    .Should().Contain("Already in the org: Plugins.Sales.")
                    .And.Contain("Not attempted: Plugins.Ops.");
     }
@@ -599,9 +627,9 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void DescribePluginPushFailure_WithUnpunctuatedReason_ShouldCloseTheSentence()
     {
-        PushCommand.PluginPushTarget[] targets = [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")];
+        PushSupport.PluginPushTarget[] targets = [Target("Plugins.Sales", "Sales"), Target("Plugins.Support", "Support")];
 
-        PushCommand.DescribePluginPushFailure(targets, 0, "Connection reset by peer")
+        PushSupport.DescribePluginPushFailure(targets, 0, "Connection reset by peer")
                    .Should().Contain("Connection reset by peer. Not attempted:");
     }
 
@@ -610,13 +638,13 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void IsPackagePush_WithNupkgPath_ShouldReturnTrue()
     {
-        PushCommand.IsPackagePush(Path.Combine(_root, "Plugins.nupkg")).Should().BeTrue();
+        PushSupport.IsPackagePush(Path.Combine(_root, "Plugins.nupkg")).Should().BeTrue();
     }
 
     [Fact]
     public void IsPackagePush_WithDllPath_ShouldReturnFalse()
     {
-        PushCommand.IsPackagePush(Path.Combine(_root, "Plugins.dll")).Should().BeFalse();
+        PushSupport.IsPackagePush(Path.Combine(_root, "Plugins.dll")).Should().BeFalse();
     }
 
     // -- BuildProjectPushTarget: project mode must reflect its own .nupkg --
@@ -633,7 +661,7 @@ public class PushCommandTests : IDisposable
         var nupkg = Path.Combine(_root, "Sales.1.0.0.nupkg");
         BuildNupkg(nupkg, primary, secondary);
 
-        var target = PushCommand.BuildProjectPushTarget(nupkg, "Sales", "Plugins.Sales", new Spectre.Console.Testing.TestConsole());
+        var target = PushSupport.BuildProjectPushTarget(nupkg, "Sales", "Plugins.Sales", new Spectre.Console.Testing.TestConsole());
 
         target.AssemblyName.Should().Be("Sales");
         target.ReflectedAssemblies.Should().NotBeNull();
@@ -651,9 +679,9 @@ public class PushCommandTests : IDisposable
         var nupkg = Path.Combine(_root, "Sales.1.0.0.nupkg");
         BuildNupkg(nupkg, primary, secondary);
 
-        var packageTarget = PushCommand.BuildProjectPushTarget(nupkg, "Sales", "Plugins.Sales", new Spectre.Console.Testing.TestConsole());
+        var packageTarget = PushSupport.BuildProjectPushTarget(nupkg, "Sales", "Plugins.Sales", new Spectre.Console.Testing.TestConsole());
 
-        PushCommand.CollectPushedAssemblyNames([packageTarget, Target("Plugins.Support", "Support")])
+        PushSupport.CollectPushedAssemblyNames([packageTarget, Target("Plugins.Support", "Support")])
                    .Should().BeEquivalentTo(["Sales", "Sales.Shared", "Support"]);
     }
 
@@ -664,10 +692,10 @@ public class PushCommandTests : IDisposable
         var dll = Path.Combine(_root, "Support.dll");
         File.WriteAllText(dll, "");
 
-        var target = PushCommand.BuildProjectPushTarget(dll, "Support", "Plugins.Support", new Spectre.Console.Testing.TestConsole());
+        var target = PushSupport.BuildProjectPushTarget(dll, "Support", "Plugins.Support", new Spectre.Console.Testing.TestConsole());
 
         target.ReflectedAssemblies.Should().BeNull();
-        PushCommand.CollectPushedAssemblyNames([target]).Should().BeEquivalentTo(["Support"]);
+        PushSupport.CollectPushedAssemblyNames([target]).Should().BeEquivalentTo(["Support"]);
     }
 
     // -- ResolveStandalonePackageAssemblyName (R2a — standalone mode has no project context) --
@@ -685,7 +713,7 @@ public class PushCommandTests : IDisposable
         var nupkgPath = Path.Combine(_root, "MyPlugins.1.0.0.nupkg"); // filename != assembly name
         BuildNupkg(nupkgPath, dllPath);
 
-        var (name, assemblies) = PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
+        var (name, assemblies) = PushSupport.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
 
         name.Should().Be("MyPlugins");
         name.Should().NotBe("MyPlugins.1.0.0");
@@ -701,7 +729,7 @@ public class PushCommandTests : IDisposable
         var nupkgPath = Path.Combine(_root, "Multi.1.0.0.nupkg");
         BuildNupkg(nupkgPath, dllA, dllB);
 
-        var act = () => PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
+        var act = () => PushSupport.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
 
         act.Should().Throw<Flowline.Core.FlowlineException>()
             .WithMessage("*AssemblyA*AssemblyB*");
@@ -716,7 +744,7 @@ public class PushCommandTests : IDisposable
         var nupkgPath = Path.Combine(_root, "Empty.1.0.0.nupkg");
         BuildNupkg(nupkgPath, dependencyDll);
 
-        var (name, assemblies) = PushCommand.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
+        var (name, assemblies) = PushSupport.ResolveStandalonePackageAssemblyName(nupkgPath, new Spectre.Console.Testing.TestConsole());
 
         name.Should().Be("Empty.1.0.0");
         assemblies.Should().BeEmpty();
@@ -780,7 +808,7 @@ public class PushCommandTests : IDisposable
     {
         var folder = Path.Combine(_root, "dist");
         Directory.CreateDirectory(folder);
-        PushCommand.ResolveStandaloneWebResourcesPath(folder).Should().Be(Path.GetFullPath(folder));
+        PushSupport.ResolveStandaloneWebResourcesPath(folder).Should().Be(Path.GetFullPath(folder));
     }
 
     [Fact]
@@ -790,7 +818,7 @@ public class PushCommandTests : IDisposable
         Directory.CreateDirectory(dist);
         File.WriteAllText(Path.Combine(dist, "account.js"), "");
 
-        var act = () => PushCommand.EnsureBuiltWebResources(dist);
+        var act = () => PushSupport.EnsureBuiltWebResources(dist);
 
         act.Should().NotThrow();
     }
@@ -803,7 +831,7 @@ public class PushCommandTests : IDisposable
         Directory.CreateDirectory(sub);
         File.WriteAllText(Path.Combine(sub, "form.js"), "");
 
-        var act = () => PushCommand.EnsureBuiltWebResources(dist);
+        var act = () => PushSupport.EnsureBuiltWebResources(dist);
 
         act.Should().NotThrow();
     }
@@ -814,7 +842,7 @@ public class PushCommandTests : IDisposable
         var dist = Path.Combine(_root, "dist");
         Directory.CreateDirectory(dist);
 
-        var act = () => PushCommand.EnsureBuiltWebResources(dist);
+        var act = () => PushSupport.EnsureBuiltWebResources(dist);
 
         act.Should().Throw<FlowlineException>();
     }
@@ -824,7 +852,7 @@ public class PushCommandTests : IDisposable
     {
         var dist = Path.Combine(_root, "dist");
 
-        var act = () => PushCommand.EnsureBuiltWebResources(dist);
+        var act = () => PushSupport.EnsureBuiltWebResources(dist);
 
         act.Should().Throw<FlowlineException>();
     }

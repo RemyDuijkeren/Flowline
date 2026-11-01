@@ -174,7 +174,7 @@ public class ProgramParsingTests
 
         app.Run(["push", subcommand, "--help"]);
 
-        console.Output.Should().Contain(ownOption).And.Contain("--path").And.Contain("'push -h'");
+        console.Output.Should().Contain(ownOption).And.Contain("--path").And.Contain("'flowline push -h'");
     }
 
     [Fact]
