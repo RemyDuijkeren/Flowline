@@ -434,8 +434,7 @@ namespace Flowline
             // push = build and register assets straight into DEV. A branch with a default command: bare push
             // pushes every target the project has, and each subcommand pushes one target with only the
             // options that apply to it. Shared options are declared on PushSettings, the branch's settings
-            // type, so `push -h` lists them and they bind on either side of the subcommand name. Options
-            // bare push accepts are exactly those, which is why its examples need no special care.
+            // type, so `push -h` lists them and they bind on either side of the subcommand name.
             config.AddBranch<PushSettings>("push", push =>
             {
                 push.SetDescription("Build the plugin assembly and web resources and register them straight into DEV, plugin steps included. Run after plugin or web resource changes. Bare push pushes every target the project has; name one to push only that. DEV only, via --env dev (default) or a DEV URL.");
