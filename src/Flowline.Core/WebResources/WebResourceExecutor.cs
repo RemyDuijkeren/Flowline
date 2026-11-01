@@ -109,7 +109,7 @@ public class WebResourceExecutor(IAnsiConsole console)
     // R8: a foreign-owned resource kept only because a local file references it via
     // // flowline:depends isn't a neutral skip — the file sitting in the web resource folder is
     // dead weight the user will keep re-creating on every push. Name the folder that was actually
-    // resolved (webresourceRoot), never a hardcoded "dist/" — --webresources overrides it.
+    // resolved (webresourceRoot), never a hardcoded "dist/" — stand-alone push's --path overrides it.
     // Every path that surfaces a plan's skips renders them through here. A reference-only skip is the
     // one case that warns rather than reporting neutrally, and the push that most needs that warning —
     // the file already synced, nothing else to do — never reaches the executor at all, because
@@ -129,7 +129,7 @@ public class WebResourceExecutor(IAnsiConsole console)
     static void WarnReferencedNotOwned(IAnsiConsole console, WebResourcePlanAction a, string webresourceRoot)
     {
         // Escape every interpolated value: console.Warning/MarkupLine parse Spectre markup, and a
-        // folder path is free-form user input (--webresources) that may legally contain '['.
+        // folder path is free-form user input (push webresources --path) that may legally contain '['.
         var folder = Markup.Escape(webresourceRoot.Replace('\\', '/').TrimEnd('/') + "/");
         console.Warning($"'{Markup.Escape(a.Name)}' is owned by '{Markup.Escape(a.OwningSolutions ?? "another solution")}' — not pushed.");
         console.MarkupLine($"  The dependency's declared, so the file isn't needed in {folder}. Remove it.");

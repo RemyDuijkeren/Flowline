@@ -126,6 +126,57 @@ public class ProgramParsingTests
         console.Output.Should().Contain($"flowline settings {verb} test");
     }
 
+    // -- push is a branch: bare push for everything, one subcommand per target --
+
+    // The scope and path options are gone with no alias, and the target-only options exist only on
+    // their target. All of them fail as unknown options, as the parser reports them.
+    [Theory]
+    [InlineData("push", "--scope", "plugins")]
+    [InlineData("push", "--plugin-file", "x.dll")]
+    [InlineData("push", "--webresources", "./dist")]
+    [InlineData("push", "--assembly-only")]
+    [InlineData("push", "--no-publish")]
+    [InlineData("push", "plugins", "--no-publish")]
+    [InlineData("push", "wr", "--assembly-only")]
+    public void Push_OptionOnTheWrongCommand_FailsWithUnknownOptionError(params string[] args)
+    {
+        var app = BuildRealApp(out _);
+
+        var act = () => app.Run(args);
+
+        act.Should().Throw<CommandParseException>().WithMessage("*Unknown option*");
+    }
+
+    [Fact]
+    public void PushHelp_ListsSharedOptionsBothSubcommandsAndTheirExamples()
+    {
+        var app = BuildRealApp(out var console);
+
+        app.Run(["push", "--help"]);
+
+        var output = console.Output;
+        output.Should().Contain("plugins").And.Contain("webresources");
+        output.Should().Contain("--dry-run").And.Contain("--no-build").And.Contain("--solution-name");
+        output.Should().NotContain("--scope").And.NotContain("--plugin-file").And.NotContain("--no-publish");
+        output.Should().Contain("flowline push plugins --assembly-only");
+        output.Should().Contain("flowline push wr --path ./dist");
+    }
+
+    // Spectre lists only the subcommand's own options here, not the ones declared on the branch, so the
+    // description points at 'push -h' for those.
+    [Theory]
+    [InlineData("plugins", "--assembly-only")]
+    [InlineData("webresources", "--no-publish")]
+    [InlineData("wr", "--no-publish")]
+    public void PushSubcommandHelp_ListsItsOwnOptionsAndPointsAtTheShared(string subcommand, string ownOption)
+    {
+        var app = BuildRealApp(out var console);
+
+        app.Run(["push", subcommand, "--help"]);
+
+        console.Output.Should().Contain(ownOption).And.Contain("--path").And.Contain("'push -h'");
+    }
+
     [Fact]
     public void PullHelp_RendersPullInTheUsageLine()
     {

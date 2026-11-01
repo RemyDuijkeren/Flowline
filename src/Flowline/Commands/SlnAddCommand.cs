@@ -52,6 +52,8 @@ public class SlnAddCommand(CommandServices services)
     // describes. Nothing here needs an introduction either — it edits one local file.
     protected override bool ShowWelcome => false;
 
+    protected override string CommandGroup => "sln";
+
     /// <summary>Skips the standard git/dotnet/pac probe entirely.</summary>
     /// <remarks>
     /// The base implementation shells out to four tools before the command body runs. This command

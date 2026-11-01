@@ -174,6 +174,8 @@ public class FlowlineSettingsTests
     // A bare word after push or generate must never be read as the solution: the name moved to a flag.
     [Theory]
     [InlineData(typeof(PushCommand.Settings))]
+    [InlineData(typeof(PushPluginsCommand.Settings))]
+    [InlineData(typeof(PushWebResourcesCommand.Settings))]
     [InlineData(typeof(GenerateCommand.Settings))]
     public void PushAndGenerate_DeclareNoPositional(Type settings)
     {

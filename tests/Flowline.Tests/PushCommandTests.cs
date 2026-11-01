@@ -27,115 +27,99 @@ public class PushCommandTests : IDisposable
             Directory.Delete(_root, true);
     }
 
-    [Fact]
-    public void IsStandaloneMode_WithPluginFile_ShouldReturnTrue()
-    {
-        var settings = new PushCommand.Settings { PluginFile = "plugins.dll" };
-
-        PushCommand.IsStandaloneMode(settings).Should().BeTrue();
-    }
+    // -- What each push command hands the engine --
 
     [Fact]
-    public void IsStandaloneMode_WithWebResources_ShouldReturnTrue()
-    {
-        var settings = new PushCommand.Settings { WebResources = "dist" };
-
-        PushCommand.IsStandaloneMode(settings).Should().BeTrue();
-    }
-
-    [Fact]
-    public void ResolveScope_ProjectMode_WithoutScope_ShouldDefaultToAll()
+    public void BarePush_TargetsEverything_AndNamesNone()
     {
         var settings = new PushCommand.Settings();
 
-        PushCommand.ResolveScope(settings, standaloneMode: false).Should().Be(PushCommand.PushScope.All);
+        settings.Targets.Should().Be(PushTargets.All);
+        settings.TargetNamed.Should().BeFalse();
+        settings.AssemblyOnly.Should().BeFalse();
+        settings.SkipPublish.Should().BeFalse();
     }
 
     [Fact]
-    public void ResolveScope_StandaloneMode_WithPluginFileAndWebResources_ShouldDeriveScope()
+    public void PushPlugins_TargetsPluginsOnly_AsANamedTarget()
     {
-        var settings = new PushCommand.Settings { PluginFile = "plugins.dll", WebResources = "dist" };
+        var settings = new PushPluginsCommand.Settings();
 
-        PushCommand.ResolveScope(settings, standaloneMode: true).Should().Be(PushCommand.PushScope.Plugins | PushCommand.PushScope.WebResources);
+        settings.Targets.Should().Be(PushTargets.Plugins);
+        settings.TargetNamed.Should().BeTrue();
     }
 
     [Fact]
-    public void ResolveScope_WithAssemblyOnly_ShouldReturnAssemblyOnly()
+    public void PushPlugins_AssemblyOnlyFlag_ReachesTheEngine()
     {
-        var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.AssemblyOnly] };
+        var settings = new PushPluginsCommand.Settings { AssemblyOnlyFlag = true };
 
-        PushCommand.ResolveScope(settings, standaloneMode: false).Should().Be(PushCommand.PushScope.AssemblyOnly);
+        settings.AssemblyOnly.Should().BeTrue();
     }
 
     [Fact]
-    public void ResolveScope_WithAssemblyOnlyAndPlugins_ShouldThrow()
+    public void PushWebResources_TargetsWebResourcesOnly_AndCarriesNoPublish()
     {
-        var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.AssemblyOnly, PushCommand.PushScope.Plugins] };
+        var settings = new PushWebResourcesCommand.Settings { NoPublish = true };
 
-        var act = () => PushCommand.ResolveScope(settings, standaloneMode: false);
-
-        act.Should().Throw<FlowlineException>();
+        settings.Targets.Should().Be(PushTargets.WebResources);
+        settings.TargetNamed.Should().BeTrue();
+        settings.SkipPublish.Should().BeTrue();
     }
 
+    // -- Stand-alone mode is keyed on --path, and only a subcommand has one --
+
     [Fact]
-    public void ResolveScope_StandaloneMode_WithPluginFileAndAssemblyOnlyScope_ShouldReturnAssemblyOnly()
+    public void IsStandaloneMode_BarePush_IsNeverStandalone()
     {
-        var settings = new PushCommand.Settings { PluginFile = "plugins.dll", Scopes = [PushCommand.PushScope.AssemblyOnly] };
-
-        PushCommand.ResolveScope(settings, standaloneMode: true).Should().Be(PushCommand.PushScope.AssemblyOnly);
+        PushCommand.IsStandaloneMode(new PushCommand.Settings()).Should().BeFalse();
     }
 
     [Fact]
-    public void ResolveScope_StandaloneMode_WithPluginsScopeAndPluginFile_ShouldReturnPlugins()
+    public void IsStandaloneMode_PushPluginsWithPath_ShouldReturnTrue()
     {
-        var settings = new PushCommand.Settings { PluginFile = "plugins.dll", Scopes = [PushCommand.PushScope.Plugins] };
+        var settings = new PushPluginsCommand.Settings { Path = "plugins.dll" };
 
-        PushCommand.ResolveScope(settings, standaloneMode: true).Should().Be(PushCommand.PushScope.Plugins);
+        PushCommand.IsStandaloneMode(settings).Should().BeTrue();
     }
 
     [Fact]
-    public void ResolveScope_StandaloneMode_WithPluginsScopeButNoPluginFile_ShouldThrow()
+    public void IsStandaloneMode_PushWebResourcesWithPath_ShouldReturnTrue()
     {
-        var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.Plugins] };
+        var settings = new PushWebResourcesCommand.Settings { Path = "dist" };
 
-        var act = () => PushCommand.ResolveScope(settings, standaloneMode: true);
-
-        act.Should().Throw<FlowlineException>();
+        PushCommand.IsStandaloneMode(settings).Should().BeTrue();
     }
 
     [Fact]
-    public void ResolveScope_StandaloneMode_WithWebResourcesScopeButNoPath_ShouldThrow()
+    public void IsStandaloneMode_PushPluginsWithoutPath_ShouldReturnFalse()
     {
-        var settings = new PushCommand.Settings { Scopes = [PushCommand.PushScope.WebResources] };
-
-        var act = () => PushCommand.ResolveScope(settings, standaloneMode: true);
-
-        act.Should().Throw<FlowlineException>();
+        PushCommand.IsStandaloneMode(new PushPluginsCommand.Settings()).Should().BeFalse();
     }
 
     [Fact]
-    public void ResolveScope_StandaloneMode_WithWebResourcesScopeAndPath_ShouldReturnWebResources()
-    {
-        var settings = new PushCommand.Settings { WebResources = "dist", Scopes = [PushCommand.PushScope.WebResources] };
-
-        PushCommand.ResolveScope(settings, standaloneMode: true).Should().Be(PushCommand.PushScope.WebResources);
-    }
-
-    [Fact]
-    public void ValidateStandaloneMode_WithFlowlineFile_ShouldThrow()
+    public void ValidateStandaloneMode_WithFlowlineFile_ShouldThrowNamingPath()
     {
         File.WriteAllText(Path.Combine(_root, ".flowline"), "{}");
-        var settings = new PushCommand.Settings { PluginFile = "plugins.dll" };
 
-        var act = () => PushCommand.ValidateStandaloneMode(settings, _root);
+        var act = () => PushCommand.ValidateStandaloneMode(_root);
 
-        act.Should().Throw<FlowlineException>();
+        act.Should().Throw<FlowlineException>()
+            .Where(e => e.ExitCode == ExitCode.ValidationFailed && e.Message.Contains("--path"));
+    }
+
+    [Fact]
+    public void ValidateStandaloneMode_WithoutFlowlineFile_DoesNotThrow()
+    {
+        var act = () => PushCommand.ValidateStandaloneMode(_root);
+
+        act.Should().NotThrow();
     }
 
     [Fact]
     public void ResolveStandaloneSolutionName_WithoutSolution_ShouldThrow()
     {
-        var settings = new PushCommand.Settings { PluginFile = "plugins.dll" };
+        var settings = new PushPluginsCommand.Settings { Path = "plugins.dll" };
 
         var act = () => PushCommand.ResolveStandaloneSolutionName(settings);
 
@@ -183,21 +167,19 @@ public class PushCommandTests : IDisposable
     {
         var dll = Path.Combine(_root, "plugins.dll");
         File.WriteAllText(dll, "");
-        var settings = new PushCommand.Settings { PluginFile = dll };
 
-        PushCommand.ResolveStandalonePluginFilePath(settings).Should().Be(Path.GetFullPath(dll));
+        PushCommand.ResolveStandalonePluginFilePath(dll).Should().Be(Path.GetFullPath(dll));
     }
 
     [Fact]
-    public void ResolveStandalonePluginFilePath_WithNonDll_ShouldThrow()
+    public void ResolveStandalonePluginFilePath_WithNonDll_ShouldThrowNamingPath()
     {
         var file = Path.Combine(_root, "plugins.txt");
         File.WriteAllText(file, "");
-        var settings = new PushCommand.Settings { PluginFile = file };
 
-        var act = () => PushCommand.ResolveStandalonePluginFilePath(settings);
+        var act = () => PushCommand.ResolveStandalonePluginFilePath(file);
 
-        act.Should().Throw<FlowlineException>();
+        act.Should().Throw<FlowlineException>().WithMessage("--path must point to a .dll or .nupkg file.");
     }
 
     [Fact]
@@ -207,9 +189,8 @@ public class PushCommandTests : IDisposable
         // rather than the old "NuGet packages not yet supported" rejection.
         var file = Path.Combine(_root, "plugins.nupkg");
         File.WriteAllText(file, "");
-        var settings = new PushCommand.Settings { PluginFile = file };
 
-        PushCommand.ResolveStandalonePluginFilePath(settings).Should().Be(Path.GetFullPath(file));
+        PushCommand.ResolveStandalonePluginFilePath(file).Should().Be(Path.GetFullPath(file));
     }
 
     // -- ResolvePluginPushPath (R1, KD1) --
@@ -799,9 +780,7 @@ public class PushCommandTests : IDisposable
     {
         var folder = Path.Combine(_root, "dist");
         Directory.CreateDirectory(folder);
-        var settings = new PushCommand.Settings { WebResources = folder };
-
-        PushCommand.ResolveStandaloneWebResourcesPath(settings).Should().Be(Path.GetFullPath(folder));
+        PushCommand.ResolveStandaloneWebResourcesPath(folder).Should().Be(Path.GetFullPath(folder));
     }
 
     [Fact]
@@ -905,6 +884,55 @@ public class PushCommandTests : IDisposable
         act.Should().NotThrow();
     }
 
+    // Each target accepts only the hazards it can hit; bare push runs both, so it accepts them all.
+    [Theory]
+    [InlineData("delete-orphans")]
+    [InlineData("recreate-assembly")]
+    [InlineData("config")]
+    [InlineData("all")]
+    public void ValidateForce_PushPlugins_AcceptsItsOwnHazards(string value)
+    {
+        var act = () => FlowlineSettings.ValidateForce([value], PushPluginsCommand.ValidSpecifiers, "push plugins");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateForce_PushPlugins_RejectsAWebResourcesHazard_NamingTheCommand()
+    {
+        var act = () => FlowlineSettings.ValidateForce(["delete-form-handlers"], PushPluginsCommand.ValidSpecifiers, "push plugins");
+
+        act.Should().Throw<FlowlineException>()
+            .WithMessage("'delete-form-handlers' isn't a valid --force value for 'push plugins'. Use one of: delete-orphans, recreate-assembly, config, all.");
+    }
+
+    [Theory]
+    [InlineData("delete-form-handlers")]
+    [InlineData("config")]
+    [InlineData("all")]
+    public void ValidateForce_PushWebResources_AcceptsItsOwnHazards(string value)
+    {
+        var act = () => FlowlineSettings.ValidateForce([value], PushWebResourcesCommand.ValidSpecifiers, "push webresources");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateForce_PushWebResources_RejectsAPluginHazard()
+    {
+        var act = () => FlowlineSettings.ValidateForce(["recreate-assembly"], PushWebResourcesCommand.ValidSpecifiers, "push webresources");
+
+        act.Should().Throw<FlowlineException>()
+            .WithMessage("'recreate-assembly' isn't a valid --force value for 'push webresources'. Use one of: delete-form-handlers, config, all.");
+    }
+
+    [Fact]
+    public void ValidSpecifiers_BarePush_IsEveryTargetsHazards()
+    {
+        PushCommand.ValidSpecifiers.Should().BeEquivalentTo(
+            PushPluginsCommand.ValidSpecifiers.Union(PushWebResourcesCommand.ValidSpecifiers));
+    }
+
     // -- HasForce wiring (R6) --
 
     [Fact]
@@ -942,21 +970,42 @@ public class PushCommandTests : IDisposable
         options.HasForce("delete-form-handlers").Should().BeFalse();
     }
 
-    // -- CommandApp parse seam (R1/R2/R3, AE1) — exit-code-only per KTD3's test-seam split;
-    // Spectre renders parse errors via AnsiConsole, not Console.Out, so message content isn't
-    // capturable via simple redirection (confirmed during planning). A no-op wrapper command
-    // drives Spectre's real parser against the real PushCommand.Settings shape without needing
-    // PushCommand's full DI graph, which parsing itself never touches.
+    // -- CommandApp parse seam — exit-code-only per KTD3's test-seam split; Spectre renders parse
+    // errors via AnsiConsole, not Console.Out, so message content isn't capturable via simple
+    // redirection (confirmed during planning). The probe registers the push branch the way
+    // Program.cs does, with capturing commands in place of the real ones, so Spectre's real parser
+    // runs against the real settings shapes without the commands' full DI graph, which parsing
+    // itself never touches. Strict parsing on, as the real CLI runs.
 
-    sealed class NoOpPushSettingsCommand : Command<PushCommand.Settings>
+    sealed class CapturingCommand<TSettings> : Command<TSettings> where TSettings : CommandSettings
     {
-        public override int Execute(CommandContext context, PushCommand.Settings settings, CancellationToken cancellationToken) => 0;
+        public static TSettings? Captured;
+
+        public override int Execute(CommandContext context, TSettings settings, CancellationToken cancellationToken)
+        {
+            Captured = settings;
+            return 0;
+        }
     }
 
     static CommandApp BuildPushParseProbe()
     {
+        CapturingCommand<PushCommand.Settings>.Captured = null;
+        CapturingCommand<PushPluginsCommand.Settings>.Captured = null;
+        CapturingCommand<PushWebResourcesCommand.Settings>.Captured = null;
+
         var app = new CommandApp();
-        app.Configure(c => c.AddCommand<NoOpPushSettingsCommand>("push"));
+        app.Configure(c =>
+        {
+            c.Settings.StrictParsing = true;
+            c.AddBranch<PushSettings>("push", push =>
+            {
+                push.SetDefaultCommand<CapturingCommand<PushCommand.Settings>>();
+                push.AddCommand<CapturingCommand<PushPluginsCommand.Settings>>(PushPluginsCommand.Name);
+                push.AddCommand<CapturingCommand<PushWebResourcesCommand.Settings>>(PushWebResourcesCommand.Name)
+                    .WithAlias(PushWebResourcesCommand.Alias);
+            });
+        });
         return app;
     }
 
@@ -969,40 +1018,89 @@ public class PushCommandTests : IDisposable
     }
 
     [Fact]
-    public void CommandApp_ForceWithValue_ParsesSuccessfully()
-    {
-        var exitCode = BuildPushParseProbe().Run(["push", "--force", "delete-orphans"]);
-
-        exitCode.Should().Be(0);
-    }
-
-    [Fact]
     public void CommandApp_ForceRepeated_CollectsBothValues()
     {
         var exitCode = BuildPushParseProbe().Run(["push", "--force", "delete-orphans", "--force", "config"]);
 
         exitCode.Should().Be(0);
+        CapturingCommand<PushCommand.Settings>.Captured!.Force.Should().BeEquivalentTo(["delete-orphans", "config"]);
     }
 
-    // -- Positional-argument interaction (behavior-change note) --
-
     [Fact]
-    public void CommandApp_ForceImmediatelyFollowedByPositional_BindsPositionalAsForceValue()
+    public void CommandApp_BarePushWithSharedOptions_RoutesToBarePush()
     {
-        // "--force MySolution" binds "MySolution" as --force's value and leaves the solution name
-        // unset. Not a silent misfire, since a real invocation would still fail ValidateForce
-        // naming push's valid values.
-        PushCommand.Settings? captured = null;
-        var app = new CommandApp();
-        app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
-        CapturingPushSettingsCommand.OnExecute = s => captured = s;
-
-        var exitCode = app.Run(["push", "--force", "MySolution"]);
+        var exitCode = BuildPushParseProbe().Run(["push", "--dry-run", "-e", "dev", "--no-build"]);
 
         exitCode.Should().Be(0);
-        captured.Should().NotBeNull();
-        captured!.Force.Should().BeEquivalentTo(["MySolution"]);
-        captured.SolutionName.Should().BeNull();
+        var captured = CapturingCommand<PushCommand.Settings>.Captured!;
+        captured.DryRun.Should().BeTrue();
+        captured.Env.Should().Be("dev");
+        captured.NoBuild.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("push", "plugins", "--dry-run")]
+    [InlineData("push", "--dry-run", "plugins")]
+    public void CommandApp_SharedOption_BindsOnEitherSideOfTheSubcommand(params string[] args)
+    {
+        var exitCode = BuildPushParseProbe().Run(args);
+
+        exitCode.Should().Be(0);
+        CapturingCommand<PushPluginsCommand.Settings>.Captured!.DryRun.Should().BeTrue();
+        CapturingCommand<PushCommand.Settings>.Captured.Should().BeNull();
+    }
+
+    [Fact]
+    public void CommandApp_ForceValueBeforeSubcommand_BindsAsForceValue()
+    {
+        var exitCode = BuildPushParseProbe().Run(["push", "--force", "delete-orphans", "plugins"]);
+
+        exitCode.Should().Be(0);
+        CapturingCommand<PushPluginsCommand.Settings>.Captured!.Force.Should().BeEquivalentTo(["delete-orphans"]);
+    }
+
+    [Fact]
+    public void CommandApp_PushPlugins_BindsPathAndAssemblyOnly()
+    {
+        var exitCode = BuildPushParseProbe().Run(["push", "plugins", "-p", "./bin/Release/Plugins.dll", "--assembly-only", "-n", "Contoso"]);
+
+        exitCode.Should().Be(0);
+        var captured = CapturingCommand<PushPluginsCommand.Settings>.Captured!;
+        captured.Path.Should().Be("./bin/Release/Plugins.dll");
+        captured.AssemblyOnly.Should().BeTrue();
+        captured.SolutionName.Should().Be("Contoso");
+    }
+
+    [Theory]
+    [InlineData("webresources")]
+    [InlineData("wr")]
+    public void CommandApp_PushWebResources_ByNameOrAlias_BindsPathAndNoPublish(string name)
+    {
+        var exitCode = BuildPushParseProbe().Run(["push", name, "--path", "./dist", "--no-publish"]);
+
+        exitCode.Should().Be(0);
+        var captured = CapturingCommand<PushWebResourcesCommand.Settings>.Captured!;
+        captured.Path.Should().Be("./dist");
+        captured.SkipPublish.Should().BeTrue();
+    }
+
+    // Target-only options exist only on their target, and the removed options exist nowhere.
+    [Theory]
+    [InlineData("push", "--assembly-only")]
+    [InlineData("push", "--no-publish")]
+    [InlineData("push", "-p", "x.dll")]
+    [InlineData("push", "plugins", "--no-publish")]
+    [InlineData("push", "wr", "--assembly-only")]
+    [InlineData("push", "--scope", "plugins")]
+    [InlineData("push", "--plugin-file", "x.dll")]
+    [InlineData("push", "--webresources", "./dist")]
+    [InlineData("push", "-w", "./dist")]
+    [InlineData("push", "plugins", "--scope", "plugins")]
+    public void CommandApp_OptionOnTheWrongCommand_FailsToParse(params string[] args)
+    {
+        var exitCode = BuildPushParseProbe().Run(args);
+
+        exitCode.Should().NotBe(0);
     }
 
     [Theory]
@@ -1010,15 +1108,10 @@ public class PushCommandTests : IDisposable
     [InlineData("-n")]
     public void CommandApp_SolutionNameFlag_BindsSolutionName(string flag)
     {
-        PushCommand.Settings? captured = null;
-        var app = new CommandApp();
-        app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
-        CapturingPushSettingsCommand.OnExecute = s => captured = s;
-
-        var exitCode = app.Run(["push", flag, "Contoso"]);
+        var exitCode = BuildPushParseProbe().Run(["push", flag, "Contoso"]);
 
         exitCode.Should().Be(0);
-        captured!.SolutionName.Should().Be("Contoso");
+        CapturingCommand<PushCommand.Settings>.Captured!.SolutionName.Should().Be("Contoso");
     }
 
     // The old shape: a bare word after the verb. Strict parsing, as the real CLI runs, so it fails
@@ -1026,102 +1119,27 @@ public class PushCommandTests : IDisposable
     [Fact]
     public void CommandApp_SolutionAsPositional_FailsToParse()
     {
-        var app = new CommandApp();
-        app.Configure(c =>
-        {
-            c.Settings.StrictParsing = true;
-            c.AddCommand<NoOpPushSettingsCommand>("push");
-        });
-
-        var exitCode = app.Run(["push", "Contoso"]);
+        var exitCode = BuildPushParseProbe().Run(["push", "Contoso"]);
 
         exitCode.Should().NotBe(0);
-    }
-
-    sealed class CapturingPushSettingsCommand : Command<PushCommand.Settings>
-    {
-        public static Action<PushCommand.Settings>? OnExecute;
-
-        public override int Execute(CommandContext context, PushCommand.Settings settings, CancellationToken cancellationToken)
-        {
-            OnExecute?.Invoke(settings);
-            return 0;
-        }
     }
 
     // -- R1/R10: --env replaces --dev (U3) --
 
     [Fact]
-    public void CommandApp_EnvRoleKeyword_BindsEnv()
-    {
-        PushCommand.Settings? captured = null;
-        var app = new CommandApp();
-        app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
-        CapturingPushSettingsCommand.OnExecute = s => captured = s;
-
-        var exitCode = app.Run(["push", "--env", "dev"]);
-
-        exitCode.Should().Be(0);
-        captured!.Env.Should().Be("dev");
-    }
-
-    [Fact]
     public void CommandApp_EnvShortFlagWithUrl_BindsEnv()
     {
-        PushCommand.Settings? captured = null;
-        var app = new CommandApp();
-        app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
-        CapturingPushSettingsCommand.OnExecute = s => captured = s;
-
-        var exitCode = app.Run(["push", "-e", "https://contoso-dev.crm4.dynamics.com"]);
+        var exitCode = BuildPushParseProbe().Run(["push", "-e", "https://contoso-dev.crm4.dynamics.com"]);
 
         exitCode.Should().Be(0);
-        captured!.Env.Should().Be("https://contoso-dev.crm4.dynamics.com");
+        CapturingCommand<PushCommand.Settings>.Captured!.Env.Should().Be("https://contoso-dev.crm4.dynamics.com");
     }
 
     [Fact]
     public void Settings_HasNoDevUrlProperty_TheOldFlagIsGone()
     {
-        // R10/KD5: --dev is removed with no alias — asserted on the settings shape rather than a parse
-        // outcome, since this probe's plain CommandApp doesn't enable strict parsing. Production strict
+        // R10/KD5: --dev is removed with no alias — asserted on the settings shape. Production strict
         // parsing (Program.cs, via CliConfiguration.Configure) is proven in ProgramParsingTests.
-        typeof(PushCommand.Settings).GetProperty("DevUrl").Should().BeNull();
-    }
-
-    // -- R22/KD16: --pluginFile becomes --plugin-file --
-
-    [Fact]
-    public void CommandApp_PluginFile_BindsPluginFile()
-    {
-        PushCommand.Settings? captured = null;
-        var app = new CommandApp();
-        app.Configure(c => c.AddCommand<CapturingPushSettingsCommand>("push"));
-        CapturingPushSettingsCommand.OnExecute = s => captured = s;
-
-        var exitCode = app.Run(["push", "--plugin-file", "./bin/Release/Plugins.dll"]);
-
-        exitCode.Should().Be(0);
-        captured!.PluginFile.Should().Be("./bin/Release/Plugins.dll");
-    }
-
-    [Fact]
-    public void CommandApp_OldPluginFileSpelling_FailsUnderStrictParsing()
-    {
-        // Mirrors Program.cs's real setting (config.Settings.StrictParsing = true, set in
-        // CliConfiguration.Configure) rather than BuildPushParseProbe's plain, non-strict app — this is
-        // the one test in this file that needs strict parsing on, so it sets it directly instead of
-        // pulling in the full CliConfiguration.Configure surface ProgramParsingTests already covers.
-        var app = new CommandApp();
-        app.Configure(c =>
-        {
-            c.Settings.StrictParsing = true;
-            c.PropagateExceptions();
-            c.AddCommand<NoOpPushSettingsCommand>("push");
-        });
-
-        var act = () => app.Run(["push", "--pluginFile", "./bin/Release/Plugins.dll"]);
-
-        act.Should().Throw<CommandParseException>()
-           .WithMessage("*pluginFile*");
+        typeof(PushSettings).GetProperty("DevUrl").Should().BeNull();
     }
 }

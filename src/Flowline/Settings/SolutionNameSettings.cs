@@ -25,8 +25,14 @@ public class SolutionNameSettings : EnvironmentSettings
     /// <remarks>
     /// Spectre answers "Unknown command 'Contoso'", which names the token without saying where it went.
     /// Only the token straight after the verb is recognised: that is where the old shape put the
-    /// solution, and nothing the parser accepts can start with a bare word there. A role keyword or a URL
-    /// is answered with <c>--env</c>, because <c>push dev</c> reads as "push to dev".
+    /// solution. A role keyword or a URL is answered with <c>--env</c>, because <c>push dev</c> reads as
+    /// "push to dev".
+    /// <para>
+    /// Push's targets are the one bare word the parser does accept there. A target name means the parse
+    /// failed for some other reason, so there is no hint. A slip on one (<c>push plugin</c>) is answered
+    /// with the target: Spectre's own "Did you mean" lives in its rendered error, which Flowline doesn't
+    /// print.
+    /// </para>
     /// </remarks>
     /// <returns>The better message, or <c>null</c> when this is not that mistake.</returns>
     public static string? BuildPositionalHint(IReadOnlyList<string> args)
@@ -39,6 +45,20 @@ public class SolutionNameSettings : EnvironmentSettings
             return null;
 
         var word = args[1];
+
+        if (verb == "push")
+        {
+            string[] targets = [PushPluginsCommand.Name, PushWebResourcesCommand.Name];
+            if (targets.Append(PushWebResourcesCommand.Alias).Contains(word, StringComparer.OrdinalIgnoreCase))
+                return null;
+
+            // ponytail: a prefix of a target catches the singular slip (plugin, webresource), not arbitrary
+            // typos, and never a solution name that merely starts with one; an edit distance would, if
+            // users report others.
+            var meant = targets.FirstOrDefault(t => word.Length >= 3 && t.StartsWith(word, StringComparison.OrdinalIgnoreCase));
+            if (meant is not null)
+                return $"'{word}' isn't a push target. Did you mean 'flowline push {meant}'?";
+        }
         var flag = EnvironmentTarget.IsTarget(word) ? "--env" : "--solution-name";
         // The line is repeated back to the console, so a --client-secret value in it is masked.
         var rest = SubprocessCapture.RedactSensitiveArgs(

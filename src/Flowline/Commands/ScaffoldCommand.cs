@@ -264,7 +264,7 @@ public class ScaffoldCommand(CommandServices services, ProjectScaffolder project
         }
 
         // A skip, not a warning: nothing went wrong, one optional step had no target. Kept short on purpose
-        // — 'push --webresources' pushes the built folder without a solution file, so this is not a dead end.
+        // — 'push webresources --path' pushes the built folder without a solution file, so this is not a dead end.
         Console.Skip("No solution file found to add project to — skipped");
     }
 

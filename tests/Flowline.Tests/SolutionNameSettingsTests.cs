@@ -61,4 +61,32 @@ public class SolutionNameSettingsTests
     {
         SolutionNameSettings.BuildPositionalHint(args).Should().BeNull();
     }
+
+    // A push target is a valid word there, so a failed parse after one is about something else.
+    [Theory]
+    [InlineData("push", "plugins", "--bogus")]
+    [InlineData("push", "webresources", "--bogus")]
+    [InlineData("push", "wr", "--bogus")]
+    [InlineData("push", "WR", "--bogus")]
+    public void PushTarget_GetsNoHint(params string[] args)
+    {
+        SolutionNameSettings.BuildPositionalHint(args).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("plugin", "plugins")]
+    [InlineData("Plugin", "plugins")]
+    [InlineData("webresource", "webresources")]
+    public void PushTargetSlip_IsAnsweredWithTheTarget(string word, string target)
+    {
+        SolutionNameSettings.BuildPositionalHint(["push", word])
+            .Should().Be($"'{word}' isn't a push target. Did you mean 'flowline push {target}'?");
+    }
+
+    [Fact]
+    public void SolutionNameStartingWithATarget_StillGetsTheSolutionNameHint()
+    {
+        SolutionNameSettings.BuildPositionalHint(["push", "PluginsCore"])
+            .Should().Contain("flowline push --solution-name PluginsCore");
+    }
 }

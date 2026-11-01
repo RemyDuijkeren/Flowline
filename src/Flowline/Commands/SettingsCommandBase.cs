@@ -33,6 +33,8 @@ public abstract class SettingsCommandBase<TSettings>(
 {
     protected DataverseConnector DataverseConnector { get; } = dataverseConnector;
 
+    protected override string CommandGroup => "settings";
+
     // The settings surface writes only what it is told to write, so there is no destructive scope to gate.
     // The vocabulary is deliberately empty of settings-specific specifiers rather than absent — recorded
     // here so nobody later invents a PROD confirmation and breaks every CI job already running these.

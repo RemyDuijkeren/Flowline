@@ -80,11 +80,59 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     // Empty by default — commands with a force-gated hazard override this with their own vocabulary.
     protected virtual string[] ValidForceSpecifiers => [];
 
-    // Ties validation to the real Spectre command name (context.Name) instead of each command
-    // re-typing its own name as a literal string, which could silently desync from Program.cs's
-    // actual AddCommand<T>("name") registration.
+    // Spectre's context.Name is the leaf alone ("plugins", "toggle"), and a branch's default command
+    // reports an internal placeholder. A command under a branch names the branch here, so messages and
+    // logs show what the user typed the command as ("push plugins"). Null for a top-level command.
+    protected virtual string? CommandGroup => null;
+
+    // The branch's default command: its name is the branch itself ("push").
+    protected virtual bool IsGroupDefault => false;
+
+    // Aliases the command is registered under, so the logged arguments drop "wr" as well as "webresources".
+    protected virtual IReadOnlyCollection<string> CommandAliases => [];
+
+    protected virtual string NoProjectMessage => "No Flowline project found — run 'flowline clone' to set up a project.";
+
+    // Ties the name to the real Spectre registration (context.Name) instead of each command re-typing
+    // its own name as a literal string, which could silently desync from Program.cs's actual
+    // AddCommand<T>("name") registration. Only the branch name is typed, once per branch.
+    internal string QualifiedName(CommandContext context) => QualifyName(CommandGroup, IsGroupDefault, context.Name);
+
+    internal static string QualifyName(string? group, bool isGroupDefault, string leaf) =>
+        group is null ? leaf
+        : isGroupDefault ? group
+        : $"{group} {leaf}";
+
+    /// <summary>The typed arguments with the command words removed, for the invocation log line.</summary>
+    /// <remarks>
+    /// Removes tokens rather than a prefix: options can sit before the subcommand
+    /// (<c>push --dry-run plugins</c>) and the subcommand can be typed as an alias (<c>push wr</c>), so
+    /// the line rarely starts with the qualified name.
+    /// </remarks>
+    internal static string StripCommandWords(string argsRedacted, string? group, string leaf, IReadOnlyCollection<string> aliases, bool isGroupDefault)
+    {
+        var tokens = argsRedacted.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+
+        void RemoveFirst(Func<string, bool> match)
+        {
+            var i = tokens.FindIndex(t => match(t));
+            if (i >= 0) tokens.RemoveAt(i);
+        }
+
+        if (group is null)
+            RemoveFirst(t => t == leaf);
+        else
+        {
+            RemoveFirst(t => t == group);
+            if (!isGroupDefault)
+                RemoveFirst(t => t == leaf || aliases.Contains(t));
+        }
+
+        return string.Join(' ', tokens);
+    }
+
     protected void ValidateForce(CommandContext context, TSettings settings) =>
-        FlowlineSettings.ValidateForce(settings.Force, ValidForceSpecifiers, context.Name);
+        FlowlineSettings.ValidateForce(settings.Force, ValidForceSpecifiers, QualifiedName(context));
 
     // The nearest enclosing Flowline project, or null when there is none. A .flowline governs its whole
     // subtree, so a command run from any folder beneath one is in that project — the nearest wins, which
@@ -118,7 +166,8 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
 
     public override async Task<int> ExecuteAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
-        RuntimeOptions.CommandName = context.Name;
+        var commandName = QualifiedName(context);
+        RuntimeOptions.CommandName = commandName;
         InitializeRuntimeOptions(settings);
 
         // Ahead of everything that can throw or be overridden away. Hung off the setup check before, which
@@ -130,23 +179,23 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
 
         // The project wins when there is one, standalone only fills the gap when there isn't. A .flowline
         // governs its whole subtree (see FindFlowlineProjectRoot), so a command run anywhere beneath
-        // one belongs to that project — which is what lets push's "--pluginFile can't be used inside a
+        // one belongs to that project — which is what lets push's "--path can't be used inside a
         // project" guard catch a standalone push from a subfolder rather than only from the project
         // root itself.
         RootFolder = FindFlowlineProjectRoot(Directory.GetCurrentDirectory())
             ?? (RequiresFlowlineProject && !IsStandalone(settings)
-                ? throw new FlowlineException(ExitCode.ConfigInvalid, "No Flowline project found — run 'flowline clone' to set up a project.")
+                ? throw new FlowlineException(ExitCode.ConfigInvalid, NoProjectMessage)
                 : Directory.GetCurrentDirectory());
 
-        var argsOnly = RuntimeOptions.ArgsRedacted is { } r && r.StartsWith(context.Name)
-            ? r[context.Name.Length..].TrimStart()
-            : RuntimeOptions.ArgsRedacted ?? "";
+        var argsOnly = RuntimeOptions.ArgsRedacted is { } r
+            ? StripCommandWords(r, CommandGroup, context.Name, CommandAliases, IsGroupDefault)
+            : "";
         var sw = Stopwatch.StartNew();
         // The run's root span, not a nested one: the root is what App Insights shows as the request, so
         // tags set here are the ones Performance and Failures can split by. Read once, because the
         // SIGTERM teardown can clear it from another thread.
         var activity = FlowlineTelemetry.Root;
-        Logger.LogInformation("Command: {Command} {Args}", context.Name, argsOnly);
+        Logger.LogInformation("Command: {Command} {Args}", commandName, argsOnly);
 
         if (ShowWelcome && Console.Profile.Capabilities.Interactive && Validator.ShouldShowWelcomeScreen(RuntimeOptions.NoCache))
             Console.WriteWelcomeScreen();
@@ -183,7 +232,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         ValidateForce(context, settings);
 
         var exitCode = await ExecuteFlowlineAsync(context, settings, cancellationToken);
-        Logger.LogInformation("Completed: {Command} exit={ExitCode} duration={Duration}", context.Name, exitCode, FormatDuration(sw.Elapsed));
+        Logger.LogInformation("Completed: {Command} exit={ExitCode} duration={Duration}", commandName, exitCode, FormatDuration(sw.Elapsed));
         return exitCode;
     }
 
@@ -295,7 +344,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     }
 
     // Standalone-mode counterpart of GetAndCheckSolutionAsync above, shared by PushCommand and
-    // GenerateCommand's --pluginFile/no-project paths, which take the solution name directly instead of
+    // GenerateCommand's stand-alone paths (push --path, generate with no project), which take the solution name directly instead of
     // resolving it through ProjectConfig.
     //
     // bypassCache defaults false because push and generate have downstream work that would surface a

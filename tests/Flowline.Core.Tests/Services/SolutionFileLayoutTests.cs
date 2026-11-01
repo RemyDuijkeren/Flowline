@@ -89,7 +89,7 @@ public class SolutionFileLayoutTests : IDisposable
         (await act.Should().ThrowAsync<FlowlineException>())
             .Which.ExitCode.Should().Be(ExitCode.NotFound);
         (await act.Should().ThrowAsync<FlowlineException>())
-            .WithMessage("*push --plugin-file*");
+            .WithMessage("*push plugins --path*");
     }
 
     // ── R7: exactly one .cdsproj ──────────────────────────────────────────────

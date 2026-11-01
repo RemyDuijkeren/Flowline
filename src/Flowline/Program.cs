@@ -431,12 +431,34 @@ namespace Flowline
                   .WithExample("clone", "ContosoCustomizations", "--env", "https://contoso.crm4.dynamics.com")
                   .WithExample("clone", "ContosoCustomizations", "--env", "https://contoso-test.crm4.dynamics.com", "--managed");
 
-            // Push assets to dev environment (upload and push assets to environment: plugins, webresources, pcf controls, etc.)
-            config.AddCommand<PushCommand>("push")
-                .WithDescription("Build the plugin assembly and web resources and register them straight into DEV, plugin steps included. Run after plugin or web resource changes. DEV only, via --env dev (default) or a DEV URL.")
-                .WithExample("push")
-                .WithExample("push", "--scope", "webresources")
-                .WithExample("push", "--solution-name", "ContosoCustomizations", "--plugin-file", "./bin/Release/Plugins.dll", "--webresources", "./dist");
+            // push = build and register assets straight into DEV. A branch with a default command: bare push
+            // pushes every target the project has, and each subcommand pushes one target with only the
+            // options that apply to it. Shared options are declared on PushSettings, the branch's settings
+            // type, so `push -h` lists them and they bind on either side of the subcommand name. Options
+            // bare push accepts are exactly those, which is why its examples need no special care.
+            config.AddBranch<PushSettings>("push", push =>
+            {
+                push.SetDescription("Build the plugin assembly and web resources and register them straight into DEV, plugin steps included. Run after plugin or web resource changes. Bare push pushes every target the project has; name one to push only that. DEV only, via --env dev (default) or a DEV URL.");
+                push.SetDefaultCommand<PushCommand>();
+
+                push.AddExample("push");
+                push.AddExample("push", "--dry-run");
+                push.AddExample("push", PushPluginsCommand.Name, "--assembly-only");
+                push.AddExample("push", PushWebResourcesCommand.Alias, "--path", "./dist", "--solution-name", "ContosoCustomizations");
+
+                push.AddCommand<PushPluginsCommand>(PushPluginsCommand.Name)
+                    .WithDescription("Build the plugin assemblies and register them in DEV, steps and Custom APIs included. Outside a Flowline project, push a pre-built .dll or .nupkg with --path. Also takes every option 'push -h' lists.")
+                    .WithExample("push", PushPluginsCommand.Name)
+                    .WithExample("push", PushPluginsCommand.Name, "--assembly-only")
+                    .WithExample("push", PushPluginsCommand.Name, "--path", "./bin/Release/Plugins.dll", "--solution-name", "ContosoCustomizations");
+
+                push.AddCommand<PushWebResourcesCommand>(PushWebResourcesCommand.Name)
+                    .WithAlias(PushWebResourcesCommand.Alias)
+                    .WithDescription("Build the web resources and sync them to DEV, form event handlers included. Outside a Flowline project, push a built folder with --path. Also takes every option 'push -h' lists. Alias: wr")
+                    .WithExample("push", PushWebResourcesCommand.Name)
+                    .WithExample("push", PushWebResourcesCommand.Alias, "--no-publish")
+                    .WithExample("push", PushWebResourcesCommand.Name, "--path", "./dist", "--solution-name", "ContosoCustomizations");
+            });
 
             // Pull changes to local repo (export solution and unpack). No sync alias: the name is kept free for a later command.
             config.AddCommand<PullCommand>("pull")

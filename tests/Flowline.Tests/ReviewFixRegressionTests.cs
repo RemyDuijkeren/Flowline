@@ -114,19 +114,22 @@ public class ReviewFixRegressionTests : IDisposable
     // while each command kept its own rule. Nothing asserted the two still agree.
 
     [Theory]
-    [InlineData(null, null, false)]
-    [InlineData("plugins.dll", null, true)]
-    [InlineData(null, "dist", true)]
-    [InlineData("plugins.dll", "dist", true)]
-    public void PushCommand_IsStandaloneOverride_AgreesWithIsStandaloneMode(string? pluginFile, string? webResources, bool expected)
+    [InlineData(null, false)]
+    [InlineData("plugins.dll", true)]
+    public void PushCommand_IsStandaloneOverride_AgreesWithIsStandaloneMode(string? path, bool expected)
     {
-        var settings = new PushCommand.Settings { PluginFile = pluginFile, WebResources = webResources };
+        var settings = new PushPluginsCommand.Settings { Path = path };
 
         PushCommand.IsStandaloneMode(settings).Should().Be(expected);
 
-        var overrideMethod = typeof(PushCommand).GetMethod("IsStandalone", BindingFlags.Instance | BindingFlags.NonPublic);
-        overrideMethod.Should().NotBeNull("the base pipeline branches on this override, so it must exist");
-        overrideMethod!.DeclaringType.Should().Be(typeof(PushCommand), "push must answer the mode question itself, not inherit the default false");
+        foreach (var command in new[] { typeof(PushCommand), typeof(PushPluginsCommand), typeof(PushWebResourcesCommand) })
+        {
+            var overrideMethod = command.GetMethod("IsStandalone", BindingFlags.Instance | BindingFlags.NonPublic);
+            overrideMethod.Should().NotBeNull("the base pipeline branches on this override, so it must exist");
+            overrideMethod!.DeclaringType!.IsGenericType.Should().BeTrue();
+            overrideMethod.DeclaringType.GetGenericTypeDefinition().Should().Be(typeof(PushCommandBase<>),
+                "push must answer the mode question itself, not inherit the default false");
+        }
     }
 
     [Fact]

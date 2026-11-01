@@ -78,7 +78,7 @@ public class PluginService(IAnsiConsole console)
         var existing = result.Entities.FirstOrDefault();
 
         if (existing == null)
-            throw new InvalidOperationException($"Assembly '{metadata.Name}' not found in Dataverse — run push without --scope assemblyonly to register it first.");
+            throw new InvalidOperationException($"Assembly '{metadata.Name}' not found in Dataverse — run 'flowline push plugins' without --assembly-only to register it first.");
 
         if (existing.GetAttributeValue<EntityReference>("packageid") != null)
             throw new FlowlineException(ExitCode.ValidationFailed,
@@ -87,7 +87,7 @@ public class PluginService(IAnsiConsole console)
 
         var identityChanges = DetectIdentityChanges(existing, metadata);
         if (identityChanges != null)
-            throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({string.Join(", ", identityChanges)}) — cannot update assembly-only. Run push without --scope assemblyonly to delete and recreate registrations.");
+            throw new InvalidOperationException($"Assembly '{metadata.Name}' identity changed ({string.Join(", ", identityChanges)}) — cannot update assembly-only. Run 'flowline push plugins' without --assembly-only to delete and recreate registrations.");
 
         var storedHash = ParseStoredHash(existing.GetAttributeValue<string>("description"));
         if (storedHash == metadata.Hash)

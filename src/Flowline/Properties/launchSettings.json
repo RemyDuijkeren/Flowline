@@ -10,14 +10,14 @@
       "commandLineArgs": "clone Cr07982 --verbose --no-cache",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
-    "push --scope plugins": {
+    "push plugins": {
       "commandName": "Project",
-      "commandLineArgs": "push --scope plugins --verbose",
+      "commandLineArgs": "push plugins --verbose",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
-    "push --scope webresources": {
+    "push webresources": {
       "commandName": "Project",
-      "commandLineArgs": "push --scope webresources --verbose --no-build",
+      "commandLineArgs": "push webresources --verbose --no-build",
       "workingDirectory": "E:/Code/TryOut/MyFlowTest"
     },
     "sync": {

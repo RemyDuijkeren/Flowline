@@ -170,4 +170,29 @@ public class FlowlineCommandTests
 
         resolveCalls.Should().Be(1);
     }
+
+    // -- Command names in messages and logs: Spectre only knows the leaf, the branch is added here --
+
+    [Theory]
+    [InlineData(null, false, "deploy", "deploy")]
+    [InlineData("push", true, "__default_command", "push")]
+    [InlineData("push", false, "plugins", "push plugins")]
+    [InlineData("push", false, "webresources", "push webresources")]
+    [InlineData("settings", false, "toggle", "settings toggle")]
+    public void QualifyName_AddsTheBranchToTheLeaf(string? group, bool isGroupDefault, string leaf, string expected)
+    {
+        FlowlineCommand<FlowlineSettings>.QualifyName(group, isGroupDefault, leaf).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("deploy prod --dry-run", null, "deploy", false, "prod --dry-run")]
+    [InlineData("push --dry-run", "push", "__default_command", true, "--dry-run")]
+    [InlineData("push wr --dry-run", "push", "webresources", false, "--dry-run")]
+    [InlineData("push --dry-run plugins", "push", "plugins", false, "--dry-run")]
+    [InlineData("push --force delete-orphans plugins -e dev", "push", "plugins", false, "--force delete-orphans -e dev")]
+    [InlineData("settings toggle prod ApprovalFlow --off", "settings", "toggle", false, "prod ApprovalFlow --off")]
+    public void StripCommandWords_DropsTheCommandWordsWhereverTheySit(string args, string? group, string leaf, bool isGroupDefault, string expected)
+    {
+        FlowlineCommand<FlowlineSettings>.StripCommandWords(args, group, leaf, ["wr"], isGroupDefault).Should().Be(expected);
+    }
 }

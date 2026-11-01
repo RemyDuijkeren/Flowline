@@ -19,72 +19,40 @@ using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
 using Flowline.Settings;
 using Flowline.Utils;
+using static Flowline.Commands.PushCommand;
 
 namespace Flowline.Commands;
 
-public class PushCommand(CommandServices services, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FormEventService formEventService, EnvironmentTargetResolver environmentTargetResolver)
-    : FlowlineCommand<PushCommand.Settings>(services)
+/// <summary>
+/// The one push engine behind <c>push</c>, <c>push plugins</c> and <c>push webresources</c>.
+/// </summary>
+/// <remarks>
+/// Generic only because Spectre reads each command's options off its settings type. The three commands
+/// add no push logic of their own: their settings say which targets to push and with which
+/// target options, and this class does the rest. Bare push runs it once with every target, so one
+/// environment resolve, one connection and one finish line, never the subcommands one after another.
+/// <para>
+/// The static helpers live on <see cref="PushCommand"/> so callers and tests can reach them without a
+/// type argument.
+/// </para>
+/// </remarks>
+public abstract class PushCommandBase<TSettings>(CommandServices services, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FormEventService formEventService, EnvironmentTargetResolver environmentTargetResolver)
+    : FlowlineCommand<TSettings>(services)
+    where TSettings : PushSettings
 {
-    [Flags]
-    public enum PushScope
-    {
-        None = 0,
-        AssemblyOnly = 1,
-        Plugins = 2,
-        WebResources = 4,
-        All = WebResources | Plugins
-    }
-
-    public sealed class Settings : SolutionNameSettings
-    {
-        [CommandOption("-s|--scope <SCOPE>")]
-        [Description("Limit the push scope: all, webresources, plugins, or assemblyonly. Can be used more than once.")]
-        public PushScope[] Scopes { get; set; } = [];
-
-        [CommandOption("-p|--plugin-file <PATH>")]
-        [Description("Prebuilt plugin file (.dll) or NuGet package (.nupkg) to push without using a Flowline project")]
-        public string? PluginFile { get; set; }
-
-        [CommandOption("-w|--webresources <PATH>")]
-        [Description("Web resource folder to push without using a Flowline project")]
-        public string? WebResources { get; set; }
-
-        [CommandOption("--no-delete")]
-        [Description("Push without deleting any Dataverse assets that are missing from source")]
-        [DefaultValue(false)]
-        public bool NoDelete { get; set; } = false;
-
-        [CommandOption("--no-build")]
-        [Description("Skip 'dotnet build' and push the existing Release artifacts")]
-        [DefaultValue(false)]
-        public bool NoBuild { get; set; } = false;
-
-        [CommandOption("--no-publish")]
-        [Description("Skip publishing web resources and form event handlers after the push")]
-        [DefaultValue(false)]
-        public bool NoPublish { get; set; } = false;
-
-        [CommandOption("--dry-run")]
-        [Description("Preview changes without touching Dataverse")]
-        [DefaultValue(false)]
-        public bool DryRun { get; set; } = false;
-    }
-
     // Standalone runs through the base pipeline like every other mode, rather than around it: the base
     // class owns root resolution, the pac-only setup, the welcome screen, invocation logging, the
     // activity span, and --force validation. Push used to override ExecuteAsync wholesale and lost all
     // six, which is why they had to be restated here one at a time.
-    protected override bool IsStandalone(Settings settings) => IsStandaloneMode(settings);
+    protected override bool IsStandalone(TSettings settings) => IsStandaloneMode(settings);
 
-    internal static readonly string[] ValidSpecifiers =
-        ["delete-orphans", "recreate-assembly", "delete-form-handlers", "config", "all"];
-    protected override string[] ValidForceSpecifiers => ValidSpecifiers;
+    protected override string CommandGroup => "push";
 
-    protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
         var standaloneMode = IsStandaloneMode(settings);
 
-        if (standaloneMode) ValidateStandaloneMode(settings, RootFolder);
+        if (standaloneMode) ValidateStandaloneMode(RootFolder);
 
         // A passed --solution-name does not select among configured solutions, since only one exists. It
         // just needs to match the one already configured. Checked before any
@@ -127,18 +95,19 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
 
         Logger.LogInformation("target={EnvironmentUrl} solution={SolutionName}", environmentUrl, solutionName);
 
-        var pushScope = ResolveScope(settings, standaloneMode);
-        var pushAssemblyOnly = pushScope.HasFlag(PushScope.AssemblyOnly);
-        Logger.LogInformation("scope={Scope} mode={RunMode} standalone={Standalone}", pushScope, runMode, standaloneMode);
+        var pushTargets = settings.Targets;
+        var pushAssemblyOnly = settings.AssemblyOnly;
+        Logger.LogInformation("targets={Targets} assemblyOnly={AssemblyOnly} mode={RunMode} standalone={Standalone}",
+            pushTargets, pushAssemblyOnly, runMode, standaloneMode);
 
         // A solution can hold more than one plugin project, so this is a list — every confirmed project is
         // pushed in this one invocation, each registered independently under the same Dataverse solution.
-        var pluginTargets = (pushAssemblyOnly || pushScope.HasFlag(PushScope.Plugins))
+        var pluginTargets = pushTargets.HasFlag(PushTargets.Plugins)
             ? await PreparePluginsForPushAsync(standaloneMode, settings, pluginPackageMode, standaloneParams, cancellationToken)
             : [];
-        // One scope drives both web resource sync and form event registration — the latter reads its
+        // One target drives both web resource sync and form event registration — the latter reads its
         // annotations out of the same built dist/ folder, so neither runs without it prepared.
-        var webResourcesSyncFolder = pushScope.HasFlag(PushScope.WebResources)
+        var webResourcesSyncFolder = pushTargets.HasFlag(PushTargets.WebResources)
             ? await PrepareWebResourcesForPushAsync(standaloneMode, settings, standaloneParams, cancellationToken)
             : null;
 
@@ -159,8 +128,8 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
 
             try
             {
-                // R1/KD1/KD6: a .nupkg alongside the classic .dll (or an explicit --pluginFile .nupkg) routes
-                // to the shared package entry point regardless of --scope assemblyonly — there is no separate
+                // R1/KD1/KD6: a .nupkg alongside the classic .dll (or a stand-alone --path .nupkg) routes
+                // to the shared package entry point regardless of --assembly-only — there is no separate
                 // "assembly only" package variant, since the package path always reconciles steps (KD4).
                 if (IsPackagePush(target.PushPath))
                 {
@@ -202,15 +171,10 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
             }
         }
 
-        // Gated on the resolved folder, not on scope: a plugin-only repo asks for web resources under the
-        // default scope but has no project to prepare, so nothing publishes either way.
-        if (settings.NoPublish && webResourcesSyncFolder == null)
-            Console.Warning("--no-publish has no effect: nothing here publishes.");
-
         if (webResourcesSyncFolder != null)
         {
             var dryRun = runMode == RunMode.DryRun;
-            var publishAfterSync = !settings.NoPublish;
+            var publishAfterSync = !settings.SkipPublish;
             // U2: resolved once per push — one form-event identity cache file per environment, so a later
             // rename-detection unit (U3) has data from every successful resolution to suggest from.
             var formEventCachePath = FlowlineStoragePaths.GetFormEventCachePath(environmentUrl);
@@ -228,7 +192,7 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
             pushedChanges |= await webResourceService.SyncSolutionAsync(conn, webResourcesSyncFolder, solutionName, publishAfterSync: publishAfterSync, runMode: runMode,
                 formLibraryDropsByFormId: cleanupResult.DroppedLibraryNamesByFormId, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            if (settings.NoPublish)
+            if (settings.SkipPublish)
                 Console.Skip("Publish — skipping (--no-publish active).");
 
             // R10a: registration runs strictly after web resources are pushed — new/updated handlers can
@@ -247,24 +211,25 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
         return 0;
     }
 
-    private static RunMode ResolveRunMode(Settings settings) =>
+    private static RunMode ResolveRunMode(PushSettings settings) =>
         settings.DryRun ? RunMode.DryRun
             : settings.NoDelete ? RunMode.NoDelete
             : RunMode.Normal;
 
-    private StandaloneParams ResolveStandaloneParameters(Settings settings, bool standaloneMode)
+    private StandaloneParams ResolveStandaloneParameters(PushSettings settings, bool standaloneMode)
     {
         if (!standaloneMode) return new StandaloneParams();
 
+        // Stand-alone is one target per call, so --path is that target's artifact.
         var solutionName = ResolveStandaloneSolutionName(settings);
-        var dllPath = !string.IsNullOrWhiteSpace(settings.PluginFile) ? ResolveStandalonePluginFilePath(settings) : null;
-        var webResourcesPath = !string.IsNullOrWhiteSpace(settings.WebResources) ? ResolveStandaloneWebResourcesPath(settings) : null;
+        var dllPath = settings.Targets == PushTargets.Plugins ? ResolveStandalonePluginFilePath(settings.StandalonePath!) : null;
+        var webResourcesPath = settings.Targets == PushTargets.WebResources ? ResolveStandaloneWebResourcesPath(settings.StandalonePath!) : null;
 
         return new StandaloneParams { SolutionName = solutionName, DllPath = dllPath, WebResourcesPath = webResourcesPath };
     }
 
     private async Task<(EnvironmentInfo, string, PluginPackageMode, PacProfile)> ResolveEnvironmentAndSolutionAsync(
-        Settings settings,
+        PushSettings settings,
         bool standaloneMode,
         string environmentUrl,
         EnvironmentRole? resolvedRole,
@@ -297,6 +262,223 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
 
         return (devEnv, solutionName, pluginPackageMode, profile);
     }
+
+    private async Task<List<PluginPushTarget>> PreparePluginsForPushAsync(
+        bool standaloneMode,
+        PushSettings settings,
+        PluginPackageMode pluginPackageMode,
+        StandaloneParams standaloneParams,
+        CancellationToken cancellationToken) =>
+        standaloneMode
+            ? PrepareStandalonePluginForPush(settings, standaloneParams)
+            : await PrepareProjectPluginsForPushAsync(settings, pluginPackageMode, cancellationToken).ConfigureAwait(false);
+
+    // Standalone mode has no solution file and no project context, so none of the discovery below applies:
+    // --path named the artifact outright and ResolveStandalonePluginFilePath already resolved it.
+    private List<PluginPushTarget> PrepareStandalonePluginForPush(PushSettings settings, StandaloneParams standaloneParams)
+    {
+        var pushPath = standaloneParams.DllPath;
+        if (pushPath == null || !File.Exists(pushPath))
+            throw new FlowlineException(ExitCode.NotFound, $"Plugin file not found: {settings.StandalonePath}");
+
+        // For a .nupkg the filename typically embeds its NuGet version (e.g. "MyPlugins.1.0.0.nupkg"), so
+        // the filename minus extension does NOT match the assembly name inside the package (R2a) and
+        // SyncSolutionFromPackageAsync's primary-assembly match would fail. Reflect it to get the real
+        // name instead of guessing; the reflected list rides along so the push doesn't re-analyze it.
+        // No solution file, so no project name to report — the artifact the user named is the identity.
+        var projectName = Path.GetFileName(pushPath);
+
+        PluginPushTarget target;
+        if (IsPackagePush(pushPath))
+        {
+            var (assemblyName, reflectedAssemblies) = ResolveStandalonePackageAssemblyName(pushPath, Console);
+            target = new PluginPushTarget(pushPath, assemblyName, projectName, reflectedAssemblies);
+        }
+        else
+        {
+            target = new PluginPushTarget(pushPath, Path.GetFileNameWithoutExtension(pushPath), projectName);
+        }
+
+        Console.Verbose($"Found {pushPath}");
+        Console.Info($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] found");
+
+        return [target];
+    }
+
+    // Project mode discovers plugin projects through the solution file rather than a fixed Plugins/ folder
+    // (R1/KD1), and resolves each one's real assembly name and output path by reflecting what it actually
+    // built (R4/KD3, R2/KD2). Build strategy is per candidate project, not one solution-wide build: a
+    // solution build would also run the WebResources npm target, which `push plugins` explicitly didn't
+    // ask for and which PrepareWebResourcesForPushAsync already owns when web resources are a target.
+    private async Task<List<PluginPushTarget>> PrepareProjectPluginsForPushAsync(
+        PushSettings settings,
+        PluginPackageMode pluginPackageMode,
+        CancellationToken cancellationToken)
+    {
+        var reader = new MsBuildSolutionReader();
+        var solutionFile = reader.FindSolutionFile(RootFolder)
+            ?? throw new FlowlineException(ExitCode.NotFound,
+                "No solution file here — Flowline finds plugin projects through it. Run 'flowline clone' first.");
+
+        var projects = await reader.ReadProjectsAsync(solutionFile, cancellationToken).ConfigureAwait(false);
+        var candidates = PluginProjectResolver.EnumerateCandidates(projects, RootFolder);
+        var targets = new List<PluginPushTarget>();
+
+        foreach (var candidate in candidates)
+        {
+            var preFilterSkip = PluginProjectResolver.DescribePreFilterSkip(candidate.ProjectPath);
+            if (preFilterSkip != null)
+            {
+                Console.Verbose($"Skipped {candidate.ProjectName} — {preFilterSkip}");
+                continue;
+            }
+
+            var target = await PrepareProjectPluginForPushAsync(candidate, settings, pluginPackageMode, cancellationToken).ConfigureAwait(false);
+            if (target != null) targets.Add(target);
+        }
+
+        // R8/AE9: zero plugin projects is a valid, common state (a WebResources-only solution) under the
+        // bare push — only `push plugins` means the user specifically wanted a plugin push, so only that
+        // case is actually an error.
+        if (targets.Count == 0 && settings.TargetNamed)
+            throw new FlowlineException(ExitCode.NotFound,
+                "No plugin project found — nothing the solution file references builds an IPlugin or CodeActivity type. " +
+                "Run again with --verbose to see what got skipped.");
+
+        return targets;
+    }
+
+    private async Task<PluginPushTarget?> PrepareProjectPluginForPushAsync(
+        PluginProjectCandidate candidate,
+        PushSettings settings,
+        PluginPackageMode pluginPackageMode,
+        CancellationToken cancellationToken)
+    {
+        var projectFolder = Path.GetDirectoryName(candidate.ProjectPath)!;
+        var didBuild = false;
+
+        if (settings.NoBuild)
+            Console.Skip($"Build {candidate.ProjectName} — skipping (--no-build active)");
+        else
+        {
+            didBuild = true;
+            if (pluginPackageMode != PluginPackageMode.Dll)
+                ClearStalePackages(candidate.BuildOutputRoot, note => Console.Verbose(note));
+
+            if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
+                throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
+        }
+
+        // R3: reflection read the output and found no plugin-bearing assembly, so this simply isn't a
+        // plugin project. Not an error — but never silent either, or it reads exactly like "my plugin
+        // didn't get registered". The case where reflection could NOT read the output is a different
+        // animal and ResolvePluginAssembly throws on it rather than returning null here: the discovered
+        // set is what the orphan sweeps treat as having local source, so guessing wrong deletes a live
+        // registration. Undeterminable fails the push; only a definite verdict skips.
+        var pluginsDll = PluginProjectResolver.ResolvePluginAssembly(candidate, note => Console.Verbose(note));
+        if (pluginsDll == null)
+        {
+            Console.Verbose($"Skipped {candidate.ProjectName} — no IPlugin or CodeActivity type in its build output");
+            return null;
+        }
+
+        // R1/KD1: a .nupkg anywhere under the build output root routes to the package deployment path
+        // automatically under PluginPackageMode.Auto (U2/R2's default); Nupkg requires one and Dll opts
+        // back into the classic path regardless. KD4: the mode is one per-solution setting, applied
+        // identically to every discovered project.
+        var pushPath = ResolvePluginPushPath(pluginsDll, candidate.BuildOutputRoot, pluginPackageMode);
+
+        // NuGet's Pack step (produces the .nupkg the line above just found) has its own incremental check
+        // that isn't aware of the recompiled DLL — if nothing else driving the nuspec changed (e.g. no new
+        // commit, since versioning is git-derived via MinVer), a build recompiles the assembly but leaves a
+        // previously-packed, now-stale .nupkg in place. Detected using paths already resolved above (no new
+        // path assumptions); self-heals with one forced rebuild rather than silently pushing stale content.
+        if (NeedsRepack(pushPath, pluginsDll, didBuild))
+        {
+            Console.Warning($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] doesn't carry the assembly just built — " +
+                "NuGet's Pack step didn't regenerate it (the package version likely didn't change). Forcing a full rebuild...");
+            if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, _capture, cancellationToken, rebuild: true) != 0)
+                throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
+            pushPath = ResolvePluginPushPath(pluginsDll, candidate.BuildOutputRoot, pluginPackageMode);
+        }
+
+        Console.Verbose($"Found {pushPath}");
+        Console.Info($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] found");
+
+        // Read off the built artifact, not assumed from the folder or project name — that's what makes a
+        // custom <AssemblyName> resolve (R4).
+        return BuildProjectPushTarget(pushPath, Path.GetFileNameWithoutExtension(pluginsDll), candidate.ProjectName, Console);
+    }
+
+    private async Task<string?> PrepareWebResourcesForPushAsync(
+        bool standaloneMode,
+        PushSettings settings,
+        StandaloneParams standaloneParams,
+        CancellationToken cancellationToken)
+    {
+        if (standaloneMode) return standaloneParams.WebResourcesPath;
+
+        // The solution file identifies the WebResources project, so its folder follows it wherever it moved.
+        // A plugin-only / migrated repo may have no resolvable WebResources project though — bare push
+        // pushes plugins anyway (user decision B, push only): null means none is confidently identified, so
+        // skip web resources and continue. `push webresources` asked for nothing else, so there it's an
+        // error. A genuine tie still throws (propagates) rather than being swallowed.
+        var layout = await SolutionFileLayout.LoadAsync(RootFolder, cancellationToken);
+        if (layout.WebResourcesProjectPath is null)
+        {
+            if (settings.TargetNamed)
+                throw new FlowlineException(ExitCode.NotFound,
+                    "No WebResources project found — the solution file references none. " +
+                    "Add one with 'flowline scaffold webresources', then push again.");
+
+            Console.Warning("No WebResources project found — skipping web resources. Plugins are still pushed.");
+            return null;
+        }
+        var webResourcesFolder = Path.GetDirectoryName(layout.WebResourcesProjectPath)!;
+        var webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
+
+        if (settings.NoBuild)
+            Console.Skip("Build web resources - skipping (--no-build active)");
+        else if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
+            throw new FlowlineException(ExitCode.BuildFailed, "Web resources build failed — fix errors above.");
+
+        EnsureBuiltWebResources(webResourcesSyncFolder);
+
+        Console.Verbose($"Found {webResourcesSyncFolder}");
+        Console.Info($"[bold]{ConsolePath.FormatRelativePath(webResourcesSyncFolder)}[/] found");
+
+        return webResourcesSyncFolder;
+    }
+
+    private class StandaloneParams
+    {
+        public string? SolutionName { get; set; }
+        public string? DllPath { get; set; }
+        public string? WebResourcesPath { get; set; }
+    }
+}
+
+/// <summary>Bare <c>push</c>: every target the project has, in one run.</summary>
+public sealed class PushCommand(CommandServices services, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FormEventService formEventService, EnvironmentTargetResolver environmentTargetResolver)
+    : PushCommandBase<PushCommand.Settings>(services, dataverseConnector, pluginService, webResourceService, formEventService, environmentTargetResolver)
+{
+    public sealed class Settings : PushSettings
+    {
+        internal override PushTargets Targets => PushTargets.All;
+    }
+
+    // Every hazard either target can hit, because bare push runs both: a hazard's error names the
+    // --force value that approves it, and that value has to work on the command that printed it.
+    internal static readonly string[] ValidSpecifiers =
+        ["delete-orphans", "recreate-assembly", "delete-form-handlers", "config", "all"];
+    protected override string[] ValidForceSpecifiers => ValidSpecifiers;
+
+    protected override bool IsGroupDefault => true;
+
+    protected override string NoProjectMessage =>
+        "No Flowline project here. To push without one, name the target and its build output: " +
+        "'flowline push plugins --path <dll|nupkg> --solution-name <name>' or " +
+        "'flowline push webresources --path <folder> --solution-name <name>'.";
 
     /// <summary>One plugin artifact ready to push, with the assembly name Dataverse should see.</summary>
     /// <param name="ProjectName">
@@ -368,153 +550,6 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
     static string EndSentence(string text) =>
         text.Length > 0 && ".!?".Contains(text[^1]) ? text : text + ".";
 
-    private async Task<List<PluginPushTarget>> PreparePluginsForPushAsync(
-        bool standaloneMode,
-        Settings settings,
-        PluginPackageMode pluginPackageMode,
-        StandaloneParams standaloneParams,
-        CancellationToken cancellationToken) =>
-        standaloneMode
-            ? PrepareStandalonePluginForPush(settings, standaloneParams)
-            : await PrepareProjectPluginsForPushAsync(settings, pluginPackageMode, cancellationToken).ConfigureAwait(false);
-
-    // Standalone mode has no solution file and no project context, so none of the discovery below applies:
-    // --pluginFile named the artifact outright and ResolveStandalonePluginFilePath already resolved it.
-    private List<PluginPushTarget> PrepareStandalonePluginForPush(Settings settings, StandaloneParams standaloneParams)
-    {
-        var pushPath = standaloneParams.DllPath;
-        if (pushPath == null || !File.Exists(pushPath))
-            throw new FlowlineException(ExitCode.NotFound, $"Plugin file not found: {settings.PluginFile}");
-
-        // For a .nupkg the filename typically embeds its NuGet version (e.g. "MyPlugins.1.0.0.nupkg"), so
-        // the filename minus extension does NOT match the assembly name inside the package (R2a) and
-        // SyncSolutionFromPackageAsync's primary-assembly match would fail. Reflect it to get the real
-        // name instead of guessing; the reflected list rides along so the push doesn't re-analyze it.
-        // No solution file, so no project name to report — the artifact the user named is the identity.
-        var projectName = Path.GetFileName(pushPath);
-
-        PluginPushTarget target;
-        if (IsPackagePush(pushPath))
-        {
-            var (assemblyName, reflectedAssemblies) = ResolveStandalonePackageAssemblyName(pushPath, Console);
-            target = new PluginPushTarget(pushPath, assemblyName, projectName, reflectedAssemblies);
-        }
-        else
-        {
-            target = new PluginPushTarget(pushPath, Path.GetFileNameWithoutExtension(pushPath), projectName);
-        }
-
-        Console.Verbose($"Found {pushPath}");
-        Console.Info($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] found");
-
-        return [target];
-    }
-
-    // Project mode discovers plugin projects through the solution file rather than a fixed Plugins/ folder
-    // (R1/KD1), and resolves each one's real assembly name and output path by reflecting what it actually
-    // built (R4/KD3, R2/KD2). Build strategy is per candidate project, not one solution-wide build: a
-    // solution build would also run the WebResources npm target, which `--scope plugins` explicitly didn't
-    // ask for and which PrepareWebResourcesForPushAsync already owns when it is in scope.
-    private async Task<List<PluginPushTarget>> PrepareProjectPluginsForPushAsync(
-        Settings settings,
-        PluginPackageMode pluginPackageMode,
-        CancellationToken cancellationToken)
-    {
-        var reader = new MsBuildSolutionReader();
-        var solutionFile = reader.FindSolutionFile(RootFolder)
-            ?? throw new FlowlineException(ExitCode.NotFound,
-                "No solution file here — Flowline finds plugin projects through it. Run 'flowline clone' first.");
-
-        var projects = await reader.ReadProjectsAsync(solutionFile, cancellationToken).ConfigureAwait(false);
-        var candidates = PluginProjectResolver.EnumerateCandidates(projects, RootFolder);
-        var targets = new List<PluginPushTarget>();
-
-        foreach (var candidate in candidates)
-        {
-            var preFilterSkip = PluginProjectResolver.DescribePreFilterSkip(candidate.ProjectPath);
-            if (preFilterSkip != null)
-            {
-                Console.Verbose($"Skipped {candidate.ProjectName} — {preFilterSkip}");
-                continue;
-            }
-
-            var target = await PrepareProjectPluginForPushAsync(candidate, settings, pluginPackageMode, cancellationToken).ConfigureAwait(false);
-            if (target != null) targets.Add(target);
-        }
-
-        // R8/AE9: zero plugin projects is a valid, common state (a WebResources-only solution) under the
-        // default scope — only an explicit `--scope plugins`/`--scope assemblyonly` request means the user
-        // specifically wanted a plugin push, so only that case is actually an error.
-        if (targets.Count == 0 && settings.Scopes.Length > 0)
-            throw new FlowlineException(ExitCode.NotFound,
-                "No plugin project found — nothing the solution file references builds an IPlugin or CodeActivity type. " +
-                "Run again with --verbose to see what got skipped.");
-
-        return targets;
-    }
-
-    private async Task<PluginPushTarget?> PrepareProjectPluginForPushAsync(
-        PluginProjectCandidate candidate,
-        Settings settings,
-        PluginPackageMode pluginPackageMode,
-        CancellationToken cancellationToken)
-    {
-        var projectFolder = Path.GetDirectoryName(candidate.ProjectPath)!;
-        var didBuild = false;
-
-        if (settings.NoBuild)
-            Console.Skip($"Build {candidate.ProjectName} — skipping (--no-build active)");
-        else
-        {
-            didBuild = true;
-            if (pluginPackageMode != PluginPackageMode.Dll)
-                ClearStalePackages(candidate.BuildOutputRoot, note => Console.Verbose(note));
-
-            if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
-                throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
-        }
-
-        // R3: reflection read the output and found no plugin-bearing assembly, so this simply isn't a
-        // plugin project. Not an error — but never silent either, or it reads exactly like "my plugin
-        // didn't get registered". The case where reflection could NOT read the output is a different
-        // animal and ResolvePluginAssembly throws on it rather than returning null here: the discovered
-        // set is what the orphan sweeps treat as having local source, so guessing wrong deletes a live
-        // registration. Undeterminable fails the push; only a definite verdict skips.
-        var pluginsDll = PluginProjectResolver.ResolvePluginAssembly(candidate, note => Console.Verbose(note));
-        if (pluginsDll == null)
-        {
-            Console.Verbose($"Skipped {candidate.ProjectName} — no IPlugin or CodeActivity type in its build output");
-            return null;
-        }
-
-        // R1/KD1: a .nupkg anywhere under the build output root routes to the package deployment path
-        // automatically under PluginPackageMode.Auto (U2/R2's default); Nupkg requires one and Dll opts
-        // back into the classic path regardless. KD4: the mode is one per-solution setting, applied
-        // identically to every discovered project.
-        var pushPath = ResolvePluginPushPath(pluginsDll, candidate.BuildOutputRoot, pluginPackageMode);
-
-        // NuGet's Pack step (produces the .nupkg the line above just found) has its own incremental check
-        // that isn't aware of the recompiled DLL — if nothing else driving the nuspec changed (e.g. no new
-        // commit, since versioning is git-derived via MinVer), a build recompiles the assembly but leaves a
-        // previously-packed, now-stale .nupkg in place. Detected using paths already resolved above (no new
-        // path assumptions); self-heals with one forced rebuild rather than silently pushing stale content.
-        if (NeedsRepack(pushPath, pluginsDll, didBuild))
-        {
-            Console.Warning($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] doesn't carry the assembly just built — " +
-                "NuGet's Pack step didn't regenerate it (the package version likely didn't change). Forcing a full rebuild...");
-            if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, _capture, cancellationToken, rebuild: true) != 0)
-                throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
-            pushPath = ResolvePluginPushPath(pluginsDll, candidate.BuildOutputRoot, pluginPackageMode);
-        }
-
-        Console.Verbose($"Found {pushPath}");
-        Console.Info($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] found");
-
-        // Read off the built artifact, not assumed from the folder or project name — that's what makes a
-        // custom <AssemblyName> resolve (R4).
-        return BuildProjectPushTarget(pushPath, Path.GetFileNameWithoutExtension(pluginsDll), candidate.ProjectName, Console);
-    }
-
     /// <summary>Builds one project's push target, reflecting a <c>.nupkg</c> once if that's what it packed.</summary>
     /// <remarks>
     /// Project mode used to leave <see cref="PluginPushTarget.ReflectedAssemblies"/> null, which cost it
@@ -529,40 +564,6 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
             ? new PluginPushTarget(pushPath, assemblyName, projectName, new PluginAssemblyReader(console).AnalyzePackage(pushPath))
             : new PluginPushTarget(pushPath, assemblyName, projectName);
 
-    private async Task<string?> PrepareWebResourcesForPushAsync(
-        bool standaloneMode,
-        Settings settings,
-        StandaloneParams standaloneParams,
-        CancellationToken cancellationToken)
-    {
-        if (standaloneMode) return standaloneParams.WebResourcesPath;
-
-        // The solution file identifies the WebResources project, so its folder follows it wherever it moved.
-        // A plugin-only / migrated repo may have no resolvable WebResources project though — push plugins
-        // anyway (user decision B, push only): null means none is confidently identified, so skip web
-        // resources and continue. A genuine tie still throws (propagates) rather than being swallowed.
-        var layout = await SolutionFileLayout.LoadAsync(RootFolder, cancellationToken);
-        if (layout.WebResourcesProjectPath is null)
-        {
-            Console.Warning("No WebResources project found — skipping web resources. Plugins are still pushed.");
-            return null;
-        }
-        var webResourcesFolder = Path.GetDirectoryName(layout.WebResourcesProjectPath)!;
-        var webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
-
-        if (settings.NoBuild)
-            Console.Skip("Build web resources - skipping (--no-build active)");
-        else if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
-            throw new FlowlineException(ExitCode.BuildFailed, "Web resources build failed — fix errors above.");
-
-        EnsureBuiltWebResources(webResourcesSyncFolder);
-
-        Console.Verbose($"Found {webResourcesSyncFolder}");
-        Console.Info($"[bold]{ConsolePath.FormatRelativePath(webResourcesSyncFolder)}[/] found");
-
-        return webResourcesSyncFolder;
-    }
-
     // Safety guard: an empty 'dist' makes push compute deletes for every remote web
     // resource. Refuse before that can happen — independent of --no-build.
     internal static void EnsureBuiltWebResources(string distFolder)
@@ -572,55 +573,18 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
                 "No web resources in 'dist' — refusing to push, since this would remove every web resource in the solution. Build first, or check your source.");
     }
 
-    private class StandaloneParams
-    {
-        public string? SolutionName { get; set; }
-        public string? DllPath { get; set; }
-        public string? WebResourcesPath { get; set; }
-    }
+    // Only a subcommand can be stand-alone: bare push has no --path, so it always needs a project.
+    internal static bool IsStandaloneMode(PushSettings settings) =>
+        !string.IsNullOrWhiteSpace(settings.StandalonePath);
 
-
-    internal static bool IsStandaloneMode(Settings settings) =>
-        !string.IsNullOrWhiteSpace(settings.PluginFile) || !string.IsNullOrWhiteSpace(settings.WebResources);
-
-    internal static PushScope ResolveScope(Settings settings, bool standaloneMode)
-    {
-        PushScope scope;
-        if (settings.Scopes.Length > 0)
-        {
-            scope = settings.Scopes.Aggregate(PushScope.None, (current, s) => current | s);
-            if (scope.HasFlag(PushScope.AssemblyOnly) && scope.HasFlag(PushScope.Plugins))
-                throw new FlowlineException(ExitCode.ValidationFailed, "--scope assemblyonly and --scope plugins are mutually exclusive.");
-        }
-        else if (standaloneMode)
-        {
-            scope = PushScope.None;
-            if (!string.IsNullOrWhiteSpace(settings.PluginFile)) scope |= PushScope.Plugins;
-            if (!string.IsNullOrWhiteSpace(settings.WebResources)) scope |= PushScope.WebResources;
-        }
-        else
-        {
-            scope = PushScope.All;
-        }
-
-        if (standaloneMode)
-        {
-            if ((scope.HasFlag(PushScope.Plugins) || scope.HasFlag(PushScope.AssemblyOnly)) && string.IsNullOrWhiteSpace(settings.PluginFile))
-                throw new FlowlineException(ExitCode.ValidationFailed, "--scope plugins/assemblyonly requires --plugin-file.");
-            if (scope.HasFlag(PushScope.WebResources) && string.IsNullOrWhiteSpace(settings.WebResources))
-                throw new FlowlineException(ExitCode.ValidationFailed, "--scope webresources requires --webresources.");
-        }
-
-        return scope;
-    }
-
-    internal static void ValidateStandaloneMode(Settings settings, string rootFolder)
+    internal static void ValidateStandaloneMode(string rootFolder)
     {
         if (File.Exists(Path.Combine(rootFolder, ProjectConfig.s_configFileName)))
-            throw new FlowlineException(ExitCode.ValidationFailed, "--plugin-file and --webresources cannot be used inside a Flowline project folder. Use project mode or run standalone push from another folder.");
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                "--path is for pushing from outside a Flowline project. Drop --path to push this project's build, or run from another folder.");
     }
 
-    internal static string ResolveStandaloneSolutionName(Settings settings)
+    internal static string ResolveStandaloneSolutionName(PushSettings settings)
     {
         if (!string.IsNullOrWhiteSpace(settings.SolutionName))
             return settings.SolutionName.Trim();
@@ -738,7 +702,7 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
     }
 
     // KD6: the single decision point shared by both project-mode auto-detection and standalone
-    // --pluginFile — whichever path produced pluginsPushPath, its extension alone decides the route.
+    // --path — whichever path produced pluginsPushPath, its extension alone decides the route.
     internal static bool IsPackagePush(string pluginPushPath) =>
         string.Equals(Path.GetExtension(pluginPushPath), ".nupkg", StringComparison.OrdinalIgnoreCase);
 
@@ -761,20 +725,20 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
             return (Path.GetFileNameWithoutExtension(nupkgPath), assemblies);
 
         throw new FlowlineException(ExitCode.ValidationFailed,
-            $"--plugin-file package contains {assemblies.Count} plugin-bearing assemblies " +
+            $"--path package contains {assemblies.Count} plugin-bearing assemblies " +
             $"({string.Join(", ", assemblies.Select(a => a.Name))}) — standalone mode can't determine which " +
             "one is primary without project context. Push from the project instead.");
     }
 
-    internal static string ResolveStandalonePluginFilePath(Settings settings)
+    internal static string ResolveStandalonePluginFilePath(string standalonePath)
     {
-        var path = Path.GetFullPath(settings.PluginFile!);
+        var path = Path.GetFullPath(standalonePath);
         var ext = Path.GetExtension(path);
 
         // R2a/KD6: .nupkg is accepted here and routes to the exact same package entry point project mode
         // uses — no separate standalone implementation.
         if (!string.Equals(ext, ".dll", StringComparison.OrdinalIgnoreCase) && !string.Equals(ext, ".nupkg", StringComparison.OrdinalIgnoreCase))
-            throw new FlowlineException(ExitCode.ValidationFailed, "--plugin-file must point to a .dll or .nupkg file.");
+            throw new FlowlineException(ExitCode.ValidationFailed, "--path must point to a .dll or .nupkg file.");
 
         if (!File.Exists(path))
             throw new FlowlineException(ExitCode.NotFound, $"Plugin file not found: {path}");
@@ -782,13 +746,76 @@ public class PushCommand(CommandServices services, DataverseConnector dataverseC
         return path;
     }
 
-    internal static string ResolveStandaloneWebResourcesPath(Settings settings)
+    internal static string ResolveStandaloneWebResourcesPath(string standalonePath)
     {
-        var path = Path.GetFullPath(settings.WebResources!);
+        var path = Path.GetFullPath(standalonePath);
         if (!Directory.Exists(path))
             throw new FlowlineException(ExitCode.NotFound, $"Web resources folder not found: {path}");
 
         return path;
     }
 
+}
+
+/// <summary><c>push plugins</c>: the plugin assemblies only, steps and Custom APIs included.</summary>
+public sealed class PushPluginsCommand(CommandServices services, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FormEventService formEventService, EnvironmentTargetResolver environmentTargetResolver)
+    : PushCommandBase<PushPluginsCommand.Settings>(services, dataverseConnector, pluginService, webResourceService, formEventService, environmentTargetResolver)
+{
+    public const string Name = "plugins";
+
+    public sealed class Settings : PushSettings
+    {
+        [CommandOption("-p|--path <PATH>")]
+        [Description("Pre-built plugin assembly (.dll) or NuGet package (.nupkg) to push from outside a Flowline project")]
+        public string? Path { get; set; }
+
+        [CommandOption("--assembly-only")]
+        [Description("Update the assembly content only, leaving its steps and Custom APIs as they are")]
+        [DefaultValue(false)]
+        public bool AssemblyOnlyFlag { get; set; } = false;
+
+        internal override PushTargets Targets => PushTargets.Plugins;
+        internal override string? StandalonePath => Path;
+        internal override bool AssemblyOnly => AssemblyOnlyFlag;
+    }
+
+    internal static readonly string[] ValidSpecifiers = ["delete-orphans", "recreate-assembly", "config", "all"];
+    protected override string[] ValidForceSpecifiers => ValidSpecifiers;
+
+    protected override string NoProjectMessage =>
+        "No Flowline project here. To push a pre-built plugin without one: " +
+        "'flowline push plugins --path <dll|nupkg> --solution-name <name>'.";
+}
+
+/// <summary><c>push webresources</c> (alias <c>wr</c>): web resources and form event handlers only.</summary>
+public sealed class PushWebResourcesCommand(CommandServices services, DataverseConnector dataverseConnector, PluginService pluginService, WebResourceService webResourceService, FormEventService formEventService, EnvironmentTargetResolver environmentTargetResolver)
+    : PushCommandBase<PushWebResourcesCommand.Settings>(services, dataverseConnector, pluginService, webResourceService, formEventService, environmentTargetResolver)
+{
+    public const string Name = "webresources";
+    public const string Alias = "wr";
+
+    public sealed class Settings : PushSettings
+    {
+        [CommandOption("-p|--path <PATH>")]
+        [Description("Built web resource folder to push from outside a Flowline project")]
+        public string? Path { get; set; }
+
+        [CommandOption("--no-publish")]
+        [Description("Skip publishing web resources and form event handlers after the push")]
+        [DefaultValue(false)]
+        public bool NoPublish { get; set; } = false;
+
+        internal override PushTargets Targets => PushTargets.WebResources;
+        internal override string? StandalonePath => Path;
+        internal override bool SkipPublish => NoPublish;
+    }
+
+    internal static readonly string[] ValidSpecifiers = ["delete-form-handlers", "config", "all"];
+    protected override string[] ValidForceSpecifiers => ValidSpecifiers;
+
+    protected override IReadOnlyCollection<string> CommandAliases => [Alias];
+
+    protected override string NoProjectMessage =>
+        "No Flowline project here. To push built web resources without one: " +
+        "'flowline push webresources --path <folder> --solution-name <name>'.";
 }
