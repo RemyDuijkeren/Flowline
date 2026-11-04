@@ -179,7 +179,7 @@ public class FlowlineCommandStandaloneTests
         command.Standalone = true;
         command.SkipSetup = true;
         command.ForceSpecifiers = ["delete-orphans", "all"];
-        var settings = new FlowlineSettings { Force = ["bogus"] };
+        var settings = new DataverseSettings { Force = ["bogus"] };
 
         var act = () => command.RunAsync(MakeContext("deploy"), settings, CancellationToken.None);
 

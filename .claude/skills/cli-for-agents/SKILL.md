@@ -64,7 +64,8 @@ console.ConfirmGated(
 
 Generic CLI advice says "add `--force` to skip confirmation". Flowline's is narrower on
 purpose: `-f|--force <SPECIFIER>`, repeatable, `all` for everything the command gates
-([FlowlineSettings.cs:13-29](../../../src/Flowline/FlowlineSettings.cs#L13-L29)).
+([DataverseSettings.cs](../../../src/Flowline/Settings/DataverseSettings.cs)). It is declared on the
+Dataverse settings only, so a command with nothing to force doesn't list it in help.
 
 - Read it with `settings.HasForce("<specifier>")` — never `settings.Force.Any()`.
 - New hazard → new specifier, added to that command's `ValidForceSpecifiers` override

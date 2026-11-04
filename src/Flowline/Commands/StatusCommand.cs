@@ -30,9 +30,6 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
     {
     }
 
-    internal static void ValidateForce(Settings settings) =>
-        FlowlineSettings.ValidateForce(settings.Force, [], "status");
-
     // status is a multi-environment overview, so it reports on profile resolution rather than going
     // through ProfileResolutionService.ResolveAsync (which can block/throw/prompt) — up to 4 confirm
     // prompts in one glance command would defeat the point. Pure so it's testable without a live
@@ -135,8 +132,6 @@ public class StatusCommand(IAnsiConsole console, SubprocessCapture capture, Data
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        ValidateForce(settings);
-
         if (Console.Profile.Capabilities.Interactive)
             Console.WriteWelcomeScreen();
 

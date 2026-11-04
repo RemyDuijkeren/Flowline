@@ -9,6 +9,12 @@ namespace Flowline.Settings;
 // flag rather than a positional target derive from EnvironmentSettings instead.
 public class DataverseSettings : FlowlineSettings
 {
+    // Here rather than on FlowlineSettings: every command with a force-gated hazard is a Dataverse
+    // command, and diff, scaffold, sln add and status would otherwise list a flag they always reject.
+    [CommandOption("-f|--force <SPECIFIER>")]
+    [Description("Approve a specific hazard by name for this command; repeatable. Pass 'all' for everything this command gates. An invalid value lists the valid ones.")]
+    public string[] Force { get; set; } = [];
+
     [CommandOption("--no-cache")]
     [Description("Re-run all pre-flight checks instead of using cached results")]
     public bool NoCache { get; set; } = false;

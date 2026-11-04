@@ -10,22 +10,12 @@ public class FlowlineSettings : CommandSettings
     [Description("Show detailed command output")]
     public bool Verbose { get; set; } = false;
 
-    [CommandOption("-f|--force <SPECIFIER>")]
-    [Description("Approve a specific hazard by name for this command; repeatable. Pass 'all' for everything this command gates. An invalid value lists the valid ones.")]
-    public string[] Force { get; set; } = [];
-
     // Shared by clone/configure/drift/generate/init — their only force-gated hazard is the cross-cutting
     // config-overwrite check (SettingsConsoleExtensions.Confirm), so their vocabulary is identical.
     internal static readonly string[] ConfigOnlyValidSpecifiers = ["config", "all"];
 
     internal static void ValidateForce(string[] force, string[] validSpecifiers, string commandName)
     {
-        // A command with nothing to gate (diff, scaffold, sln add, status) would otherwise print
-        // "Use one of: ." with an empty list.
-        if (validSpecifiers.Length == 0 && force.Length > 0)
-            throw new FlowlineException(ExitCode.ValidationFailed,
-                $"'{commandName}' has no force-gated behavior. Remove --force.");
-
         var invalid = force.FirstOrDefault(v => !validSpecifiers.Contains(v, StringComparer.OrdinalIgnoreCase));
         if (invalid != null)
             throw new FlowlineException(ExitCode.ValidationFailed,

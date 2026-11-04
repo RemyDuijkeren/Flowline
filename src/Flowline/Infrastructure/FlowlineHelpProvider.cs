@@ -66,5 +66,11 @@ internal sealed class FlowlineHelpProvider(ICommandAppSettings settings) : HelpP
         yield return Text.NewLine;
         yield return new Markup($"[dim][link={DocsUrl}]Docs: {DocsUrl}[/][/]");
         yield return Text.NewLine;
+        // Root page only: the opt-out applies to every command, so one place is enough.
+        if (command is null)
+        {
+            yield return new Markup("[dim]Telemetry: set FLOWLINE_TELEMETRY_OPTOUT=1 to opt out.[/]");
+            yield return Text.NewLine;
+        }
     }
 }

@@ -43,7 +43,7 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
         [Description("Output folder for generated types, required outside a Flowline project (saved to .flowline)")]
         public string? Output { get; set; }
 
-        [CommandOption("--generator")]
+        [CommandOption("--generator <GENERATOR>")]
         [Description("Model builder generator to use (pac|xrmcontext3|xrmcontext|ebg; xrmcontext is XrmContext v4, in preview), default: pac (saved to .flowline)")]
         public GeneratorType? Generator { get; set; }
 
@@ -52,7 +52,7 @@ public class GenerateCommand(CommandServices services, DataverseConnector datave
         public string? ClientId { get; set; }
 
         [CommandOption("--client-secret <SECRET>")]
-        [Description("Client secret for generator subprocess (XrmContext/XrmContext3 only)")]
+        [Description("Client secret for generator subprocess (XrmContext/XrmContext3 only). Falls back to AZURE_CLIENT_SECRET")]
         public string? ClientSecret { get; set; }
     }
 

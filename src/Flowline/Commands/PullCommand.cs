@@ -24,11 +24,11 @@ public class PullCommand(CommandServices services, EnvironmentTargetResolver env
     public sealed class Settings : EnvironmentSettings
     {
         [CommandOption("--managed [true|false]")]
-        [Description("Include managed artifacts (--managed false resets to default) (saved to .flowline)")]
+        [Description("Include managed artifacts. --managed alone means true, --managed false turns it off; omitted keeps the saved value, false for a new solution (saved to .flowline)")]
         [DefaultValue(true)]
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
 
-        [CommandOption("--bump")]
+        [CommandOption("--bump <COMPONENT>")]
         [Description("Version component to increment: patch, minor, major, or none to skip bumping (default: patch)")]
         [DefaultValue(BumpComponent.Patch)]
         public BumpComponent Bump { get; set; } = BumpComponent.Patch;

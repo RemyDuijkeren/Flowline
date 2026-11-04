@@ -53,13 +53,6 @@ ActivitySource.AddActivityListener(activityListener);
 // Create a cancellation token source to handle Ctrl+C
 var cancellationTokenSource = new CancellationTokenSource();
 
-// Wire up Console.CancelKeyPress to trigger cancellation
-Console.CancelKeyPress += (_, e) =>
-{
-    e.Cancel = true; // Prevent immediate process termination
-    cancellationTokenSource.Cancel();
-    Console.WriteLine("Cancelled. Panic button acknowledged.");
-};
 
 var runtimeOptions = new FlowlineRuntimeOptions();
 var runTime = DateTimeOffset.UtcNow;
@@ -227,12 +220,18 @@ app.Configure(config =>
                 // "Unknown command 'dev'" is true and teaches nothing when the token is a perfectly good
                 // environment in the wrong position. Only this one shape is recognised, and it cannot
                 // match an invocation the parser would have accepted.
-                AnsiConsole.MarkupLine(
-                    "[red]Error:[/] " + Markup.Escape(
-                        SettingsSupport.BuildArgumentOrderHint(args)
-                        ?? SettingsSupport.BuildTypeValueHint(args)
-                        ?? SolutionNameSettings.BuildPositionalHint(args)
-                        ?? cre.Message));
+                var hint = SettingsSupport.BuildArgumentOrderHint(args)
+                           ?? SettingsSupport.BuildTypeValueHint(args)
+                           ?? SolutionNameSettings.BuildPositionalHint(args)
+                           ?? CliConfiguration.BuildMissingValueHint(cre.Message);
+                // Spectre's own rendering points a caret at the bad token and, for a mistyped command,
+                // adds "Did you mean ...?". It carries its own "Error:" label, so it replaces ours.
+                if (hint is null && cre.Pretty is not null)
+                    AnsiConsole.Write(cre.Pretty);
+                else
+                    AnsiConsole.MarkupLine("[red]Error:[/] " + Markup.Escape(hint ?? cre.Message));
+                if (CliConfiguration.BuildHelpPointer(args, cre.Message) is { } pointer)
+                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape(pointer)}[/]");
                 WriteExceptionContext(cre, serilogLogger);
                 AnsiConsole.MarkupLine(logLink);
                 return (int)ExitCode.ValidationFailed;
@@ -259,8 +258,27 @@ AnsiConsole.Console.Pipeline.Attach(new LoggingRenderHook(
 // path that unwinds — SetExceptionHandler runs *inside* CommandApp, so a handled FlowlineException is
 // already an exit code by the time it gets here, and a Spectre interceptor would never observe it.
 // Ctrl+C needs nothing extra: the token cancels, RunAsync returns ExitCode.Cancelled, and the wrapper
-// reports it after the CancelKeyPress handler above has had its say.
+// reports it after the CancelKeyPress handler below has had its say.
 var tabStatus = TerminalTabStatus.Start(AnsiConsole.Console, TerminalTabStatus.LabelFor(args, applicationName));
+
+// First Ctrl+C cancels the token and lets the run unwind. Code that ignores the token (a pac call, a
+// Dataverse request) would otherwise swallow every later press, so the second one exits right away.
+// Environment.Exit fires ProcessExit, which finishes the tab indicator (idempotent, so Cancelled from
+// here wins) and flushes telemetry within its bound. Registered after tabStatus exists for that reason.
+var cancelPresses = 0;
+Console.CancelKeyPress += (_, e) =>
+{
+    e.Cancel = true;
+    if (Interlocked.Increment(ref cancelPresses) == 1)
+    {
+        cancellationTokenSource.Cancel();
+        Console.Error.WriteLine("Cancelling. Press Ctrl+C again to force quit.");
+        return;
+    }
+
+    tabStatus.Finish((int)ExitCode.Cancelled);
+    Environment.Exit((int)ExitCode.Cancelled);
+};
 
 // The run's root span, and the exporter behind it when consent allows one. Above RunAsync because the
 // exception handler runs *inside* CommandApp, and the span it tags has to still be current there — the
@@ -405,6 +423,44 @@ namespace Flowline
     // configuration rather than a hand-written mirror that can drift from it.
     internal static class CliConfiguration
     {
+        // Spectre's missing-argument error names the leaf command only ("Command 'set'") and shows no
+        // usage. The command words are the leading tokens up to the first option; a required argument
+        // is missing, so no positional value can sit among them. Matches Spectre's message text, which
+        // a test pins so an upgrade that rewords it fails CI instead of dropping the pointer.
+        // A valued option with nothing after it ("pull --bump") makes Spectre try to convert its internal
+        // '__default_command' token and report that, which names neither the option nor the fix. The
+        // message carries the valid values but not the option, and guessing the option from args goes
+        // wrong when a switch follows it ("--bump --verbose"), so the hint lists the values instead.
+        const string MissingValueMarker = "Failed to convert '__default_command'";
+
+        public static string? BuildMissingValueHint(string message)
+        {
+            if (!message.StartsWith(MissingValueMarker, StringComparison.Ordinal))
+                return null;
+
+            var valuesAt = message.IndexOf("Valid values are ", StringComparison.Ordinal);
+            if (valuesAt < 0)
+                return "An option is missing its value.";
+
+            var values = message[(valuesAt + "Valid values are ".Length)..]
+                .Split(',', StringSplitOptions.TrimEntries)
+                .Select(v => v.Trim('\'').ToLowerInvariant())
+                .Where(v => v.Length > 0);
+            return $"An option is missing its value. It takes one of: {string.Join(", ", values)}.";
+        }
+
+        public static string? BuildHelpPointer(IReadOnlyList<string> args, string message)
+        {
+            if (!message.Contains("is missing required argument", StringComparison.Ordinal)
+                && !message.StartsWith(MissingValueMarker, StringComparison.Ordinal))
+                return null;
+
+            var commandWords = args.TakeWhile(a => !a.StartsWith('-')).ToArray();
+            return commandWords.Length == 0
+                ? null
+                : $"Run 'flowline {string.Join(' ', commandWords)} --help' for usage and examples.";
+        }
+
         public static void Configure(IConfigurator config)
         {
             // R10: an old or removed option spelling (e.g. --pluginFile) now fails with the parser's own
@@ -564,7 +620,7 @@ namespace Flowline
                         .WithExample("settings", "toggle", "prod", "contoso_AutoNumber", "--on");
 
                 settings.AddCommand<SettingsSetCommand>("set")
-                        .WithDescription("Set an environment variable's value or bind a connection reference, or read either. Requires a non-empty value. Every value at once: 'capture'.")
+                        .WithDescription("Set an environment variable's value or bind a connection reference, or read either. An empty value is refused. Every value at once: 'capture'.")
                         .WithExample("settings", "set", "prod", "contoso_ApiUrl", "--value", "https://api.contoso.com")
                         .WithExample("settings", "set", "test", "--type", "connref")
                         .WithExample("settings", "set", "test", "contoso_ApiUrl");

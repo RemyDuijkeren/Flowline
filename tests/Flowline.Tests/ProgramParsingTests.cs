@@ -49,6 +49,65 @@ public class ProgramParsingTests
            .WithMessage("*bogus*");
     }
 
+    // -- N6: a missing required argument points at the full command's --help --
+
+    [Theory]
+    [InlineData(new[] { "deploy" }, "Run 'flowline deploy --help' for usage and examples.")]
+    [InlineData(new[] { "settings", "set", "--value", "x" }, "Run 'flowline settings set --help' for usage and examples.")]
+    public void MissingRequiredArgument_BuildsHelpPointerForTheFullCommand(string[] args, string expected)
+    {
+        // Pins Spectre's message text: if an upgrade rewords it, the pointer silently stops printing.
+        var app = BuildRealApp(out _);
+
+        var ex = Assert.ThrowsAny<CommandRuntimeException>(() => app.Run(args));
+
+        CliConfiguration.BuildHelpPointer(args, ex.Message).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(new[] { "pull", "--bump" }, "patch, minor, major, none")]
+    [InlineData(new[] { "pull", "--bump", "--verbose" }, "patch, minor, major, none")]
+    [InlineData(new[] { "generate", "--generator" }, "pac, xrmcontext3, xrmcontext, ebg")]
+    public void OptionMissingItsValue_HintListsTheValuesAndPointsAtHelp(string[] args, string values)
+    {
+        // Pins Spectre's '__default_command' conversion message, which is what this shape produces.
+        var app = BuildRealApp(out _);
+
+        var ex = Assert.ThrowsAny<CommandRuntimeException>(() => app.Run(args));
+
+        CliConfiguration.BuildMissingValueHint(ex.Message).Should()
+            .Be($"An option is missing its value. It takes one of: {values}.");
+        CliConfiguration.BuildHelpPointer(args, ex.Message).Should()
+            .Be($"Run 'flowline {args[0]} --help' for usage and examples.");
+    }
+
+    [Fact]
+    public void UnknownCommand_BuildsNoHelpPointer()
+    {
+        var app = BuildRealApp(out _);
+
+        var ex = Assert.ThrowsAny<CommandRuntimeException>(() => app.Run(["pusj"]));
+
+        CliConfiguration.BuildHelpPointer(["pusj"], ex.Message).Should().BeNull();
+        ex.Pretty.Should().NotBeNull("the handler renders Spectre's suggestion from it");
+    }
+
+    // -- N3: commands with nothing to force don't declare --force, so the parser rejects it --
+
+    [Theory]
+    [InlineData("status")]
+    [InlineData("diff")]
+    [InlineData("scaffold", "plugins")]
+    [InlineData("sln", "add", "x.csproj")]
+    public void CommandWithoutForceSpecifiers_RejectsForceAsUnknownOption(params string[] command)
+    {
+        var app = BuildRealApp(out _);
+
+        var act = () => app.Run([.. command, "--force", "all"]);
+
+        act.Should().Throw<CommandParseException>().WithMessage("*force*");
+    }
+
     // -- R9/R10: provision's --prod is gone, replaced by --env (KTD1) --
 
     [Fact]

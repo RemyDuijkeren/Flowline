@@ -45,7 +45,7 @@ The settings branch plan recorded that a branch-declared option binds only befor
 
 **Don't trust `context.Name` for messages or logs.** Under a branch it is the leaf alone (`plugins`), an alias resolves to the canonical name (`wr` gives `webresources`), and the branch's default command reports the placeholder `__default_command`. Spectre's `CommandContext` exposes no parent. `FlowlineCommand` builds the name a user typed from a branch name the command declares plus a default-command flag (`src/Flowline/Commands/FlowlineCommand.cs:86`, `:101`). The invocation log strips command words by token, not by prefix, because the typed line can hold an alias or options before the subcommand (`src/Flowline/Commands/FlowlineCommand.cs:112`).
 
-**Spectre's "Did you mean" never reaches a Flowline user.** Spectre puts the suggestion in its rendered error, but Flowline's handler prints only the exception message (`src/Flowline/Program.cs:224`, `:235`). So `push plugin` shows a plain "Unknown command". When a slip on a subcommand name matters, the hint chain in that handler has to supply it, as `SolutionNameSettings.BuildPositionalHint` does for push targets (`src/Flowline/Settings/SolutionNameSettings.cs:60`).
+**Spectre's "Did you mean" reaches the user only when no Flowline hint matches.** Spectre puts the suggestion in the formatted error it attaches to a parse exception, and Flowline's handler prints that formatted error when its own hint chain returns nothing (`src/Flowline/Program.cs`, the `CommandRuntimeException` arm). So `settings sett` shows `Did you mean 'set'?`. A Flowline hint still wins: `push plugin` is caught by `SolutionNameSettings.BuildPositionalHint` (`src/Flowline/Settings/SolutionNameSettings.cs:60`) before the formatted error is considered. Spectre suggests for commands only, never for a mistyped option.
 
 **A leaf and a branch with the same name do not coexist.** Registering `AddCommand<X>("push")` and `AddBranch("push", ...)` side by side gives no error: the leaf wins and the branch's subcommands are unreachable. A default command on the branch is the only way to keep the bare name working.
 
@@ -53,7 +53,7 @@ Short option names are one character in 0.57.2; Spectre rejects longer ones at r
 
 ## Why This Matters
 
-Each of these fails quietly. The 0.55 note would have pushed the design toward redeclaring shared options on every leaf, losing order-independence for nothing. Without strict parsing a misplaced `--dry-run` would push for real. Prefix-matching `context.Name` against the logged arguments stopped stripping anything once aliases and leading options existed. A parse-error test that only checks the exit code would never notice the missing suggestion.
+Each of these fails quietly. The 0.55 note would have pushed the design toward redeclaring shared options on every leaf, losing order-independence for nothing. Without strict parsing a misplaced `--dry-run` would push for real. Prefix-matching `context.Name` against the logged arguments stopped stripping anything once aliases and leading options existed. A parse-error test that only checks the exit code would never notice a suggestion going missing.
 
 ## When to Apply
 

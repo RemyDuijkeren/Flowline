@@ -40,7 +40,7 @@ public class ProvisionCommand(CommandServices services, EnvironmentTargetResolve
         public CopyType? CopyType { get; set; }
 
         [CommandOption("--suffix <suffix>")]
-        [Description("Target URL suffix  (default: <role name>)")]
+        [Description("Target URL suffix (default: <role name>)")]
         public string? Suffix { get; set; }
     }
 

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`settings state` is renamed `settings toggle`, `settings value` is renamed `settings set`, `settings push` is renamed `settings apply`, and `settings pull` is renamed `settings capture`.** Arguments and flags are unchanged. No aliases: the old names fail as unknown commands.
 - **`settings toggle` and `settings set` need the component name to write in a script.** With `--on`, `--off` or `--value` and no name, a non-interactive run exits 15 and prints your command with `<name>` to fill in, instead of listing the components and exiting 0 without writing anything. `--dry-run` fails the same way. At a terminal you still pick one from the list, and a read with no name still lists.
 - **The `sync` alias for `pull` is removed.** Use `flowline pull`.
+- **`status`, `diff`, `scaffold` and `sln add` no longer take `-f`/`--force`.** They have nothing to force and always rejected it, but their help listed it. Passing it now fails as an unknown option, still exit 15.
 - **`deploy` by role checks the environment type before importing.** `prod` must point at a Production environment, and `dev`, `test` and `uat` must not. A deploy that used to import into a wrongly typed environment now exits 15 before anything is written. To deploy to an environment that is typed otherwise on purpose, such as a Default or Trial environment used as prod, pass its URL instead of the role: a URL target isn't type-checked.
 - **`push` names its target as a subcommand: `push plugins` and `push webresources` (alias `wr`).** Bare `push` still pushes every target the project has. `--scope` is gone: `--scope plugins` becomes `push plugins`, `--scope webresources` becomes `push webresources`, and `--scope assemblyonly` becomes `push plugins --assembly-only`. `--no-publish` moves to `push webresources`. Stand-alone mode takes `--path` on the subcommand, one target per call: `--plugin-file <dll>` becomes `push plugins --path <dll>` and `--webresources <folder>` becomes `push webresources --path <folder>`. No aliases: the old options fail as unknown options. A named target the project doesn't have is an error, where bare `push` skips it, and `--force` accepts only the values the command can use.
 - **`push` and `generate` take the solution as `-n|--solution-name` instead of a positional.** `flowline push Contoso` becomes `flowline push --solution-name Contoso`, the same option the `settings` commands use. No alias: the old form fails with a message naming the flag to use, or `--env` when the word was an environment such as `dev`.
@@ -23,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **`settings` commands accept `-n` as the short form of `--solution-name`.**
+- **A mistyped command suggests the right one**, as in `Did you mean 'push'?`. Every parse error now shows the line you typed with a marker under the part that's wrong. Exit code is unchanged.
+- **A missing required argument points at the command's help**, as in `Run 'flowline deploy --help' for usage and examples.`
+- **An option given without its value says so and lists the values it takes**, as in `pull --bump`, instead of `Failed to convert '__default_command' to BumpComponent`.
+- **A second Ctrl+C quits right away.** The first one cancels and says so on stderr; if the run doesn't stop, press again. Exit code is 130 either way.
+- **Help text fixes.** `settings set` no longer claims a value is required (an empty value is what's refused). `--managed` reads the same on `clone` and `pull`. `--bump` and `--generator` show that they take a value. `generate --client-secret` names `AZURE_CLIENT_SECRET` as its fallback, and root help names the telemetry opt-out.
 - **`clone` and `init` show their positional as `[solution-name]`**, the name the flag has on the other commands. How it is passed is unchanged.
 - **A `settings` or `drift` target that is neither a role nor an `http(s)://` URL fails up front with exit 15**, instead of failing at the PAC profile lookup (usually exit 4, with advice to authenticate against it, or 10 with a universal profile active). The error names the line to run. When the environment and the component name were swapped, the error prints the corrected line. A host with no scheme is rejected the same way `--env` rejects it: pass the full URL.
 - **A role whose `.flowline` value isn't an `http(s)://` URL fails with exit 15 on every command**, naming the key to fix. `drift`, `settings` and the `--env` commands used to send the value on to the PAC profile lookup as if it were a URL.
@@ -34,7 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`--force` on `diff`, `scaffold` and `sln add` now says the command has nothing to force.** It used to end in "Use one of: ." with an empty list.
 - **`push` reads every Custom API under your publisher prefix, not just the first 5000.** In an environment with more Custom API records than that, the rest were missed, so `push` could try to create one that already existed or fail to clean up one source no longer declares.
 
 ## [0.20.0] - 2026-09-19

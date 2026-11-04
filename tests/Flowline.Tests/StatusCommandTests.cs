@@ -8,26 +8,6 @@ namespace Flowline.Tests;
 
 public class StatusCommandTests
 {
-    [Fact]
-    public void ValidateForce_AnyValue_Throws()
-    {
-        var settings = new StatusCommand.Settings { Force = ["config"] };
-
-        var act = () => StatusCommand.ValidateForce(settings);
-
-        act.Should().Throw<FlowlineException>().Where(e => e.ExitCode == ExitCode.ValidationFailed);
-    }
-
-    [Fact]
-    public void ValidateForce_Empty_DoesNotThrow()
-    {
-        var settings = new StatusCommand.Settings();
-
-        var act = () => StatusCommand.ValidateForce(settings);
-
-        act.Should().NotThrow();
-    }
-
     // FormatProfileNote is the report-only decision logic behind status's per-environment profile
     // check (R9): never throws, never prompts, just returns text to print (or null for "nothing to
     // report"). DataverseConnector.FindBestProfile/IsProfileActive aren't mockable (no interface,

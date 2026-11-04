@@ -29,7 +29,7 @@ public class CloneCommand(CommandServices services,
         public string? Solution { get; set; }
 
         [CommandOption("--managed [true|false]")]
-        [Description("Include managed artifacts: --managed alone means true, --managed false means false (saved to .flowline)")]
+        [Description("Include managed artifacts. --managed alone means true, --managed false turns it off; omitted keeps the saved value, false for a new solution (saved to .flowline)")]
         [DefaultValue(true)]
         public FlagValue<bool> IncludeManaged { get; set; } = null!;
     }

@@ -72,7 +72,7 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
     protected void InitializeRuntimeOptions(TSettings settings)
     {
         RuntimeOptions.IsVerbose = settings.Verbose;
-        RuntimeOptions.Force = settings.Force;
+        RuntimeOptions.Force = (settings as DataverseSettings)?.Force ?? [];
         RuntimeOptions.AutoSwitchProfile = (settings as DataverseSettings)?.AutoSwitchProfile ?? false;
         RuntimeOptions.NoCache = (settings as DataverseSettings)?.NoCache ?? false;
     }
@@ -131,8 +131,11 @@ public abstract class FlowlineCommand<TSettings>(CommandServices services) : Asy
         return string.Join(' ', tokens);
     }
 
-    protected void ValidateForce(CommandContext context, TSettings settings) =>
-        FlowlineSettings.ValidateForce(settings.Force, ValidForceSpecifiers, QualifiedName(context));
+    protected void ValidateForce(CommandContext context, TSettings settings)
+    {
+        if (settings is DataverseSettings dataverseSettings)
+            FlowlineSettings.ValidateForce(dataverseSettings.Force, ValidForceSpecifiers, QualifiedName(context));
+    }
 
     // The nearest enclosing Flowline project, or null when there is none. A .flowline governs its whole
     // subtree, so a command run from any folder beneath one is in that project — the nearest wins, which
