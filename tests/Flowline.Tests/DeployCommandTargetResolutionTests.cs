@@ -139,7 +139,8 @@ public class DeployCommandTargetResolutionTests
         var profiles = new ProfileResolutionService(console, new DataverseConnector(console, new HttpClient()), options)
         {
             FindBestProfileOverride = url => new ProfileFound(new PacProfile { Name = "Contoso", Resource = url }),
-            IsProfileActiveOverride = _ => true
+            IsProfileActiveOverride = _ => true,
+            GetPacProfilesOverride = () => []
         };
         return new EnvironmentService(console, profiles, validator, options);
     }

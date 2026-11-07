@@ -31,7 +31,8 @@ public class EnvironmentServiceTests
         var profiles = new ProfileResolutionService(console, new DataverseConnector(console, new HttpClient()), options)
         {
             FindBestProfileOverride = _ => new ProfileFound(s_profile),
-            IsProfileActiveOverride = _ => true
+            IsProfileActiveOverride = _ => true,
+            GetPacProfilesOverride = () => [s_profile]
         };
         return (new EnvironmentService(console, profiles, validator, options), console);
     }
