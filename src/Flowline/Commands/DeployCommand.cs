@@ -354,6 +354,11 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
             // outcome and names no cause — each service already printed its own findings and its own fix
             // above (orphan cleanup its maker-portal action, the package assembly check its remedy).
             // Claiming every finding is an orphan was true while orphan cleanup was the only reporter.
+            // Printed on every landed import, findings or not: the pointer records what is installed. Flowline
+            // never writes git itself, so the user runs the tag and push under their own rights.
+            if (BuildDeployedTagHint(target.Role, usingExplicitArtifact ? null : currentCommitSha, sln.UniqueName, gateVersion) is { } tagHint)
+                Console.Info(Markup.Escape(tagHint));
+
             var resolvedExitCode = ResolvePostImportExitCode(postImportOutcomes);
             switch (resolvedExitCode)
             {
@@ -823,6 +828,17 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         dryRun ? RunMode.DryRun
         : noDelete || includeManaged ? RunMode.NoDelete
         : RunMode.Normal;
+
+    // Null when there is no role to name the tag after (a URL target) or no commit known to point it at (the
+    // --path route, whose CI step has its own commit variable). The commit is the last one touching the deploy
+    // inputs, which the git-clean check has already tied to what was packed.
+    internal static string? BuildDeployedTagHint(EnvironmentRole? role, string? commitSha, string solutionName, string version)
+    {
+        if (role is not { } r || string.IsNullOrEmpty(commitSha)) return null;
+
+        var tag = $"deployed/{r.ToString().ToLowerInvariant()}";
+        return $"Mark it in git: git tag -f -a {tag} -m \"{solutionName} {version}\" {commitSha} && git push -f origin refs/tags/{tag}";
+    }
 
     // U3: printed once every pre-import check has passed under --dry-run — mirrors PushCommand's own
     // dry-run completion tone ("Air push complete...").

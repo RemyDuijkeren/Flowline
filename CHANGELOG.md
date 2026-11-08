@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`deploy` to `test`, `uat` or `prod` prints the git commands that record what it deployed**, as in `git tag -f -a deployed/prod -m "ContosoSales 1.2.4.0" <commit> && git push -f origin refs/tags/deployed/prod`. Flowline doesn't run them: you do, under your own git rights. Once the tag is pushed, `flowline diff deployed/prod` shows what changed since that deploy. Not printed for a URL target or a `--path` deploy, where no role or commit is known.
 - **`settings` commands accept `-n` as the short form of `--solution-name`.**
 - **A mistyped command suggests the right one**, as in `Did you mean 'push'?`. Every parse error now shows the line you typed with a marker under the part that's wrong. Exit code is unchanged.
 - **A missing required argument points at the command's help**, as in `Run 'flowline deploy --help' for usage and examples.`
