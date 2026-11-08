@@ -261,6 +261,17 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
 
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken, resolvedProfile);
 
+        // A <Solution>_Upgrade holding solution left by an earlier staged upgrade blocks every further upgrade,
+        // and pac reports it only as a failed import. Checked before pack, backup and solution checker so it
+        // fails in seconds, under --dry-run too. Only the managed upgrade path can meet one: a holding solution
+        // is always managed, and unmanaged over managed is already refused in ValidateTargetAsync.
+        if (useStageAndUpgrade)
+        {
+            var holdingVersion = await new SolutionReader().GetInstalledVersionAsync(service, HoldingSolutionName(sln.UniqueName), cancellationToken);
+            if (BuildPendingUpgradeMessage(sln.UniqueName, holdingVersion, gateVersion, targetEnv.DisplayName!, targetUrl) is { } pendingUpgrade)
+                throw new FlowlineException(ExitCode.ValidationFailed, pendingUpgrade);
+        }
+
         string packagePath;
         if (usingExplicitArtifact)
         {
@@ -448,6 +459,35 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
     // the remedy is a flag (--force first-import), not a re-run. Pure so it's unit-testable without a
     // live PAC CLI or Dataverse connection, matching this file's established decision-method style.
     internal static ExitCode ResolveFirstImportDeclinedExitCode() => ExitCode.ForceRequired;
+
+    // The platform's fixed name for a staged upgrade's holding solution.
+    internal static string HoldingSolutionName(string solutionName) => $"{solutionName}_Upgrade";
+
+    // Null when nothing is pending. Refuses in both cases rather than resuming a same-version stage: Flowline
+    // can't prove the staged content is this package (a version match isn't proof), and applying deletes the
+    // components the package dropped. Solution history holds the reason the earlier run stopped, and that
+    // reason picks the remedy: a timeout leaves good content to apply, a real failure means delete and fix.
+    internal static string? BuildPendingUpgradeMessage(
+        string solutionName, string? holdingVersion, string incomingVersion, string targetDisplayName, string targetUrl)
+    {
+        if (holdingVersion == null) return null;
+
+        var holding = HoldingSolutionName(solutionName);
+        var apply = $"'pac solution upgrade --solution-name {solutionName} --environment {targetUrl}'";
+        var delete = $"'pac solution delete --solution-name {holding} --environment {targetUrl}'";
+
+        var sameVersion = Version.TryParse(holdingVersion, out var held) && Version.TryParse(incomingVersion, out var incoming)
+            ? held == incoming
+            : holdingVersion == incomingVersion;
+
+        return sameVersion
+            ? $"An earlier deploy staged '{solutionName}' v{holdingVersion} in {targetDisplayName} and didn't finish. " +
+              $"Check Solution history in {targetDisplayName} for why. If it timed out, finish the upgrade with {apply}. " +
+              $"If it failed, delete the staged upgrade with {delete}, fix the cause, and deploy again."
+            : $"'{solutionName}' has a pending upgrade to v{holdingVersion} in {targetDisplayName}, and this deploy is v{incomingVersion}. " +
+              $"Check Solution history in {targetDisplayName}, then apply it with {apply}, " +
+              $"or delete it with {delete} (you lose data in anything it added), and deploy again.";
+    }
 
     private async Task ValidateDtapGateAsync(
         ProjectSolution sln, string gateVersion, string targetUrl, Settings settings, CancellationToken ct)
