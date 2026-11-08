@@ -171,9 +171,7 @@ public class PullCommand(CommandServices services, EnvironmentTargetResolver env
         // reflects what DEV just synced rather than what was on disk before this run.
         await RefreshSharedTemplateAsync(Console, dataverseSolutionFolder, RootFolder, _capture, Logger, cancellationToken);
 
-        Console.Done(summary.TotalFiles == 0
-            ? $"Synced {tagVersion} — no component changes, nothing to deploy."
-            : $"Synced {tagVersion}. Commit, then 'git tag {tagVersion}' when ready to deploy. ◝(ᵔᵕᵔ)◜");
+        Console.Done(DoneLine(summary, tagVersion));
 
         return 0;
     }
@@ -233,6 +231,24 @@ public class PullCommand(CommandServices services, EnvironmentTargetResolver env
     /// <summary>The written file's provenance line. No environment name means no line at all.</summary>
     internal static string? ProvenanceLine(string? envDisplayName) =>
         envDisplayName is null ? null : $"Synced from: {envDisplayName}";
+
+    /// <summary>
+    /// The closing line. The bump runs before the sync, so a pull with nothing new in DEV still leaves one
+    /// changed file: the version in Solution.xml. That case is named as nothing to deploy rather than as a
+    /// commit-and-tag. Only `--bump none` reaches zero changed files.
+    /// </summary>
+    internal static string DoneLine(SolutionChangeSummary summary, string tagVersion)
+    {
+        if (summary.TotalFiles == 0)
+            return $"Synced {tagVersion} — no component changes, nothing to deploy.";
+
+        // ponytail: a Solution.xml-only change is read as version-only; a root-component edit with no other
+        // file touched would read the same. Check Solution.xml content if that ever shows up.
+        if (summary.TotalFiles == 1 && summary.Version is not null && summary.Groups.Count == 0)
+            return $"Bumped to {tagVersion}, no component changes — nothing to deploy. Skip the bump next time with --bump none.";
+
+        return $"Synced {tagVersion}. Commit, then 'git tag {tagVersion}' when ready to deploy. ◝(ᵔᵕᵔ)◜";
+    }
 
     /// <summary>The terminal line for a sync that pulled nothing. Escaped: an environment name is user data.</summary>
     internal static string NoChangesLine(string? envDisplayName) =>

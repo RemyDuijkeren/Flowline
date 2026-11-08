@@ -131,6 +131,38 @@ public class SyncCommandOutputShapeTests
     }
 
     [Fact]
+    public void DoneLine_WithOnlyTheBumpedVersion_SaysNothingToDeploy()
+    {
+        var summary = new SolutionChangeSummary(1, 1, 1, [], new SolutionChangeSummary.VersionTransition("1.0.4.0", "1.0.5.0"));
+
+        var line = PullCommand.DoneLine(summary, "1.0.5");
+
+        line.Should().Contain("nothing to deploy")
+            .And.Contain("--bump none")
+            .And.NotContain("git tag");
+    }
+
+    [Fact]
+    public void DoneLine_WithComponentChanges_SuggestsCommitAndTag()
+    {
+        var group = new SolutionChangeSummary.ChangeGroup("Entities", []);
+        var summary = new SolutionChangeSummary(2, 5, 1, [group], new SolutionChangeSummary.VersionTransition("1.0.4.0", "1.0.5.0"));
+
+        PullCommand.DoneLine(summary, "1.0.5")
+            .Should().Contain("git tag 1.0.5");
+    }
+
+    [Fact]
+    public void DoneLine_WithNoChangedFiles_SaysNothingToDeploy()
+    {
+        var summary = new SolutionChangeSummary(0, 0, 0, []);
+
+        PullCommand.DoneLine(summary, "1.0.4")
+            .Should().Contain("nothing to deploy")
+            .And.NotContain("--bump none");
+    }
+
+    [Fact]
     public void NoChangesLine_WithoutEnvironment_FallsBackToDev()
     {
         PullCommand.NoChangesLine(null).Should().Be("No changes pulled from DEV.");

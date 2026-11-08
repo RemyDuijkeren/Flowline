@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`pull` with nothing new in DEV says there is nothing to deploy.** The version bump left Solution.xml changed, so it used to suggest a commit and `git tag`. It now says only the version moved, and names `--bump none` to skip the bump next time.
 - **`push` reads every Custom API under your publisher prefix, not just the first 5000.** In an environment with more Custom API records than that, the rest were missed, so `push` could try to create one that already existed or fail to clean up one source no longer declares.
 
 ## [0.20.0] - 2026-09-19
