@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `push webresources` no longer republishes a text web resource whose only difference is line endings or a UTF-8 byte order mark. A checkout on Windows and one on Linux of the same commit now push nothing new. The drift warnings from `pull` and `deploy` ignore the same differences. Images and other binary types still compare byte for byte, and what gets uploaded is unchanged.
+
 ## [0.21.0] - 2026-11-09
 
 ### Added

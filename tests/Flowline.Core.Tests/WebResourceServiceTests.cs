@@ -748,6 +748,35 @@ public class WebResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_TextDiffersOnlyInLineEndingsAndBom_NoUpdate()
+    {
+        var id = Guid.NewGuid();
+        SetupWebResources(RemoteWebResource(id, "my_MySolution/form.js", "\uFEFFline1();\r\nline2();\r\n"));
+        File.WriteAllText(Path.Combine(_webresourceRoot, "form.js"), "line1();\nline2();\n");
+        SetupOwnership(id, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.DidNotReceive().UpdateAsync(Arg.Any<Entity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncSolutionAsync_BinaryDiffersOnlyInLineEndingBytes_Updates()
+    {
+        var id = Guid.NewGuid();
+        var remote = RemoteWebResource(id, "my_MySolution/image.png", "a\r\nb");
+        remote["webresourcetype"] = new OptionSetValue((int)WebResourceType.Png);
+        SetupWebResources(remote);
+        File.WriteAllText(Path.Combine(_webresourceRoot, "image.png"), "a\nb");
+        SetupOwnership(id, ("MySolution", false));
+
+        await _service.SyncSolutionAsync(_serviceMock, _webresourceRoot, "MySolution", publishAfterSync: false);
+
+        await _serviceMock.Received(1).UpdateAsync(
+            Arg.Is(Matching<Entity>(e => e.Id == id)), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_DepsChangedContentUnchanged_UpdateWithDependencyXml()
     {
         var id = Guid.NewGuid();

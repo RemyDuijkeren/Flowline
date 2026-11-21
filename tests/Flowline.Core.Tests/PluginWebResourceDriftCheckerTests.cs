@@ -112,6 +112,24 @@ public class PluginWebResourceDriftCheckerTests : IDisposable
     }
 
     [Fact]
+    public async Task Check_TextDiffersOnlyInLineEndingsAndBom_NoWarning()
+    {
+        WriteFile(Path.Combine("WebResources", "dist", "icon.svg"), "<svg>\n</svg>\n");
+        WriteFile(Path.Combine("Solution", "src", "WebResources", "icon.svg"), "\uFEFF<svg>\r\n</svg>\r\n");
+
+        (await Check()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Check_BinaryDiffersOnlyInLineEndingBytes_ReturnsContentDiffersWarning()
+    {
+        WriteFile(Path.Combine("WebResources", "dist", "image.png"), "a\nb");
+        WriteFile(Path.Combine("Solution", "src", "WebResources", "image.png"), "a\r\nb");
+
+        (await Check()).Should().ContainSingle(w => w.Category == DriftCategory.ContentDiffers);
+    }
+
+    [Fact]
     public async Task Check_ContentDiffers_ReturnsContentDiffersWarning()
     {
         WriteFile(Path.Combine("WebResources", "dist", "script.js"), "v1");

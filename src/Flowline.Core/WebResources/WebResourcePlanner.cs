@@ -136,7 +136,7 @@ public class WebResourcePlanner(IAnsiConsole console)
         var desiredDeps = BuildDesiredSet(local.DependsOn, currentByName, snapshot);
         var depsChanged = DependenciesDiffer(desiredDeps, currentDeps);
 
-        var contentChanged = dv.Content != local.Content;
+        var contentChanged = !WebResourceContent.Base64Equals(dv.Content, local.Content, local.Type);
         var displayNameChanged = dv.DisplayName != local.DisplayName;
         reason = DescribeChanges(contentChanged, displayNameChanged, depsChanged);
 

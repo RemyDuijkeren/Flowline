@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Xml;
 using System.Xml.Linq;
 using Flowline.Core.Solutions;
+using Flowline.Core.WebResources;
 
 namespace Flowline.Core.Deploy;
 
@@ -89,8 +90,7 @@ public static class PluginWebResourceDriftChecker
                 : srcWebFolder;
 
             var relPath = Path.GetRelativePath(sourceRoot, file);
-            using var fs = File.OpenRead(file);
-            result[relPath] = SHA256.HashData(fs);
+            result[relPath] = HashForComparison(file);
         }
         return result;
     }
@@ -199,9 +199,12 @@ public static class PluginWebResourceDriftChecker
         {
             cancellationToken.ThrowIfCancellationRequested();
             var relPath = Path.GetRelativePath(baseFolder, file);
-            using var fs = File.OpenRead(file);
-            result[relPath] = SHA256.HashData(fs);
+            result[relPath] = HashForComparison(file);
         }
         return result;
     }
+
+    // Line endings and a UTF-8 BOM don't count as drift for text web resources (WebResourceContent).
+    static byte[] HashForComparison(string file) =>
+        SHA256.HashData(WebResourceContent.ForComparison(File.ReadAllBytes(file), WebResourceContent.TypeFromPath(file)));
 }
