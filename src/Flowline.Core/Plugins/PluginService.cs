@@ -1102,7 +1102,7 @@ public class PluginService(IAnsiConsole console)
         var solutionLink = query.AddLink("solution", "solutionid", "solutionid", JoinOperator.Inner);
         solutionLink.LinkCriteria.AddCondition("uniquename", ConditionOperator.Equal, solutionName);
         var stepLink = query.AddLink("sdkmessageprocessingstep", "objectid", "sdkmessageprocessingstepid", JoinOperator.Inner);
-        stepLink.Columns = new ColumnSet("name");
+        stepLink.Columns = new ColumnSet("name", "eventhandler");
         stepLink.EntityAlias = "step";
         var typeLink = stepLink.AddLink("plugintype", "plugintypeid", "plugintypeid", JoinOperator.Inner);
         var asmLink = typeLink.AddLink("pluginassembly", "pluginassemblyid", "pluginassemblyid", JoinOperator.Inner);
@@ -1114,15 +1114,20 @@ public class PluginService(IAnsiConsole console)
         if (blockedAssemblyIds.Count > 0)
             asmLink.LinkCriteria.AddCondition("pluginassemblyid", ConditionOperator.NotIn, blockedAssemblyIds.Cast<object>().ToArray());
 
-        var result = await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false);
-        if (result.Entities.Count == 0) return;
+        // Steps on a service endpoint (Service Bus, webhook, Event Hub) point plugintypeid at Microsoft's
+        // ServiceBusPlugin, which is never the pushed assembly, so the query above matches every one of
+        // them. They are registrations against the endpoint, not orphans; deleting them cuts the integration.
+        var orphanSteps = (await service.RetrieveMultipleAsync(query, cancellationToken).ConfigureAwait(false)).Entities
+            .Where(e => (e.GetAttributeValue<AliasedValue>("step.eventhandler")?.Value as EntityReference)?.LogicalName != "serviceendpoint")
+            .ToList();
+        if (orphanSteps.Count == 0) return;
 
         var willDelete = forceDeleteOrphans && runMode == RunMode.Normal;
 
         var imagesByStep = new Dictionary<Guid, List<Entity>>();
         if (willDelete)
         {
-            var stepIds = result.Entities.Select(e => (object)e.GetAttributeValue<Guid>("objectid")).ToArray();
+            var stepIds = orphanSteps.Select(e => (object)e.GetAttributeValue<Guid>("objectid")).ToArray();
             var imageQuery = new QueryExpression("sdkmessageprocessingstepimage")
             {
                 ColumnSet = new ColumnSet("sdkmessageprocessingstepid"),
@@ -1138,7 +1143,7 @@ public class PluginService(IAnsiConsole console)
             }
         }
 
-        foreach (var component in result.Entities)
+        foreach (var component in orphanSteps)
         {
             var stepId = component.GetAttributeValue<Guid>("objectid");
             var stepName = component.GetAttributeValue<AliasedValue>("step.name")?.Value as string ?? stepId.ToString();

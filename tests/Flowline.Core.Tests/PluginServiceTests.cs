@@ -557,6 +557,46 @@ public class PluginServiceTests
     }
 
     [Fact]
+    public async Task SyncSolutionAsync_ServiceEndpointStep_WithForce_IsNotTreatedAsOrphan()
+    {
+        // Service endpoint steps point plugintypeid at Microsoft.Crm.ServiceBus's ServiceBusPlugin, so the
+        // foreign-assembly query matches them; the eventhandler is what marks them as endpoint registrations.
+        SetupAssembly(ExistingAssembly(Guid.NewGuid()));
+        SetupPluginTypes();
+        SetupSteps();
+
+        var endpointStepId = Guid.NewGuid();
+        var orphanStepId = Guid.NewGuid();
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "solutioncomponent" && q.Criteria.Conditions.Any(c => c.AttributeName == "componenttype"))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(new List<Entity>
+            {
+                new Entity("solutioncomponent")
+                {
+                    ["objectid"] = endpointStepId,
+                    ["step.name"] = new AliasedValue("sdkmessageprocessingstep", "name", "QueueEndpoint: Create of list"),
+                    ["step.eventhandler"] = new AliasedValue("sdkmessageprocessingstep", "eventhandler", new EntityReference("serviceendpoint", Guid.NewGuid())),
+                    ["asm.name"] = new AliasedValue("pluginassembly", "name", "Microsoft.Crm.ServiceBus")
+                },
+                new Entity("solutioncomponent")
+                {
+                    ["objectid"] = orphanStepId,
+                    ["step.name"] = new AliasedValue("sdkmessageprocessingstep", "name", "Extensions.OldPlugin: Update of account"),
+                    ["step.eventhandler"] = new AliasedValue("sdkmessageprocessingstep", "eventhandler", new EntityReference("plugintype", Guid.NewGuid())),
+                    ["asm.name"] = new AliasedValue("pluginassembly", "name", "Extensions")
+                }
+            })));
+
+        await _service.SyncSolutionAsync(_serviceMock, Metadata(), "MySolution", RunMode.Normal, forceDeleteOrphans: true, forceRecreateAssembly: false);
+
+        Assert.DoesNotContain("QueueEndpoint", _console.Output);
+        Assert.DoesNotContain("Microsoft.Crm.ServiceBus", _console.Output);
+        await _serviceMock.DidNotReceive().DeleteAsync("sdkmessageprocessingstep", endpointStepId, Arg.Any<CancellationToken>());
+        await _serviceMock.Received(1).DeleteAsync("sdkmessageprocessingstep", orphanStepId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SyncSolutionAsync_ForceRecreateAssemblyOnly_DoesNotDeleteOrphanStep()
     {
         // Proves the two hazards are independently gated: approving recreate-assembly must not
