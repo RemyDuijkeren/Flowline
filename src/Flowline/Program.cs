@@ -525,7 +525,7 @@ namespace Flowline
 
             // Pack (solution zip without a target environment)
             config.AddCommand<PackCommand>("pack")
-                  .WithDescription("Pack the committed solution into a versioned zip, without a target environment. Runs the solution checker, needs a clean git working tree, and writes to artifacts/ unless --output says otherwise. Import the zip later with 'deploy <env> --path'.")
+                  .WithDescription("Pack the committed solution into a versioned zip, without a target environment. Run it in CI or before a hand-off. Runs the solution checker, needs a clean git working tree, and writes to artifacts/ unless --output says otherwise. Import the zip later with 'deploy <env> --path'.")
                   .WithExample("pack")
                   .WithExample("pack", "--output", "./drop")
                   .WithExample("pack", "--skip-solution-check");

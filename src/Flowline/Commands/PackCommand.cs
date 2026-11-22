@@ -56,7 +56,7 @@ public class PackCommand(CommandServices services) : FlowlineCommand<PackCommand
         await SolutionPackService.ValidateGitCleanAsync(inputPaths, RootFolder, _capture, "pack", cancellationToken);
 
         if (FindMappingFile(dataverseSolutionFolder) is { } mappingFile)
-            Console.Info($"Found {mappingFile} — Flowline doesn't read mapping files. Pack packs what's committed; --binaries-from-build packs fresh plugin and web resource builds instead.");
+            Console.Info($"Found {mappingFile} — Flowline doesn't read mapping files. pack uses what's committed; --binaries-from-build packs fresh plugin and web resource builds instead.");
 
         // The drift guard compares build output with the committed binaries; with build output in the zip
         // that difference is the point, so it doesn't apply.
