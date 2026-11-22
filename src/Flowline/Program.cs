@@ -522,6 +522,13 @@ namespace Flowline
                   .WithExample("pull", "--managed", "--bump", "minor")
                   .WithExample("pull", "--env", "https://contoso-dev.crm4.dynamics.com");
 
+            // Pack (solution zip without a target environment)
+            config.AddCommand<PackCommand>("pack")
+                  .WithDescription("Pack the committed solution into a versioned zip, without a target environment. Runs the solution checker, needs a clean git working tree, and writes to artifacts/ unless --output says otherwise. Import the zip later with 'deploy <env> --path'.")
+                  .WithExample("pack")
+                  .WithExample("pack", "--output", "./drop")
+                  .WithExample("pack", "--skip-solution-check");
+
             // Deploy (pack and import solution into environment)
             config.AddCommand<DeployCommand>("deploy")
                   .WithDescription("Pack the solution from the repo and import it into the target environment (test, uat, prod, or URL). Needs a clean git working tree, or --path to import a pre-built zip from any folder. Packs fresh on every run; use pack and --path to import one build into several environments.")
