@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** `deploy` packs fresh on every run. The cached zip it reused while the source was unchanged, and its `.manifest.json` next to the zip, are gone; to import one build into several environments, run `pack` and pass its zip to `deploy --path`. `--no-cache` still re-runs the pre-flight checks.
 - **Breaking:** the zip `deploy` writes to `artifacts/` carries the solution version in its name, `<Solution>_<version>_managed.zip` (or `_unmanaged.zip`), instead of `<Solution>_managed.zip`. Scripts that pick up the old fixed name need updating; on GitHub Actions, read the path from the `artifact-path-<Solution>` step output instead.
-- **Breaking:** `deploy` packs only the files committed in `Solution/src`, not every file on disk. An ignored or stray file no longer ends up in the zip, and the same commit packs the same zip on any machine. A plugin assembly, plugin package or web resource whose binary isn't committed now fails before connecting, instead of the solution being packed without it; build output copied into gitignored slots is not packed any more, so pass `--binaries-from-build` instead.
+- **Breaking:** `deploy` packs only the files committed in `Solution/src`, not every file on disk. An ignored or stray file no longer ends up in the zip, and the same commit packs the same files and contents on any machine. A plugin assembly, plugin package or web resource whose binary isn't committed now fails before connecting, instead of the solution being packed without it; build output copied into gitignored slots is not packed any more, so pass `--binaries-from-build` instead.
 
 ### Fixed
 

@@ -76,7 +76,8 @@ internal static class SolutionPackService
         try
         {
             // Copied in git's index order, the order a fresh checkout writes them: pac lists components in the
-            // order it finds folders, so this gives the same zip a clean CI clone of this commit gives.
+            // order it finds folders, so this matches a fresh clone of this commit (same files and contents; byte
+            // order inside customizations.xml can still follow how a filesystem lists folders).
             foreach (var tracked in await GitUtils.GetTrackedFilesAsync(src, rootFolder, capture, ct))
             {
                 var file = Path.GetFullPath(Path.Combine(rootFolder, tracked));
