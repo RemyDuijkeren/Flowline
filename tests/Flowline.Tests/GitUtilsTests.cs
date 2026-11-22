@@ -1,3 +1,4 @@
+using Flowline.Services;
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
@@ -360,7 +361,7 @@ public class GitUtilsTests : IDisposable
         sha.Should().BeNull();
     }
 
-    // ── DeployCommand.GetDeploymentInputPaths integration (R15) ───────────────
+    // ── SolutionPackService.GetPackInputPaths integration (R15) ───────────────
     // These exercise the actual scope DeployCommand's clean-check and cache-key call sites share —
     // GetDeploymentInputPaths feeding straight into the multi-path GitUtils methods above.
 
@@ -373,7 +374,7 @@ public class GitUtilsTests : IDisposable
 
         var layout = await SolutionFileLayout.LoadAsync(_root);
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution")), _root);
+            SolutionPackService.GetPackInputPaths(layout, Path.Combine(_root, "Solution")), _root);
 
         changes.Should().ContainSingle().Which.Should().Be("Solution/src/Other/Solution.xml");
     }
@@ -391,7 +392,7 @@ public class GitUtilsTests : IDisposable
 
         var layout = await SolutionFileLayout.LoadAsync(_root);
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution")), _root);
+            SolutionPackService.GetPackInputPaths(layout, Path.Combine(_root, "Solution")), _root);
 
         changes.Should().ContainSingle().Which.Should().Be("Plugins/MySolution.Plugins.csproj");
     }
@@ -410,7 +411,7 @@ public class GitUtilsTests : IDisposable
 
         var layout = await SolutionFileLayout.LoadAsync(_root);
         var changes = await GitUtils.GetUncommittedChangesInPathAsync(
-            DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution")), _root);
+            SolutionPackService.GetPackInputPaths(layout, Path.Combine(_root, "Solution")), _root);
 
         changes.Should().BeEmpty();
     }
@@ -420,7 +421,7 @@ public class GitUtilsTests : IDisposable
     {
         CreateSolutionWithWebResourcesProject();
         var layout = await SolutionFileLayout.LoadAsync(_root);
-        var inputPaths = DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution"));
+        var inputPaths = SolutionPackService.GetPackInputPaths(layout, Path.Combine(_root, "Solution"));
 
         CreateAndCommitFile("Solution/src/Other/Solution.xml");
         var initialSha = await GitUtils.GetLastCommitShaForPathAsync(inputPaths, _root);

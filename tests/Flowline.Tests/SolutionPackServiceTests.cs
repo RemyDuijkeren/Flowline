@@ -47,3 +47,36 @@ public class SolutionPackServiceTests
             .Should().Be(Path.Combine(Path.GetFullPath("drop"), "Contoso_1_0_0_0_unmanaged.zip"));
     }
 }
+
+public class SolutionPackServiceGuardMessageTests
+{
+    [Theory]
+    [InlineData("pack")]
+    [InlineData("deploy")]
+    public void BuildDirtyTreeMessage_NamesTheCommand(string command)
+    {
+        SolutionPackService.BuildDirtyTreeMessage(["Solution/src/Other/Solution.xml"], command)
+            .Should().Be($"Uncommitted changes in Solution/src/Other/Solution.xml — commit or stash first, then {command}.");
+    }
+
+    [Fact]
+    public void BuildDirtyTreeMessage_ShowsThreePathsAndACount_WhenMoreChanged()
+    {
+        SolutionPackService.BuildDirtyTreeMessage(["a", "b", "c", "d", "e"], "pack")
+            .Should().Be("Uncommitted changes in a, b, c (+2 more) — commit or stash first, then pack.");
+    }
+
+    [Fact]
+    public void BuildDriftMessage_ForPack_SaysTheZipWouldHoldOlderCopies()
+    {
+        SolutionPackService.BuildDriftMessage("pack")
+            .Should().Be("Local changes not in Dataverse — the zip would hold the older committed copies. Run 'push' then 'pull' to capture them, or use --force drift to skip.");
+    }
+
+    [Fact]
+    public void BuildDriftMessage_ForDeploy_KeepsTheRevertWarning()
+    {
+        SolutionPackService.BuildDriftMessage("deploy")
+            .Should().Be("Local changes not in Dataverse — deploy would revert them. Run 'push' then 'pull' to capture them, or use --force drift to skip.");
+    }
+}

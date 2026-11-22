@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.IO.Compression;
-using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using CliWrap;
@@ -155,8 +154,8 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         IReadOnlyList<string> deploymentInputPaths = [];
         if (!usingExplicitArtifact)
         {
-            deploymentInputPaths = GetDeploymentInputPaths(layout!, dataverseSolutionFolder!); // non-null on the packed route
-            await ValidateGitCleanAsync(deploymentInputPaths, cancellationToken);
+            deploymentInputPaths = SolutionPackService.GetPackInputPaths(layout!, dataverseSolutionFolder!); // non-null on the packed route
+            await SolutionPackService.ValidateGitCleanAsync(deploymentInputPaths, RootFolder, _capture, "deploy", cancellationToken);
         }
 
         var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(target, sln, settings, cancellationToken);
@@ -210,7 +209,9 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
             }
         }
 
-        await ValidateLocalStateAsync(sln.UniqueName, layout, dataverseSolutionFolder, settings, cancellationToken, checkDrift: !usingExplicitArtifact);
+        // --path supplies a prebuilt artifact, so the local drift guard has nothing to compare it with.
+        if (!usingExplicitArtifact)
+            await SolutionPackService.ValidateDriftAsync(Console, RuntimeOptions.HasForce("drift"), sln.UniqueName, layout!, dataverseSolutionFolder!, "deploy", cancellationToken);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
         // Upgrade (pac's --stage-and-upgrade) — plain import ("Update" semantics) never deletes anything,
@@ -283,7 +284,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         // this signal hands a packed artifact off to a later pipeline stage for real promotion, and
         // --dry-run never produces one.
         if (!settings.DryRun)
-            PublishArtifactForCi(packagePath, sln.UniqueName, gateVersion);
+            SolutionPackService.PublishArtifactForCi(Logger, packagePath, sln.UniqueName, gateVersion);
 
         // Always unpack the zip actually being imported — whether freshly packed or supplied via --path — so post-deploy services evaluate real imported content, never an assumed
         // local package source that may not match (e.g. a --path artifact built from a different commit).
@@ -517,108 +518,6 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         && Version.TryParse(gateVersion, out var localVer)
         && predVer == localVer;
 
-    private async Task ValidateGitCleanAsync(IReadOnlyList<string> deploymentInputPaths, CancellationToken ct)
-    {
-        var changes = await GitUtils.GetUncommittedChangesInPathAsync(deploymentInputPaths, RootFolder, _capture, ct);
-        if (changes.Count == 0) return;
-
-        // Names the files rather than the folders it looked in — the scope is discovered now, so restating
-        // it would mean restating a list the user can't predict from the message.
-        var shown = string.Join(", ", changes.Take(3));
-        var more = changes.Count > 3 ? $" (+{changes.Count - 3} more)" : "";
-
-        throw new FlowlineException(ExitCode.DirtyWorkingDirectory,
-            $"Uncommitted changes in {shown}{more} — commit or stash first, then deploy.");
-    }
-
-    // The SAME path list scopes both the clean-check and the commit-sha lookup behind the provenance note and
-    // tag hint, so the two can never diverge — resolved once per run in ExecuteFlowlineAsync and handed to
-    // both, which also keeps the solution file read to one per deploy.
-    //
-    // Deliberately narrow to what actually affects the packed artifact: Solution/, every plugin project the
-    // solution file references, and the WebResources project file. The plugin pre-filter is what keeps this
-    // narrow — an unrelated csproj in the solution stays out of scope, so it can't block a deploy.
-    //
-    // Takes no solution name: all three project paths come out of the already-loaded layout, so a relocated
-    // or renamed project stays in scope without deploy knowing what it is called. Synchronous — the layout
-    // is already resolved by the time this runs, so there is no I/O left to await.
-    internal static IReadOnlyList<string> GetDeploymentInputPaths(SolutionFileLayout layout, string dataverseSolutionFolder) =>
-    [
-        dataverseSolutionFolder,
-        ..layout.PluginProjects.Select(c => c.ProjectPath),
-        // Omitted when null: no WebResources project is a real absence, not a scope gap.
-        ..layout.WebResourcesProjectPath is { } wr ? new[] { wr } : Array.Empty<string>()
-    ];
-
-    private async Task ValidateLocalStateAsync(string solutionUniqueName, SolutionFileLayout? layout, string? dataverseSolutionFolder, Settings settings, CancellationToken ct, bool checkDrift = true)
-    {
-        // checkDrift is false exactly on the --path route, the one route that leaves layout/dataverseSolutionFolder null.
-        if (!checkDrift) return;
-
-        // Safety-critical: a null WebResources project means the web-resource half of drift is skipped. Say
-        // so loudly — a solution that does have web resources would deploy without them being validated.
-        if (layout!.WebResourcesProjectPath is null)
-            Console.Warning("No WebResources project resolved — skipping the web-resource drift check. If this solution has web resources, a deploy will not validate them.");
-
-        var drift = (await PluginWebResourceDriftChecker.CheckAsync(solutionUniqueName, layout!, dataverseSolutionFolder!, cancellationToken: ct))
-            .Where(w => w.Category is DriftCategory.OnlyLocal or DriftCategory.PluginSizeMismatch)
-            .ToList();
-
-        if (drift.Count == 0) return;
-
-        foreach (var w in drift)
-            Console.Warning(w.Category == DriftCategory.OnlyLocal
-                ? $"Only local: {w.RelativePath}"
-                : $"Plugin size mismatch: {w.RelativePath}");
-
-        if (!RuntimeOptions.HasForce("drift"))
-            throw new FlowlineException(ExitCode.ValidationFailed,
-                "Local changes not in Dataverse — deploy would revert them. Run 'push' then 'pull' to capture them, or use --force drift to skip.");
-    }
-
-    // KTD3: Azure Pipelines' documented stdout logging-command protocol for any process — no SDK, no opt-in flag.
-    // The artifact name carries the version too, so it's visible at a glance in the pipeline's Artifacts tab.
-    internal static string BuildAzureDevOpsArtifactUploadLine(string packagePath, string solutionName, string version) =>
-        $"##vso[artifact.upload artifactname={solutionName}-{version}]{packagePath}";
-
-    // KTD4/KTD6: qualified by solution name so looping deploy over sibling solutions in one workflow step
-    // doesn't have each write silently clobber the previous solution's $GITHUB_OUTPUT key.
-    internal static string BuildGitHubActionsOutputLine(string packagePath, string solutionName) =>
-        $"artifact-path-{solutionName}={packagePath}";
-
-    // KTD2: called once packagePath is finalized, regardless of origin (fresh pack or --path)
-    // or subsequent import outcome (R5). KTD5/R4: never lets a CI-integration side effect fail the deploy.
-    private void PublishArtifactForCi(string packagePath, string solutionName, string version)
-    {
-        try
-        {
-            // Resolved once, absolute for both platforms — packagePath can be relative (a --path deploy
-            // takes settings.Path verbatim), and neither CI consumer should have to guess it's relative
-            // to whatever directory the agent happened to run the command from.
-            var fullPackagePath = Path.GetFullPath(packagePath);
-
-            switch (CiPlatform.Detect())
-            {
-                case "azuredevops":
-                    // KTD3: raw System.Console, never the injected IAnsiConsole — Console.MarkupLine would
-                    // parse the vso line's literal "[artifact.upload ...]" as a Spectre style tag and throw,
-                    // and even a plain IAnsiConsole write can word-wrap this line (it contains a space)
-                    // across physical lines once redirected stdout falls back to an 80-column profile width
-                    // on a real agent, which silently breaks the agent's single-line ##vso parse.
-                    System.Console.WriteLine(BuildAzureDevOpsArtifactUploadLine(fullPackagePath, solutionName, version));
-                    break;
-                case "github":
-                    var githubOutputPath = Environment.GetEnvironmentVariable("GITHUB_OUTPUT");
-                    if (!string.IsNullOrEmpty(githubOutputPath))
-                        File.AppendAllText(githubOutputPath, BuildGitHubActionsOutputLine(fullPackagePath, solutionName) + Environment.NewLine);
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to publish CI artifact signal for {SolutionName}", solutionName);
-        }
-    }
 
     internal static void ValidateArtifactManagedFlag(bool artifactManaged, bool solutionIncludeManaged)
     {

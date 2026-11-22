@@ -1,3 +1,4 @@
+using Flowline.Services;
 using FluentAssertions;
 using Flowline.Commands;
 using Flowline.Core;
@@ -50,14 +51,14 @@ public class DeployCommandDeploymentInputPathDiscoveryTests : IDisposable
         """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
 
     [Fact]
-    public async Task GetDeploymentInputPaths_TwoPluginProjects_IncludesBothProjectFiles()
+    public async Task GetPackInputPaths_TwoPluginProjects_IncludesBothProjectFiles()
     {
         var sales = WriteProject(Path.Combine("Sales", "Sales.Plugins.csproj"), PluginProjectXml());
         var support = WriteProject(Path.Combine("Support", "Support.Plugins.csproj"), PluginProjectXml());
         WriteSolution(@"Sales\Sales.Plugins.csproj", @"Support\Support.Plugins.csproj");
 
         var layout = await SolutionFileLayout.LoadAsync(_root);
-        var paths = DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution"));
+        var paths = SolutionPackService.GetPackInputPaths(layout, Path.Combine(_root, "Solution"));
 
         // The second project is the point: a change to it used to escape both the git-dirty gate and
         // the cache key, so a deploy could ship an artifact that didn't match the tree.
@@ -67,20 +68,20 @@ public class DeployCommandDeploymentInputPathDiscoveryTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDeploymentInputPaths_PluginProjectNotNamedPlugins_IsIncluded()
+    public async Task GetPackInputPaths_PluginProjectNotNamedPlugins_IsIncluded()
     {
         var project = WriteProject(Path.Combine("Sales", "AV.Sales.Plugins.csproj"), PluginProjectXml());
         WriteSolution(@"Sales\AV.Sales.Plugins.csproj");
 
         var layout = await SolutionFileLayout.LoadAsync(_root);
-        var paths = DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution"));
+        var paths = SolutionPackService.GetPackInputPaths(layout, Path.Combine(_root, "Solution"));
 
         paths.Should().Contain(project);
         paths.Should().NotContain(Path.Combine(_root, "Plugins", "Plugins.csproj"));
     }
 
     [Fact]
-    public async Task GetDeploymentInputPaths_NonPluginProjectInSolution_StaysOutOfScope()
+    public async Task GetPackInputPaths_NonPluginProjectInSolution_StaysOutOfScope()
     {
         // Keeps the cache key narrow: an unrelated project must not invalidate a deploy.
         WriteProject(Path.Combine("Sales", "Sales.Plugins.csproj"), PluginProjectXml());
@@ -89,13 +90,13 @@ public class DeployCommandDeploymentInputPathDiscoveryTests : IDisposable
         WriteSolution(@"Sales\Sales.Plugins.csproj", @"tests\Sales.Tests.csproj");
 
         var layout = await SolutionFileLayout.LoadAsync(_root);
-        var paths = DeployCommand.GetDeploymentInputPaths(layout, Path.Combine(_root, "Solution"));
+        var paths = SolutionPackService.GetPackInputPaths(layout, Path.Combine(_root, "Solution"));
 
         paths.Should().NotContain(tests);
     }
 
     [Fact]
-    public async Task GetDeploymentInputPaths_NoSolutionFile_ThrowsRatherThanDegradingToConventionalList()
+    public async Task GetPackInputPaths_NoSolutionFile_ThrowsRatherThanDegradingToConventionalList()
     {
         // R6: no solution file is an error now, not a fallback to the conventional Plugins/WebResources list
         // — the failure now surfaces from loading the layout, before GetDeploymentInputPaths ever runs.

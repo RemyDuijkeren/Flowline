@@ -9,12 +9,19 @@ namespace Flowline.Services;
 
 public class SolutionCheckService(IAnsiConsole console, SubprocessCapture capture) : IPostDeployService
 {
-    public async Task RunPreImportAsync(PostDeployContext context, CancellationToken ct)
+    public Task RunPreImportAsync(PostDeployContext context, CancellationToken ct) =>
+        RunAsync(console, capture, context.PackagePath, context.Solution.EnvironmentUrl, ct);
+
+    /// <summary>
+    /// Runs the solution checker on a zip and fails on any Critical finding. Shared by deploy (against its
+    /// target) and pack (no environment: pac then checks with the active auth profile only).
+    /// </summary>
+    internal static async Task RunAsync(IAnsiConsole console, SubprocessCapture capture, string packagePath, string? environmentUrl, CancellationToken ct)
     {
         var outputDirectory = Path.Combine(
-            Path.GetDirectoryName(context.PackagePath) ?? Path.GetTempPath(), "solution-check");
+            Path.GetDirectoryName(packagePath) ?? Path.GetTempPath(), "solution-check");
 
-        var result = await PacUtils.CheckSolutionAsync(context.PackagePath, context.Solution.EnvironmentUrl, outputDirectory, capture, ct);
+        var result = await PacUtils.CheckSolutionAsync(packagePath, environmentUrl, outputDirectory, capture, ct);
 
         if (ShouldAbort(result.CriticalCount))
             throw new FlowlineException(ExitCode.ValidationFailed,

@@ -1,3 +1,4 @@
+using Flowline.Services;
 using FluentAssertions;
 using Flowline.Commands;
 
@@ -12,7 +13,7 @@ public class DeployCommandCiArtifactTests
     [Fact]
     public void BuildAzureDevOpsArtifactUploadLine_ReturnsExpectedVsoFormat()
     {
-        var line = DeployCommand.BuildAzureDevOpsArtifactUploadLine(PackagePath, SolutionName, Version);
+        var line = SolutionPackService.BuildAzureDevOpsArtifactUploadLine(PackagePath, SolutionName, Version);
 
         line.Should().Be($"##vso[artifact.upload artifactname={SolutionName}-{Version}]{PackagePath}");
     }
@@ -20,7 +21,7 @@ public class DeployCommandCiArtifactTests
     [Fact]
     public void BuildAzureDevOpsArtifactUploadLine_QualifiesArtifactNameByVersion_WithoutTouchingTheFilePath()
     {
-        var line = DeployCommand.BuildAzureDevOpsArtifactUploadLine(PackagePath, SolutionName, Version);
+        var line = SolutionPackService.BuildAzureDevOpsArtifactUploadLine(PackagePath, SolutionName, Version);
 
         line.Should().Contain($"artifactname={SolutionName}-{Version}]");
         line.Should().EndWith(PackagePath);
@@ -29,7 +30,7 @@ public class DeployCommandCiArtifactTests
     [Fact]
     public void BuildGitHubActionsOutputLine_ReturnsExpectedOutputFormat()
     {
-        var line = DeployCommand.BuildGitHubActionsOutputLine(PackagePath, SolutionName);
+        var line = SolutionPackService.BuildGitHubActionsOutputLine(PackagePath, SolutionName);
 
         line.Should().Be($"artifact-path-{SolutionName}={PackagePath}");
     }
@@ -37,8 +38,8 @@ public class DeployCommandCiArtifactTests
     [Fact]
     public void BuildGitHubActionsOutputLine_QualifiesKeyBySolutionName_ToAvoidClobberingSiblingOutputs()
     {
-        var first = DeployCommand.BuildGitHubActionsOutputLine(PackagePath, "SolutionA");
-        var second = DeployCommand.BuildGitHubActionsOutputLine(PackagePath, "SolutionB");
+        var first = SolutionPackService.BuildGitHubActionsOutputLine(PackagePath, "SolutionA");
+        var second = SolutionPackService.BuildGitHubActionsOutputLine(PackagePath, "SolutionB");
 
         first.Should().NotBe(second);
         first.Should().StartWith("artifact-path-SolutionA=");
