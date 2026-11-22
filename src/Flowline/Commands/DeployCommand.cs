@@ -62,6 +62,16 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         [DefaultValue(false)]
         public bool NoDelete { get; set; } = false;
 
+        [CommandOption("--binaries-from-build")]
+        [Description("Pack plugin and web resource binaries from a fresh build instead of the committed copies; the rest of the solution stays as committed")]
+        [DefaultValue(false)]
+        public bool BinariesFromBuild { get; set; } = false;
+
+        [CommandOption("--no-build")]
+        [Description("With --binaries-from-build: skip 'dotnet build' and use the existing Release output")]
+        [DefaultValue(false)]
+        public bool NoBuild { get; set; } = false;
+
         [CommandOption("--dry-run")]
         [Description("Run every deploy pre-flight check and back up the target, without importing the solution")]
         [DefaultValue(false)]
@@ -109,6 +119,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
     protected override async Task<int> ExecuteFlowlineAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         var usingExplicitArtifact = !string.IsNullOrWhiteSpace(settings.Path);
+        SolutionPackService.ValidateBuildFlags(usingExplicitArtifact, settings.BinariesFromBuild, settings.NoBuild);
         var standalone = IsStandalone(settings);
         var target = ResolveTarget(settings.Target, Config, standalone);
         var targetUrl = target.Url;
@@ -152,17 +163,26 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         // check is meaningful there: git-clean and drift both assume packagePath is derived from the
         // Dataverse solution folder's src/.
         IReadOnlyList<string> deploymentInputPaths = [];
+        IReadOnlyList<SlotCopy> buildOutput = [];
         if (!usingExplicitArtifact)
         {
-            deploymentInputPaths = SolutionPackService.GetPackInputPaths(layout!, dataverseSolutionFolder!); // non-null on the packed route
+            deploymentInputPaths = SolutionPackService.GetPackInputPaths(layout!, dataverseSolutionFolder!, includeProjectSources: settings.BinariesFromBuild); // non-null on the packed route
             await SolutionPackService.ValidateGitCleanAsync(deploymentInputPaths, RootFolder, _capture, "deploy", cancellationToken);
 
             // Offline and cheap, so it fails before any target check or connection. The pack step stages again:
             // ponytail: one extra copy of the tracked files, cheaper than holding a temp folder open across the
             // whole deploy; hold it instead if solution folders grow large enough for the copy to show.
-            var precheck = await SolutionPackService.StageTrackedSolutionAsync(dataverseSolutionFolder!, RootFolder, _capture, cancellationToken);
-            try { SolutionPackService.EnsureSlotsHaveBinaries(precheck); }
-            finally { SolutionPackService.DeleteStagedFolder(precheck, Logger); }
+            // Under --binaries-from-build the build and slot match run here too, for the same reason.
+            if (settings.BinariesFromBuild)
+            {
+                buildOutput = await SolutionPackService.BuildForPackAsync(Console, _capture, layout!, sln.UniqueName, sln.PluginPackageMode, settings.NoBuild, RootFolder, cancellationToken);
+            }
+            else
+            {
+                var precheck = await SolutionPackService.StageTrackedSolutionAsync(dataverseSolutionFolder!, RootFolder, _capture, cancellationToken);
+                try { SolutionPackService.EnsureSlotsHaveBinaries(precheck); }
+                finally { SolutionPackService.DeleteStagedFolder(precheck, Logger); }
+            }
         }
 
         var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(target, sln, settings, cancellationToken);
@@ -216,8 +236,9 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
             }
         }
 
-        // --path supplies a prebuilt artifact, so the local drift guard has nothing to compare it with.
-        if (!usingExplicitArtifact)
+        // --path supplies a prebuilt artifact, so the local drift guard has nothing to compare it with; with
+        // build output in the zip, the difference it reports is the point.
+        if (!usingExplicitArtifact && !settings.BinariesFromBuild)
             await SolutionPackService.ValidateDriftAsync(Console, RuntimeOptions.HasForce("drift"), sln.UniqueName, layout!, dataverseSolutionFolder!, "deploy", cancellationToken);
 
         // Managed import only removes components no longer in the solution when Dataverse runs it as an
@@ -282,7 +303,11 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
             Logger.LogInformation("Packing: {SolutionName}", sln.UniqueName);
             packagePath = SolutionPackService.ResolveZipPath(slnFolder, output: null, sln.UniqueName, gateVersion, sln.IncludeManaged);
             var staged = await SolutionPackService.StageTrackedSolutionAsync(dataverseSolutionFolder!, RootFolder, _capture, cancellationToken); // non-null on the packed route
-            try { await SolutionPackService.PackAsync(Console, _capture, sln.UniqueName, staged, packagePath, sln.IncludeManaged, cancellationToken); }
+            try
+            {
+                SolutionPackService.OverlayBuildOutput(staged, buildOutput);
+                await SolutionPackService.PackAsync(Console, _capture, sln.UniqueName, staged, packagePath, sln.IncludeManaged, cancellationToken);
+            }
             finally { SolutionPackService.DeleteStagedFolder(staged, Logger); }
         }
 

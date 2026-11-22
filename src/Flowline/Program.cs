@@ -534,6 +534,7 @@ namespace Flowline
                   .WithDescription("Pack the solution from the repo and import it into the target environment (test, uat, prod, or URL). Needs a clean git working tree, or --path to import a pre-built zip from any folder. Packs fresh on every run; use pack and --path to import one build into several environments.")
                   .WithExample("deploy", "prod")
                   .WithExample("deploy", "https://contoso-test.crm4.dynamics.com/")
+                  .WithExample("deploy", "test", "--binaries-from-build")
                   .WithExample("deploy", "test", "--path", "artifacts/ContosoCustomizations_1_2_0_0.zip")
                   .WithExample("deploy", "https://contoso-uat.crm4.dynamics.com/", "--path", "ContosoCustomizations_1_2_0_0.zip");
 

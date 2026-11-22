@@ -157,3 +157,36 @@ public class SolutionPackServiceBuildOutputTests : IDisposable
         advice.Should().Contain("--binaries-from-build");
     }
 }
+
+public class SolutionPackServiceBuildFlagTests
+{
+    [Fact]
+    public void ValidateBuildFlags_RejectsBuildFlagWithPath()
+    {
+        var act = () => SolutionPackService.ValidateBuildFlags(usingExplicitArtifact: true, binariesFromBuild: true, noBuild: false);
+
+        act.Should().Throw<Flowline.Core.FlowlineException>()
+            .Where(e => e.ExitCode == Flowline.Core.ExitCode.ValidationFailed
+                        && e.Message.Contains("--path") && e.Message.Contains("--binaries-from-build"));
+    }
+
+    [Fact]
+    public void ValidateBuildFlags_RejectsNoBuildWithoutBuildFlag()
+    {
+        var act = () => SolutionPackService.ValidateBuildFlags(usingExplicitArtifact: false, binariesFromBuild: false, noBuild: true);
+
+        act.Should().Throw<Flowline.Core.FlowlineException>().Where(e => e.Message.Contains("--no-build"));
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]
+    public void ValidateBuildFlags_AcceptsValidCombinations(bool path, bool fromBuild, bool noBuild)
+    {
+        var act = () => SolutionPackService.ValidateBuildFlags(path, fromBuild, noBuild);
+
+        act.Should().NotThrow();
+    }
+}

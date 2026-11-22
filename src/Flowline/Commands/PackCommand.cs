@@ -48,8 +48,7 @@ public class PackCommand(CommandServices services) : FlowlineCommand<PackCommand
         var layout = await SolutionFileLayout.LoadAsync(RootFolder, cancellationToken);
         var dataverseSolutionFolder = layout.DataverseSolutionFolder;
 
-        if (settings.NoBuild && !settings.BinariesFromBuild)
-            throw new FlowlineException(ExitCode.ValidationFailed, "--no-build only applies with --binaries-from-build — add it, or drop --no-build.");
+        SolutionPackService.ValidateBuildFlags(usingExplicitArtifact: false, settings.BinariesFromBuild, settings.NoBuild);
 
         var inputPaths = SolutionPackService.GetPackInputPaths(layout, dataverseSolutionFolder, includeProjectSources: settings.BinariesFromBuild);
         await SolutionPackService.ValidateGitCleanAsync(inputPaths, RootFolder, _capture, "pack", cancellationToken);

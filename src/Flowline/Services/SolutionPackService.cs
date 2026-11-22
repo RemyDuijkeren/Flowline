@@ -150,6 +150,15 @@ internal static class SolutionPackService
         return match.Copies;
     }
 
+    // --path supplies a finished zip, so there is nothing to build; --no-build only qualifies the build flag.
+    internal static void ValidateBuildFlags(bool usingExplicitArtifact, bool binariesFromBuild, bool noBuild)
+    {
+        if (usingExplicitArtifact && binariesFromBuild)
+            throw new FlowlineException(ExitCode.ValidationFailed, "--path imports a finished zip, so --binaries-from-build has nothing to build — drop one of them.");
+        if (noBuild && !binariesFromBuild)
+            throw new FlowlineException(ExitCode.ValidationFailed, "--no-build only applies with --binaries-from-build — add it, or drop --no-build.");
+    }
+
     internal static void EnsureEveryOutputHasASlot(SlotMatchResult match)
     {
         if (match.UnmatchedOutputs.Count > 0)
