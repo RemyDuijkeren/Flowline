@@ -21,7 +21,11 @@ public sealed record SlotCopy(string SourcePath, string SlotRelativePath);
 public sealed record SlotMatchResult(
     IReadOnlyList<SlotCopy> Copies,
     IReadOnlyList<string> UnmatchedOutputs,
-    IReadOnlyList<SolutionSlot> SlotsWithoutOutput);
+    IReadOnlyList<SolutionSlot> SlotsWithoutOutput)
+{
+    /// <summary>Two build outputs that map to one slot, each as "first and second (slot key)"; only the first is copied.</summary>
+    public IReadOnlyList<string> DuplicateOutputs { get; init; } = [];
+}
 
 /// <summary>
 /// Maps build outputs to the binary slots of an unpacked solution. Slots are found from their metadata
@@ -75,13 +79,17 @@ public static class BuildOutputSlotMatcher
     {
         var copies = new List<SlotCopy>();
         var unmatched = new List<string>();
-        var matched = new HashSet<SolutionSlot>();
+        var duplicates = new List<string>();
+        var matched = new Dictionary<SolutionSlot, string>();
 
         void Resolve(string label, string sourcePath, SolutionSlot? slot)
         {
             if (slot is null) { unmatched.Add(label); return; }
+            // Case-insensitive names (main.js and MAIN.js) or two projects building one assembly would
+            // otherwise both copy to one slot, and whichever copied last would ship.
+            if (matched.TryGetValue(slot, out var first)) { duplicates.Add($"{first} and {label} ({slot.Key})"); return; }
             copies.Add(new SlotCopy(sourcePath, slot.BinaryRelativePath));
-            matched.Add(slot);
+            matched.Add(slot, label);
         }
 
         foreach (var p in plugins)
@@ -103,7 +111,7 @@ public static class BuildOutputSlotMatcher
             Resolve(w.RelativePath, w.FilePath, slot);
         }
 
-        return new SlotMatchResult(copies, unmatched, slots.Where(s => !matched.Contains(s)).ToList());
+        return new SlotMatchResult(copies, unmatched, slots.Where(s => !matched.ContainsKey(s)).ToList()) { DuplicateOutputs = duplicates };
     }
 
     static bool Eq(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);

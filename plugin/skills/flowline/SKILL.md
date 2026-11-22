@@ -212,6 +212,7 @@ command fails with the valid list.
 | `push plugins` | `delete-orphans`, `recreate-assembly`, `config`, `all` |
 | `push webresources` | `delete-form-handlers`, `config`, `all` |
 | `deploy` | `drift`, `first-import`, `delete-orphans`, `all` |
+| `pack` | `drift`, `all` |
 | `pull` | `dirty`, `config`, `all` |
 | `provision` | `overwrite`, `config`, `all` |
 | `clone`, `init`, `settings`, `drift`, `generate` | `config`, `all` |

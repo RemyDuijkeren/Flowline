@@ -51,17 +51,16 @@ public class DeployCommandDeploymentInputPathDiscoveryTests : IDisposable
         """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
 
     [Fact]
-    public async Task GetPackInputPaths_WithProjectSources_ScopesWholeProjectFolders()
+    public async Task GetPackInputPaths_WithBuildGraphRoot_ScopesTheWholeRepository()
     {
-        var sales = WriteProject(Path.Combine("Sales", "Sales.Plugins.csproj"), PluginProjectXml());
+        WriteProject(Path.Combine("Sales", "Sales.Plugins.csproj"), PluginProjectXml());
         WriteSolution(@"Sales\Sales.Plugins.csproj");
 
         var layout = await SolutionFileLayout.LoadAsync(_root);
-        var paths = SolutionPackService.GetPackInputPaths(layout, Path.Combine(_root, "Solution"), includeProjectSources: true);
+        var paths = SolutionPackService.GetPackInputPaths(layout, Path.Combine(_root, "Solution"), buildGraphRoot: _root);
 
-        // A .cs file next to the project must count as uncommitted when the build output goes into the zip.
-        paths.Should().Contain(Path.GetDirectoryName(sales)!);
-        paths.Should().NotContain(sales);
+        // A root Directory.Build.props or a referenced sibling project is build input too.
+        paths.Should().Equal(_root);
     }
 
     [Fact]

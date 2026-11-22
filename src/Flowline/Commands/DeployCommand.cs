@@ -166,7 +166,8 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         IReadOnlyList<SlotCopy> buildOutput = [];
         if (!usingExplicitArtifact)
         {
-            deploymentInputPaths = SolutionPackService.GetPackInputPaths(layout!, dataverseSolutionFolder!, includeProjectSources: settings.BinariesFromBuild); // non-null on the packed route
+            deploymentInputPaths = SolutionPackService.GetPackInputPaths(layout!, dataverseSolutionFolder!, // non-null on the packed route
+                buildGraphRoot: settings.BinariesFromBuild ? GitUtils.FindRepositoryRoot(RootFolder) ?? RootFolder : null);
             await SolutionPackService.ValidateGitCleanAsync(deploymentInputPaths, RootFolder, _capture, "deploy", cancellationToken);
 
             // Offline and cheap, so it fails before any target check or connection. The pack step stages again:

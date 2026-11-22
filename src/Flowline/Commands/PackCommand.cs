@@ -4,6 +4,7 @@ using Flowline.Core.Console;
 using Flowline.Core.Solutions;
 using Flowline.Services;
 using Flowline.Settings;
+using Flowline.Utils;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -50,7 +51,8 @@ public class PackCommand(CommandServices services) : FlowlineCommand<PackCommand
 
         SolutionPackService.ValidateBuildFlags(usingExplicitArtifact: false, settings.BinariesFromBuild, settings.NoBuild);
 
-        var inputPaths = SolutionPackService.GetPackInputPaths(layout, dataverseSolutionFolder, includeProjectSources: settings.BinariesFromBuild);
+        var inputPaths = SolutionPackService.GetPackInputPaths(layout, dataverseSolutionFolder,
+            buildGraphRoot: settings.BinariesFromBuild ? GitUtils.FindRepositoryRoot(RootFolder) ?? RootFolder : null);
         await SolutionPackService.ValidateGitCleanAsync(inputPaths, RootFolder, _capture, "pack", cancellationToken);
 
         if (FindMappingFile(dataverseSolutionFolder) is { } mappingFile)

@@ -140,3 +140,30 @@ public class BuildOutputSlotMatcherTests : IDisposable
         result.SlotsWithoutOutput.Should().ContainSingle().Which.Key.Should().Be("cr_Sales/main.js");
     }
 }
+
+public class BuildOutputSlotMatcherDuplicateTests
+{
+    [Fact]
+    public void Match_ReportsBothOutputs_WhenTwoMapToTheSameSlot()
+    {
+        var slot = new SolutionSlot(SlotKind.WebResource, "cr_Sales/main.js", "WebResources/cr_Sales/main.js");
+
+        var result = BuildOutputSlotMatcher.Match([slot], [],
+            [new WebResourceBuildOutput("main.js", "/dist/main.js"), new WebResourceBuildOutput("MAIN.js", "/dist/MAIN.js")], "Sales");
+
+        result.DuplicateOutputs.Should().ContainSingle()
+            .Which.Should().Contain("main.js").And.Contain("MAIN.js");
+        result.Copies.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Match_ReportsBothOutputs_WhenTwoPluginProjectsBuildTheSameAssembly()
+    {
+        var slot = new SolutionSlot(SlotKind.PluginAssembly, "Contoso.Plugins", "PluginAssemblies/ContosoPlugins-1/ContosoPlugins.dll");
+
+        var result = BuildOutputSlotMatcher.Match([slot],
+            [new PluginBuildOutput("Contoso.Plugins", "/a/Contoso.Plugins.dll", false), new PluginBuildOutput("Contoso.Plugins", "/b/Contoso.Plugins.dll", false)], [], "Sales");
+
+        result.DuplicateOutputs.Should().ContainSingle();
+    }
+}

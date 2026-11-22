@@ -190,3 +190,17 @@ public class SolutionPackServiceBuildFlagTests
         act.Should().NotThrow();
     }
 }
+
+public class SolutionPackServiceDuplicateOutputTests
+{
+    [Fact]
+    public void EnsureEveryOutputHasASlot_Fails_WhenTwoOutputsMapToOneSlot()
+    {
+        var match = new Flowline.Core.Deploy.SlotMatchResult([], [], []) { DuplicateOutputs = ["main.js and MAIN.js (cr_Sales/main.js)"] };
+
+        var act = () => SolutionPackService.EnsureEveryOutputHasASlot(match);
+
+        act.Should().Throw<Flowline.Core.FlowlineException>()
+            .Where(e => e.ExitCode == Flowline.Core.ExitCode.ValidationFailed && e.Message.Contains("main.js and MAIN.js"));
+    }
+}

@@ -159,6 +159,9 @@ internal static class SolutionPackService
 
     internal static void EnsureEveryOutputHasASlot(SlotMatchResult match)
     {
+        if (match.DuplicateOutputs.Count > 0)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"Two build outputs map to the same place in the solution: {Shown(match.DuplicateOutputs)} — rename or remove one, then pack again.");
         if (match.UnmatchedOutputs.Count > 0)
             throw new FlowlineException(ExitCode.ValidationFailed,
                 $"No place in the solution for {Shown(match.UnmatchedOutputs)} — run 'push' then 'pull' to add it, then pack again.");
@@ -239,20 +242,20 @@ internal static class SolutionPackService
     // Takes no solution name: all three project paths come out of the already-loaded layout, so a relocated
     // or renamed project stays in scope without knowing what it is called.
     //
-    // With build output in the zip the project sources matter too, so the scope widens to the whole project
-    // folders: uncommitted source can't be compiled into a zip that then gets tagged as this commit. Build
-    // output folders are gitignored, so they stay out of it.
-    internal static IReadOnlyList<string> GetPackInputPaths(SolutionFileLayout layout, string dataverseSolutionFolder, bool includeProjectSources = false)
-    {
-        string Scope(string projectPath) => includeProjectSources ? Path.GetDirectoryName(projectPath)! : projectPath;
-        return
-        [
-            dataverseSolutionFolder,
-            ..layout.PluginProjects.Select(c => Scope(c.ProjectPath)),
-            // Omitted when null: no WebResources project is a real absence, not a scope gap.
-            ..layout.WebResourcesProjectPath is { } wr ? new[] { Scope(wr) } : Array.Empty<string>()
-        ];
-    }
+    // With build output in the zip, anything the build reads matters: project sources, a root
+    // Directory.Build.props, a referenced sibling project. Pass buildGraphRoot (the repository root) and the
+    // scope is the whole repository, so uncommitted input can't be compiled into a zip that then gets tagged
+    // as this commit. Build output folders are gitignored, so they stay out of it.
+    internal static IReadOnlyList<string> GetPackInputPaths(SolutionFileLayout layout, string dataverseSolutionFolder, string? buildGraphRoot = null) =>
+        buildGraphRoot is not null
+            ? [buildGraphRoot]
+            :
+            [
+                dataverseSolutionFolder,
+                ..layout.PluginProjects.Select(c => c.ProjectPath),
+                // Omitted when null: no WebResources project is a real absence, not a scope gap.
+                ..layout.WebResourcesProjectPath is { } wr ? new[] { wr } : Array.Empty<string>()
+            ];
 
     internal static async Task ValidateGitCleanAsync(IReadOnlyList<string> inputPaths, string rootFolder, SubprocessCapture capture, string command, CancellationToken ct)
     {
