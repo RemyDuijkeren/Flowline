@@ -51,8 +51,9 @@ public class PackCommand(CommandServices services) : FlowlineCommand<PackCommand
 
         SolutionPackService.ValidateBuildFlags(usingExplicitArtifact: false, settings.BinariesFromBuild, settings.NoBuild);
 
-        var inputPaths = SolutionPackService.GetPackInputPaths(layout, dataverseSolutionFolder,
-            buildGraphRoot: settings.BinariesFromBuild ? GitUtils.FindRepositoryRoot(RootFolder) ?? RootFolder : null);
+        IReadOnlyList<string> inputPaths = settings.BinariesFromBuild
+            ? [GitUtils.FindRepositoryRoot(RootFolder) ?? RootFolder]
+            : SolutionPackService.GetPackInputPaths(layout, dataverseSolutionFolder);
         await SolutionPackService.ValidateGitCleanAsync(inputPaths, RootFolder, _capture, "pack", cancellationToken);
 
         if (FindMappingFile(dataverseSolutionFolder) is { } mappingFile)

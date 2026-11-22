@@ -166,24 +166,15 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         IReadOnlyList<SlotCopy> buildOutput = [];
         if (!usingExplicitArtifact)
         {
-            deploymentInputPaths = SolutionPackService.GetPackInputPaths(layout!, dataverseSolutionFolder!, // non-null on the packed route
-                buildGraphRoot: settings.BinariesFromBuild ? GitUtils.FindRepositoryRoot(RootFolder) ?? RootFolder : null);
+            deploymentInputPaths = settings.BinariesFromBuild
+                ? [GitUtils.FindRepositoryRoot(RootFolder) ?? RootFolder]
+                : SolutionPackService.GetPackInputPaths(layout!, dataverseSolutionFolder!); // non-null on the packed route
             await SolutionPackService.ValidateGitCleanAsync(deploymentInputPaths, RootFolder, _capture, "deploy", cancellationToken);
 
-            // Offline and cheap, so it fails before any target check or connection. The pack step stages again:
-            // ponytail: one extra copy of the tracked files, cheaper than holding a temp folder open across the
-            // whole deploy; hold it instead if solution folders grow large enough for the copy to show.
-            // Under --binaries-from-build the build and slot match run here too, for the same reason.
+            // Offline, so a build or slot mismatch fails before any target check or connection. A slot without a
+            // committed binary is caught at the pack step.
             if (settings.BinariesFromBuild)
-            {
                 buildOutput = await SolutionPackService.BuildForPackAsync(Console, _capture, layout!, sln.UniqueName, sln.PluginPackageMode, settings.NoBuild, RootFolder, cancellationToken);
-            }
-            else
-            {
-                var precheck = await SolutionPackService.StageTrackedSolutionAsync(dataverseSolutionFolder!, RootFolder, _capture, cancellationToken);
-                try { SolutionPackService.EnsureSlotsHaveBinaries(precheck); }
-                finally { SolutionPackService.DeleteStagedFolder(precheck, Logger); }
-            }
         }
 
         var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(target, sln, settings, cancellationToken);

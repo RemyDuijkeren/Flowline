@@ -51,19 +51,6 @@ public class DeployCommandDeploymentInputPathDiscoveryTests : IDisposable
         """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""";
 
     [Fact]
-    public async Task GetPackInputPaths_WithBuildGraphRoot_ScopesTheWholeRepository()
-    {
-        WriteProject(Path.Combine("Sales", "Sales.Plugins.csproj"), PluginProjectXml());
-        WriteSolution(@"Sales\Sales.Plugins.csproj");
-
-        var layout = await SolutionFileLayout.LoadAsync(_root);
-        var paths = SolutionPackService.GetPackInputPaths(layout, Path.Combine(_root, "Solution"), buildGraphRoot: _root);
-
-        // A root Directory.Build.props or a referenced sibling project is build input too.
-        paths.Should().Equal(_root);
-    }
-
-    [Fact]
     public async Task GetPackInputPaths_TwoPluginProjects_IncludesBothProjectFiles()
     {
         var sales = WriteProject(Path.Combine("Sales", "Sales.Plugins.csproj"), PluginProjectXml());
