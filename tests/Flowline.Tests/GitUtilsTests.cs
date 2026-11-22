@@ -99,6 +99,31 @@ public class GitUtilsTests : IDisposable
     }
 
     [Fact]
+    public async Task GetTrackedFilesAsync_WithTrackedUntrackedAndIgnored_ShouldReturnOnlyTracked()
+    {
+        File.WriteAllText(Path.Combine(_root, ".gitignore"), "ignored.xml\n");
+        CreateAndCommitFile("src/tracked.xml");
+        File.WriteAllText(Path.Combine(_root, "src", "untracked.xml"), "x");
+        File.WriteAllText(Path.Combine(_root, "src", "ignored.xml"), "x");
+
+        var result = await GitUtils.GetTrackedFilesAsync(Path.Combine(_root, "src"), _root);
+
+        result.Should().ContainSingle().Which.Should().Be("src/tracked.xml");
+    }
+
+    [Fact]
+    public async Task GetTrackedFilesAsync_WithNestedFolders_ShouldReturnAllRelativeToWorkingDirectory()
+    {
+        CreateAndCommitFile("src/a.xml");
+        CreateAndCommitFile("src/sub/deep/b.xml");
+        CreateAndCommitFile("src/with space/c.xml");
+
+        var result = await GitUtils.GetTrackedFilesAsync("src", _root);
+
+        result.Should().BeEquivalentTo("src/a.xml", "src/sub/deep/b.xml", "src/with space/c.xml");
+    }
+
+    [Fact]
     public async Task GetUncommittedChangesInPathAsync_WithCleanRepo_ShouldReturnEmptyList()
     {
         var result = await GitUtils.GetUncommittedChangesInPathAsync(

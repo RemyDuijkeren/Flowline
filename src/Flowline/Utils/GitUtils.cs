@@ -190,6 +190,23 @@ public static class GitUtils
                      .ToList();
     }
 
+    // `-z` keeps names with spaces or non-ASCII unquoted. Non-zero exit throws (default validation),
+    // like GetUncommittedChangesInPathAsync.
+    public static async Task<IReadOnlyList<string>> GetTrackedFilesAsync(string path, string workingDirectory, SubprocessCapture? capture = null, CancellationToken cancellationToken = default)
+    {
+        var (cmd, pathArgs) = BuildGitPathCommand([path], workingDirectory);
+
+        var finalCmd = cmd.WithArguments(args =>
+        {
+            args.Add("ls-files").Add("-z").Add("--");
+            foreach (var pathArg in pathArgs) args.Add(pathArg);
+        });
+        var result = await (capture?.Apply(finalCmd) ?? finalCmd)
+                           .ExecuteBufferedAsync(cancellationToken);
+
+        return result.StandardOutput.Split('\0', StringSplitOptions.RemoveEmptyEntries).ToList();
+    }
+
     public static Task<string?> GetLastCommitShaForPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default) =>
         GetLastCommitShaForPathAsync([path], workingDirectory, capture, cancellationToken);
 
