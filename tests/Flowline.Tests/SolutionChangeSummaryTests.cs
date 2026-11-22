@@ -208,6 +208,10 @@ public class SolutionChangeSummaryComputeTests : IDisposable
         RunGit("init");
         RunGit("config", "user.email", "test@example.com");
         RunGit("config", "user.name", "Test");
+        // No background gc or maintenance after commits: a detached git process writing into .git races the
+        // test that deletes .git (seen on CI as a file vanishing mid-cleanup).
+        RunGit("config", "gc.auto", "0");
+        RunGit("config", "maintenance.auto", "false");
         // Initial commit so HEAD exists
         var placeholder = Path.Combine(_root, ".gitkeep");
         File.WriteAllText(placeholder, "");
