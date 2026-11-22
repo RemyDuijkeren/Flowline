@@ -68,6 +68,10 @@ git commit -m "feat: add validation"
 flowline diff v1.2.0   # what changed since the last release
 flowline deploy test
 flowline deploy prod
+
+# Or build the zip once (CI, ISV hand-off) and import that same file
+flowline pack
+flowline deploy prod --path artifacts/ContosoSales_1_2_0_0_unmanaged.zip
 ```
 
 Starting from scratch instead? `flowline init <solution-name>` creates the publisher and solution in Dataverse, then scaffolds the repo the same way — see [Command Reference](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init).
@@ -149,6 +153,7 @@ export function onChangeCreditlimit(executionContext) { ... }
 | [`init [solution-name]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#init)                 | Create a new publisher + empty solution in Dataverse (greenfield), then scaffold the repo; run with no name to be prompted                                                                                     |
 | [`push`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#push)                                 | Build and sync code assets to DEV; `push plugins` or `push webresources` for one target, or standalone with `--path`                                                                                           |
 | [`pull`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#pull)                                 | Pull the current solution state from DEV into source control                                                                                                                                                   |
+| [`pack`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#pack)                                 | Pack the committed solution into a versioned zip without a target environment, solution checked; import it later with `deploy --path`                                                                          |
 | [`deploy <target>`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#deploy)                    | Pack from the repo and import into `test`, `uat`, `prod`, or a URL; or deploy a pre-built zip standalone with `--path`                                                                                         |
 | [`provision [dev\|test\|uat]`](https://github.com/RemyDuijkeren/Flowline/wiki/04-Command-Reference#provision)      | Provision a DEV, TEST or UAT environment by copying from production                                                                                                                                            |
 | [`generate`](https://github.com/RemyDuijkeren/Flowline/wiki/11-Generate-Early-Bound-Types)                         | Generate early-bound C# types into `Plugins/Models/` (configurable with `--output`)                                                                                                                            |

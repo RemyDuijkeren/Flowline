@@ -657,7 +657,8 @@ stands in for a mechanism of its own rather than plugging into B, C, or D. Its c
 | `clone` | §4 — initialize a project from an existing Dataverse solution: unpack solution XML, scaffold the Plugins and WebResources projects. |
 | `push` | §4 steps 3–5 — build and register the plugin assembly and web resources directly into DEV, reading `[Step]` attributes to create or update registrations. Skips pack and import. |
 | `pull` | §4 steps 7–8 and §5 point 2 — bump the version in DEV, then export and unpack to source-controlled XML. |
-| `deploy` | §4 steps 14–16 — pack from the repo and import into test, uat, prod, or a URL. |
+| `pack` | §4 step 11 — pack the committed solution into a versioned zip without a target environment, solution checked, for CI artifacts and ISV hand-off. `--binaries-from-build` is the one opt-out from "pack only what DEV confirmed": it lays fresh plugin and web resource builds over the committed solution, with a warning. |
+| `deploy` | §4 steps 14–16 — pack from the repo and import into test, uat, prod, or a URL. Same pack path and `--binaries-from-build` opt-out as `pack`. |
 | `provision` | §2 — create a DEV, TEST, or UAT environment by copying from production. |
 | `drift` | §9 — compare committed source against a live environment and report components present there but not declared in source. Read-only; same comparison `deploy` runs, without the deletion. |
 | `generate` | Early-bound C# types from solution entities and custom APIs. |

@@ -71,6 +71,9 @@ routine post-deploy step.
 5. Promote: `flowline deploy test` → `flowline deploy prod`, DTAP-gated. `flowline deploy <env> --dry-run`
    runs every pre-flight (DTAP gate, git-clean, drift, pack, solution checker, orphan report) plus a
    labeled backup, then stops before importing; it ends with `Dry run complete`.
+   To ship a zip instead of deploying (CI artifact, ISV hand-off), run `flowline pack`: it packs the
+   committed solution into `artifacts/<Solution>_<version>_managed|unmanaged.zip` without a target,
+   and `flowline deploy <env> --path <zip>` imports that same file later.
 
 6. `flowline settings apply <env>` after a deploy, when the environment needs values or component state a
    deploy can't carry: environment variable values, connection reference bindings, and the cloud flows,
@@ -179,7 +182,9 @@ some cleanup failed.
   (DEV only). `push plugins` adds `--assembly-only`, `push webresources` adds `--no-publish`, and both
   take `--path` for standalone mode.
 - `deploy`: `--dry-run`, `--path <zip>`, `--no-delete`, `--no-backup`, `--skip-dtap-check`,
-  `--skip-solution-check`, `--skip-component-check`.
+  `--skip-solution-check`, `--skip-component-check`, `--binaries-from-build` (pack plugin and web
+  resource binaries from the build instead of the committed copies), `--no-build`.
+- `pack`: `--output <dir>`, `--skip-solution-check`, `--binaries-from-build`, `--no-build`.
 - `pull`: `--bump patch|minor|major|none`, `--managed [false]`, `--no-build`,
   `--env <role|url>` (DEV only).
 - `init`: `--env <role|url>` (DEV only), `--publisher-prefix <prefix>`, `--publisher-name`, `--display-name`.
@@ -190,7 +195,7 @@ some cleanup failed.
   path resolves against the current folder, and it's rewritten every run), `--exit-code`. Writes nothing
   unless `--write` is passed.
 - Global (every command): `--verbose` (`-v`), `--force <specifier>` (`-f`). Dataverse-touching commands
-  only (`clone`, `push`, `pull`, `deploy`, `provision`, `generate`, `drift`, `settings`): `--no-cache`,
+  only (`clone`, `push`, `pull`, `pack`, `deploy`, `provision`, `generate`, `drift`, `settings`): `--no-cache`,
   `--auto-select-auth-profile` (`-a`). `--env <role|url>` on `clone`, `push`, `pull`, `generate`,
   `init` and `provision`. On `provision` it names the Production source to copy from, default `prod`.
 - `flowline sln add <path.cdsproj>` wires a `.cdsproj` into the solution file — `dotnet sln add`

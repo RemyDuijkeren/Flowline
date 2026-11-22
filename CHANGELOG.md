@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `flowline pack` packs the committed solution into a zip without a target environment, so CI can build the artifact once, attach it to a release or hand it to a customer, and import that same file later with `deploy --path`. The zip is `<Solution>_<version>_managed.zip` (or `_unmanaged.zip`), with the version from `Solution.xml`, written to `artifacts/` or `--output <dir>`. It needs a clean git working tree, runs the solution checker (which needs a PAC login but no target; `--skip-solution-check` skips it), and surfaces the zip on Azure Pipelines and GitHub Actions the way `deploy` does. ([#24](https://github.com/RemyDuijkeren/Flowline/issues/24))
+- `pack` and `deploy` take `--binaries-from-build`: they build the plugin and WebResources projects the way `push` does and pack that output in place of the committed plugin assemblies, plugin packages and web resource files, leaving the rest of the solution as committed and the working tree untouched. It replaces gitignoring the binaries and copying build output into `Solution/src`, or a `pac solution pack --map` mapping file. A build output with no matching component in the solution, or a component with no build output, fails the run; `--no-build` uses existing Release output.
+
+### Changed
+
+- **Breaking:** `deploy` packs fresh on every run. The cached zip it reused while the source was unchanged, and its `.manifest.json` next to the zip, are gone; to import one build into several environments, run `pack` and pass its zip to `deploy --path`. `--no-cache` still re-runs the pre-flight checks.
+- **Breaking:** the zip `deploy` writes to `artifacts/` carries the solution version in its name, `<Solution>_<version>_managed.zip` (or `_unmanaged.zip`), instead of `<Solution>_managed.zip`. Scripts that pick up the old fixed name need updating; on GitHub Actions, read the path from the `artifact-path-<Solution>` step output instead.
+- **Breaking:** `deploy` packs only the files committed in `Solution/src`, not every file on disk. An ignored or stray file no longer ends up in the zip, and the same commit packs the same zip on any machine. A plugin assembly, plugin package or web resource whose binary isn't committed now fails before connecting, instead of the solution being packed without it; build output copied into gitignored slots is not packed any more, so pass `--binaries-from-build` instead.
+
 ### Fixed
 
 - `push webresources` no longer republishes a text web resource whose only difference is line endings or a UTF-8 byte order mark. A checkout on Windows and one on Linux of the same commit now push nothing new. The drift warnings from `pull` and `deploy` ignore the same differences. Images and other binary types still compare byte for byte, and what gets uploaded is unchanged.

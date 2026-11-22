@@ -473,6 +473,7 @@ namespace Flowline
             config.AddExample("clone", "ContosoSales");
             config.AddExample("push");
             config.AddExample("pull");
+            config.AddExample("pack");
             config.AddExample("deploy", "prod");
 
             // init = create a brand-new publisher + empty unmanaged solution in DEV, then scaffold the repo
