@@ -161,13 +161,10 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
 
         var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(target, sln, settings, cancellationToken);
 
-        // Resolve the DTAP gate's version cheaply (artifact manifest, cache entry, or local Solution.xml) so the
-        // gate keeps failing fast before any expensive work — packing itself is deferred past the gate below.
-        var candidatePackagePath = ResolveArtifactZipPath(slnFolder, sln.UniqueName, sln.IncludeManaged);
+        // Resolve the DTAP gate's version cheaply (artifact manifest or local Solution.xml) so the gate keeps
+        // failing fast before any expensive work — packing itself is deferred past the gate below.
         string gateVersion;
-        ArtifactCacheEntry? cacheEntry = null;
         string? currentCommitSha = null;
-        var cacheOutcome = CacheOutcome.NoEntry;
 
         if (usingExplicitArtifact)
         {
@@ -187,12 +184,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         else
         {
             currentCommitSha = await GitUtils.GetLastCommitShaForPathAsync(deploymentInputPaths, RootFolder, _capture, cancellationToken);
-            cacheEntry = ReadCacheEntryIfExists(CacheManifestPath(candidatePackagePath));
-            cacheOutcome = ResolveCacheOutcome(cacheEntry, currentCommitSha, sln.IncludeManaged, settings.NoCache, File.Exists(candidatePackagePath));
-
-            gateVersion = cacheOutcome == CacheOutcome.Hit
-                ? cacheEntry!.Version
-                : ReadLocalSolutionVersion(dataverseSolutionFolder!); // non-null on the packed route
+            gateVersion = ReadLocalSolutionVersion(dataverseSolutionFolder!); // non-null on the packed route
         }
 
         await ValidateDtapGateAsync(sln, gateVersion, targetUrl, settings, cancellationToken);
@@ -256,8 +248,8 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         // which publishes only what was imported. Costs building the component list from the packed solution;
         // revisit if org-wide publish time on shared Test/UAT becomes a real complaint.
         var publishChanges = !sln.IncludeManaged;
-        Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed} stageAndUpgrade={StageAndUpgrade} publishChanges={PublishChanges} cacheOutcome={CacheOutcome}",
-            targetUrl, sln.UniqueName, runMode, sln.IncludeManaged, useStageAndUpgrade, publishChanges, usingExplicitArtifact ? (CacheOutcome?)null : cacheOutcome);
+        Logger.LogInformation("target={TargetUrl} solution={SolutionName} mode={RunMode} managed={Managed} stageAndUpgrade={StageAndUpgrade} publishChanges={PublishChanges}",
+            targetUrl, sln.UniqueName, runMode, sln.IncludeManaged, useStageAndUpgrade, publishChanges);
 
         var (service, _) = await ConnectToDataverseAsync(dataverseConnector, targetUrl, cancellationToken, resolvedProfile);
 
@@ -279,39 +271,21 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         }
         else
         {
-            var hasTestOrUat = !string.IsNullOrEmpty(Config.TestUrl) || !string.IsNullOrEmpty(Config.UatUrl);
-            var cacheMessage = BuildCacheStatusMessage(cacheOutcome, sln.UniqueName, cacheEntry?.CommitSha, currentCommitSha,
-                // Only shapes the message's wording (pipeline framing is noise in CI) — never gates a
-                // prompt, so an env-var probe is right here rather than a console capability check.
-                cacheEntry?.Managed ?? false, sln.IncludeManaged, CiPlatform.Detect() is not null, hasTestOrUat);
-            if (cacheOutcome == CacheOutcome.Hit)
-                Console.Skip(cacheMessage);
-            else
-                Console.Info(cacheMessage);
-
-            if (cacheOutcome == CacheOutcome.Hit)
-            {
-                packagePath = candidatePackagePath;
-            }
-            else
-            {
-                Logger.LogInformation("Packing: {SolutionName}", sln.UniqueName);
-                packagePath = await PackSolutionAsync(sln, dataverseSolutionFolder!, candidatePackagePath, settings, cancellationToken); // non-null on the packed route
-                if (currentCommitSha != null)
-                    WriteCacheEntry(CacheManifestPath(packagePath), new ArtifactCacheEntry(gateVersion, sln.IncludeManaged, currentCommitSha));
-            }
+            Logger.LogInformation("Packing: {SolutionName}", sln.UniqueName);
+            packagePath = SolutionPackService.ResolveZipPath(slnFolder, output: null, sln.UniqueName, gateVersion, sln.IncludeManaged);
+            await SolutionPackService.PackAsync(Console, _capture, sln.UniqueName,
+                Path.Combine(dataverseSolutionFolder!, "src"), packagePath, sln.IncludeManaged, cancellationToken); // non-null on the packed route
         }
 
         // R5: fires regardless of whether the subsequent import succeeds — the packed zip is already
         // valid and potentially useful (manual retry, inspection) once it's resolved, independent of
-        // origin (fresh pack, cache reuse, or --path) or import outcome. U3: never fires under --dry-run —
+        // origin (fresh pack or --path) or import outcome. U3: never fires under --dry-run —
         // this signal hands a packed artifact off to a later pipeline stage for real promotion, and
         // --dry-run never produces one.
         if (!settings.DryRun)
             PublishArtifactForCi(packagePath, sln.UniqueName, gateVersion);
 
-        // Always unpack the zip actually being imported — whether freshly packed, reused from cache, or
-        // supplied via --path — so post-deploy services evaluate real imported content, never an assumed
+        // Always unpack the zip actually being imported — whether freshly packed or supplied via --path — so post-deploy services evaluate real imported content, never an assumed
         // local package source that may not match (e.g. a --path artifact built from a different commit).
         var tmpUnpackDir = Directory.CreateTempSubdirectory("flowline-deploy-").FullName;
         try
@@ -320,7 +294,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
 
             var solutionInfo = new DeploySolutionInfo(sln.UniqueName, targetEnv.EnvironmentUrl!, sln.IncludeManaged, existingSolutionInTarget);
             // KTD2: the checkout's own src/ — distinct from tmpUnpackDir above (the actually-imported
-            // content, whether freshly packed, cache-reused, or --path). Null on the --path route, which
+            // content, whether freshly packed or --path). Null on the --path route, which
             // leaves dataverseSolutionFolder unresolved (no solution file needed there) — the provenance
             // lookup then reads every entry as Undetermined rather than guessing a path.
             var checkoutSolutionSrcRoot = dataverseSolutionFolder != null ? Path.Combine(dataverseSolutionFolder, "src") : null;
@@ -557,13 +531,13 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
             $"Uncommitted changes in {shown}{more} — commit or stash first, then deploy.");
     }
 
-    // R15: the SAME path list scopes both the clean-check and the artifact-cache commit-sha lookup, so the
-    // two can never diverge — resolved once per run in ExecuteFlowlineAsync and handed to both, which also
-    // keeps the solution file read to one per deploy (R4).
+    // The SAME path list scopes both the clean-check and the commit-sha lookup behind the provenance note and
+    // tag hint, so the two can never diverge — resolved once per run in ExecuteFlowlineAsync and handed to
+    // both, which also keeps the solution file read to one per deploy.
     //
     // Deliberately narrow to what actually affects the packed artifact: Solution/, every plugin project the
     // solution file references, and the WebResources project file. The plugin pre-filter is what keeps this
-    // narrow — an unrelated csproj in the solution stays out of the cache key, so it can't invalidate a deploy.
+    // narrow — an unrelated csproj in the solution stays out of scope, so it can't block a deploy.
     //
     // Takes no solution name: all three project paths come out of the already-loaded layout, so a relocated
     // or renamed project stays in scope without deploy knowing what it is called. Synchronous — the layout
@@ -602,89 +576,8 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
                 "Local changes not in Dataverse — deploy would revert them. Run 'push' then 'pull' to capture them, or use --force drift to skip.");
     }
 
-    private static string ResolveArtifactZipPath(string slnFolder, string slnName, bool includeManaged)
-    {
-        var suffix = includeManaged ? "_managed" : "_unmanaged";
-        return Path.Combine(slnFolder, "artifacts", $"{slnName}{suffix}.zip");
-    }
-
-    private static string CacheManifestPath(string packagePath) => packagePath + ".manifest.json";
-
-    internal sealed record ArtifactCacheEntry(string Version, bool Managed, string CommitSha);
-
-    internal enum CacheOutcome
-    {
-        Hit,
-        NoEntry,
-        CommitChanged,
-        NoCurrentCommit,
-        ManagedMismatch,
-        NoCacheFlag,
-        ArtifactFileMissing
-    }
-
-    // KTD6: precedence mirrors the old ArtifactCacheHit short-circuit order — the first condition that
-    // applies names the reason; this never reports more than one.
-    internal static CacheOutcome ResolveCacheOutcome(ArtifactCacheEntry? entry, string? currentCommitSha, bool wantManaged, bool noCache, bool artifactFileExists)
-    {
-        if (noCache) return CacheOutcome.NoCacheFlag;
-        if (entry == null) return CacheOutcome.NoEntry;
-        if (currentCommitSha == null) return CacheOutcome.NoCurrentCommit;
-        if (entry.CommitSha != currentCommitSha) return CacheOutcome.CommitChanged;
-        if (entry.Managed != wantManaged) return CacheOutcome.ManagedMismatch;
-        if (!artifactFileExists) return CacheOutcome.ArtifactFileMissing;
-        return CacheOutcome.Hit;
-    }
-
-    // KTD4/KTD5: pure so the outcome/CI/Test-UAT branching is unit-testable without a live PAC CLI or
-    // Dataverse connection. The pipeline-style framing only appears when hasTestOrUat and never on CI —
-    // most CI runners are ephemeral per stage, so the "reused across every promotion stage" framing
-    // wouldn't hold even when this particular run genuinely hit the cache (a self-hosted or
-    // persisted-workspace runner can); the CI note is appended to whatever outcome actually resolved
-    // to, never a replacement for it.
-    internal static string BuildCacheStatusMessage(CacheOutcome outcome, string solutionName, string? cachedCommitSha,
-        string? currentCommitSha, bool cachedManaged, bool wantManaged, bool isCi, bool hasTestOrUat)
-    {
-        var showPipelineFraming = hasTestOrUat && !isCi;
-        const string reusedAcrossStages = " Built once, reused across every promotion stage until source changes.";
-        const string willBeReused = " This build will be reused across later promotion stages unless source changes.";
-
-        var message = outcome switch
-        {
-            CacheOutcome.Hit =>
-                $"Reusing cached artifact for '{solutionName}' — source unchanged since commit {cachedCommitSha![..7]}."
-                + (showPipelineFraming ? reusedAcrossStages : ""),
-            CacheOutcome.NoEntry =>
-                $"No cached build yet for '{solutionName}' — packing now."
-                + (showPipelineFraming ? willBeReused : ""),
-            CacheOutcome.CommitChanged =>
-                $"Packing '{solutionName}' — source changed since the cached build (commit {cachedCommitSha![..7]} -> {currentCommitSha![..7]})."
-                + (showPipelineFraming ? willBeReused : ""),
-            CacheOutcome.ManagedMismatch =>
-                $"Packing '{solutionName}' — cached build was {(cachedManaged ? "managed" : "unmanaged")}, this deploy wants {(wantManaged ? "managed" : "unmanaged")}."
-                + (showPipelineFraming ? willBeReused : ""),
-            CacheOutcome.NoCacheFlag =>
-                $"Packing '{solutionName}' — --no-cache forced a fresh pack."
-                + (showPipelineFraming ? willBeReused : ""),
-            CacheOutcome.ArtifactFileMissing =>
-                $"Packing '{solutionName}' — the cached manifest exists but the artifact file is missing."
-                + (showPipelineFraming ? willBeReused : ""),
-            CacheOutcome.NoCurrentCommit =>
-                $"Packing '{solutionName}' — couldn't resolve the current commit."
-                + (showPipelineFraming ? willBeReused : ""),
-            _ => throw new ArgumentOutOfRangeException(nameof(outcome))
-        };
-
-        if (isCi)
-            message += " On CI, when each DTAP stage runs on its own ephemeral runner, this cache can't carry a build between stages — use --path to reuse one build across them instead.";
-
-        return message;
-    }
-
     // KTD3: Azure Pipelines' documented stdout logging-command protocol for any process — no SDK, no opt-in flag.
-    // The artifact name (not the underlying file) carries the version, so it's visible at a glance in the
-    // pipeline's Artifacts tab without making the on-disk zip's filename — load-bearing for the artifact-reuse
-    // cache and --path — version-dependent.
+    // The artifact name carries the version too, so it's visible at a glance in the pipeline's Artifacts tab.
     internal static string BuildAzureDevOpsArtifactUploadLine(string packagePath, string solutionName, string version) =>
         $"##vso[artifact.upload artifactname={solutionName}-{version}]{packagePath}";
 
@@ -693,7 +586,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
     internal static string BuildGitHubActionsOutputLine(string packagePath, string solutionName) =>
         $"artifact-path-{solutionName}={packagePath}";
 
-    // KTD2: called once packagePath is finalized, regardless of origin (fresh pack, cache reuse, --path)
+    // KTD2: called once packagePath is finalized, regardless of origin (fresh pack or --path)
     // or subsequent import outcome (R5). KTD5/R4: never lets a CI-integration side effect fail the deploy.
     private void PublishArtifactForCi(string packagePath, string solutionName, string version)
     {
@@ -724,36 +617,6 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Failed to publish CI artifact signal for {SolutionName}", solutionName);
-        }
-    }
-
-    internal static ArtifactCacheEntry? ReadCacheEntryIfExists(string manifestPath)
-    {
-        if (!File.Exists(manifestPath)) return null;
-
-        try
-        {
-            return JsonSerializer.Deserialize<ArtifactCacheEntry>(File.ReadAllText(manifestPath));
-        }
-        catch (Exception)
-        {
-            // Corrupt or partially-written sidecar (e.g. a prior process was killed mid-write) — the tool owns
-            // this file, not the user, so treat it the same as absent rather than crashing an ordinary deploy.
-            return null;
-        }
-    }
-
-    private static void WriteCacheEntry(string manifestPath, ArtifactCacheEntry entry)
-    {
-        try
-        {
-            File.WriteAllText(manifestPath, JsonSerializer.Serialize(entry));
-        }
-        catch (Exception)
-        {
-            // A failed cache write shouldn't fail a deploy that already packed successfully — worst case,
-            // the next deploy just doesn't find this entry and repacks, matching ReadCacheEntryIfExists's
-            // own tolerance for a missing/corrupt sidecar.
         }
     }
 
@@ -793,33 +656,6 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
     // R14: standalone-only — see the call site's comment for why project mode stays silent here.
     internal static string BuildStandaloneIdentityNote(string artifactFileName) =>
         $"Standalone — no project here, identity from '{artifactFileName}'.";
-
-    private async Task<string> PackSolutionAsync(ProjectSolution sln, string dataverseSolutionFolder, string packagePath, Settings settings, CancellationToken ct)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(packagePath)!);
-
-        var packageType = sln.IncludeManaged ? "Managed" : "Unmanaged";
-
-        var (cmdName, prefixArgs, _) = await PacUtils.GetBestPacCommandAsync(ct);
-        var result = await Console.Status().FlowlineSpinner().StartAsync(
-            $"Packing [bold]{sln.UniqueName}[/]...",
-            _ => Cli.Wrap(cmdName)
-                    .WithArguments(args => args
-                        .AddIfNotNull(prefixArgs)
-                        .Add("solution").Add("pack")
-                        .Add("--folder").Add(Path.Combine(dataverseSolutionFolder, "src"))
-                        .Add("--zipFile").Add(packagePath)
-                        .Add("--packageType").Add(packageType))
-                    .WithValidation(CommandResultValidation.None)
-                    .WithCapture(_capture)
-                    .ExecuteAsync(ct)
-                    .Task);
-
-        if (result.ExitCode != 0)
-            throw new FlowlineException(ExitCode.BuildFailed, "Pack failed — check your solution source.");
-
-        return packagePath;
-    }
 
     private async Task ImportSolutionAsync(string packagePath, EnvironmentInfo targetEnv, string slnName, bool stageAndUpgrade, bool publishChanges, CancellationToken ct)
     {
@@ -1059,7 +895,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         }
     }
 
-    // Packed/cached route: dataverseSolutionFolder/src (the compare's own source) and checkoutSolutionSrcRoot
+    // Packed route: dataverseSolutionFolder/src (the compare's own source) and checkoutSolutionSrcRoot
     // (what the lookup searches) are the same checkout path, and ValidateGitCleanAsync already guarantees no
     // uncommitted changes there — so the verdicts always describe exactly what's being imported. The one
     // thing that can go unconfirmed is naming which commit that is: currentCommitSha is null when

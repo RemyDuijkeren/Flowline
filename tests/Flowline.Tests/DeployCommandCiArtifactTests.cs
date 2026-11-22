@@ -5,7 +5,7 @@ namespace Flowline.Tests;
 
 public class DeployCommandCiArtifactTests
 {
-    private const string PackagePath = "artifacts/Contoso_unmanaged.zip";
+    private const string PackagePath = "artifacts/Contoso_1_2_0_0_unmanaged.zip";
     private const string SolutionName = "Contoso";
     private const string Version = "1.2.3.45";
 

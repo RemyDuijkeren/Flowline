@@ -524,7 +524,7 @@ namespace Flowline
 
             // Deploy (pack and import solution into environment)
             config.AddCommand<DeployCommand>("deploy")
-                  .WithDescription("Pack the solution from the repo and import it into the target environment (test, uat, prod, or URL). Needs a clean git working tree, or --path to import a pre-built zip from any folder. Reuses a cached pack while the source is unchanged; --no-cache forces a fresh one.")
+                  .WithDescription("Pack the solution from the repo and import it into the target environment (test, uat, prod, or URL). Needs a clean git working tree, or --path to import a pre-built zip from any folder. Packs fresh on every run; use pack and --path to import one build into several environments.")
                   .WithExample("deploy", "prod")
                   .WithExample("deploy", "https://contoso-test.crm4.dynamics.com/")
                   .WithExample("deploy", "test", "--path", "artifacts/ContosoCustomizations_1_2_0_0.zip")
