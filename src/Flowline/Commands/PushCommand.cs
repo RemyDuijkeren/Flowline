@@ -411,7 +411,7 @@ public sealed class PushCommand(CommandServices services, DataverseConnector dat
         "'flowline push webresources --path <folder> --solution-name <name>'.";
 }
 
-/// <summary>The push engine's pure helpers, reachable without a command instance or type argument.</summary>
+/// <summary>The push engine's helpers, reachable without a command instance or type argument. The two build helpers launch dotnet and are shared with pack and deploy.</summary>
 public static class PushSupport
 {
     /// <summary>
@@ -501,6 +501,7 @@ public static class PushSupport
 
         return webResourcesSyncFolder;
     }
+
     /// <summary>One plugin artifact ready to push, with the assembly name Dataverse should see.</summary>
     /// <param name="ProjectName">
     /// The solution-file project this came from — what the user has to go fix when the push fails, and

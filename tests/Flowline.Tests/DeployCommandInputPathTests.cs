@@ -6,7 +6,7 @@ using Flowline.Core.Solutions;
 
 namespace Flowline.Tests;
 
-// U5: the deploy input-path scope that feeds the git-clean gate now comes from solution-file membership rather than a fixed Plugins/Plugins.csproj (KTD12).
+// The deploy and pack input-path scope that feeds the git-clean gate comes from solution-file membership.
 public class DeployCommandDeploymentInputPathDiscoveryTests : IDisposable
 {
     readonly string _root = Path.Combine(Path.GetTempPath(), $"DeployInputPaths_{Guid.NewGuid():N}");

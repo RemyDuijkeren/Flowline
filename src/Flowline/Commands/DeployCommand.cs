@@ -302,18 +302,13 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         {
             Logger.LogInformation("Packing: {SolutionName}", sln.UniqueName);
             packagePath = SolutionPackService.ResolveZipPath(slnFolder, output: null, sln.UniqueName, gateVersion, sln.IncludeManaged);
-            var staged = await SolutionPackService.StageTrackedSolutionAsync(dataverseSolutionFolder!, RootFolder, _capture, cancellationToken); // non-null on the packed route
-            try
-            {
-                SolutionPackService.OverlayBuildOutput(staged, buildOutput);
-                await SolutionPackService.PackAsync(Console, _capture, sln.UniqueName, staged, packagePath, sln.IncludeManaged, cancellationToken);
-            }
-            finally { SolutionPackService.DeleteStagedFolder(staged, Logger); }
+            await SolutionPackService.PackFromCommitAsync(Console, _capture, Logger, sln.UniqueName, dataverseSolutionFolder!, RootFolder, // non-null on the packed route
+                packagePath, sln.IncludeManaged, settings.BinariesFromBuild ? buildOutput : null, cancellationToken);
         }
 
         // R5: fires regardless of whether the subsequent import succeeds — the packed zip is already
         // valid and potentially useful (manual retry, inspection) once it's resolved, independent of
-        // origin (fresh pack or --path) or import outcome. U3: never fires under --dry-run —
+        // origin (fresh pack or --path) or import outcome. Never fires under --dry-run —
         // this signal hands a packed artifact off to a later pipeline stage for real promotion, and
         // --dry-run never produces one.
         if (!settings.DryRun)

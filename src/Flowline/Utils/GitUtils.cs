@@ -204,7 +204,7 @@ public static class GitUtils
         var result = await (capture?.Apply(finalCmd) ?? finalCmd)
                            .ExecuteBufferedAsync(cancellationToken);
 
-        return result.StandardOutput.Split('\0', StringSplitOptions.RemoveEmptyEntries).ToList();
+        return result.StandardOutput.Split('\0', StringSplitOptions.RemoveEmptyEntries);
     }
 
     public static Task<string?> GetLastCommitShaForPathAsync(string path, string? workingDirectory = null, SubprocessCapture? capture = null, CancellationToken cancellationToken = default) =>

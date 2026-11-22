@@ -156,7 +156,7 @@ public static class PluginWebResourceDriftChecker
     /// Nupkg PluginPackage exports don't strip the dot, and any DLL with no readable metadata falls back to
     /// its on-disk filename, so both keep working unchanged.
     /// </remarks>
-    internal static string ResolveUnpackedAssemblyName(string dllPath) =>
+    static string ResolveUnpackedAssemblyName(string dllPath) =>
         ReadAssemblySimpleName(dllPath + ".data.xml") is { } simpleName
             ? simpleName + ".dll"
             : Path.GetFileName(dllPath);

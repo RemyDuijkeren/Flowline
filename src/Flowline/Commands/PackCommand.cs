@@ -67,19 +67,8 @@ public class PackCommand(CommandServices services) : FlowlineCommand<PackCommand
         var version = DeployCommand.ReadLocalSolutionVersion(dataverseSolutionFolder);
         var zipPath = SolutionPackService.ResolveZipPath(RootFolder, settings.Output, sln.UniqueName, version, sln.IncludeManaged);
 
-        var staged = await SolutionPackService.StageTrackedSolutionAsync(dataverseSolutionFolder, RootFolder, _capture, cancellationToken);
-        try
-        {
-            if (settings.BinariesFromBuild)
-                SolutionPackService.OverlayBuildOutput(staged, buildOutput);
-            else
-                SolutionPackService.EnsureSlotsHaveBinaries(staged);
-            await SolutionPackService.PackAsync(Console, _capture, sln.UniqueName, staged, zipPath, sln.IncludeManaged, cancellationToken);
-        }
-        finally
-        {
-            SolutionPackService.DeleteStagedFolder(staged, Logger);
-        }
+        await SolutionPackService.PackFromCommitAsync(Console, _capture, Logger, sln.UniqueName, dataverseSolutionFolder, RootFolder,
+            zipPath, sln.IncludeManaged, settings.BinariesFromBuild ? buildOutput : null, cancellationToken);
         Console.Ok($"Packed [bold]{sln.UniqueName}[/] {version} ({(sln.IncludeManaged ? "managed" : "unmanaged")})");
 
         if (settings.SkipSolutionCheck)
@@ -109,7 +98,7 @@ public class PackCommand(CommandServices services) : FlowlineCommand<PackCommand
     internal static string BuildCheckerUnavailableMessage(string checkerMessage) =>
         $"{checkerMessage.TrimEnd('.')}, or pass --skip-solution-check to pack without it.";
 
-    /// <summary>A mapping file beside the cdsproj, matched case-insensitively; the two names issue 24 lists.</summary>
+    /// <summary>A mapping file beside the cdsproj, matched case-insensitively.</summary>
     internal static string? FindMappingFile(string dataverseSolutionFolder) =>
         Directory.Exists(dataverseSolutionFolder)
             ? Directory.EnumerateFiles(dataverseSolutionFolder)

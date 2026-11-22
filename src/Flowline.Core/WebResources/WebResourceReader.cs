@@ -423,7 +423,7 @@ public class WebResourceReader(IAnsiConsole console)
     // Lets a flat, pre-existing Dataverse name (e.g. "dwe_legacyscript", no folder) round-trip as-is
     // instead of getting double-prefixed. A root-level file whose name doesn't look prefixed
     // (e.g. "app.js") still falls through to auto-prefix.
-    static bool IsVerbatimPath(string relativePath)
+    internal static bool IsVerbatimPath(string relativePath)
     {
         var slashIndex = relativePath.IndexOf('/');
         var firstSegment = slashIndex < 0 ? relativePath : relativePath[..slashIndex];

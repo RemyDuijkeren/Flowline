@@ -1,7 +1,7 @@
-using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using Flowline.Core.Plugins;
+using Flowline.Core.WebResources;
 
 namespace Flowline.Core.Deploy;
 
@@ -29,9 +29,6 @@ public sealed record SlotMatchResult(
 /// </summary>
 public static class BuildOutputSlotMatcher
 {
-    // Same naming rule as WebResourceReader: a first path segment starting with a publisher prefix is kept verbatim.
-    static readonly Regex VerbatimPrefixRegex = new(@"^[a-z][a-z0-9]*_", RegexOptions.Compiled);
-
     public static IReadOnlyList<SolutionSlot> FindSlots(string solutionSrcFolder)
     {
         var slots = new List<SolutionSlot>();
@@ -99,7 +96,7 @@ public static class BuildOutputSlotMatcher
         var prefix = FindPrefix(slots, solutionUniqueName);
         foreach (var w in webResources)
         {
-            var name = IsVerbatim(w.RelativePath) ? w.RelativePath
+            var name = WebResourceReader.IsVerbatimPath(w.RelativePath) ? w.RelativePath
                 : prefix is null ? null
                 : $"{prefix}_{solutionUniqueName}/{w.RelativePath}";
             var slot = name is null ? null : slots.FirstOrDefault(s => s.Kind == SlotKind.WebResource && Eq(s.Key, name));
@@ -113,12 +110,6 @@ public static class BuildOutputSlotMatcher
 
     static string Relative(string root, string path) => Path.GetRelativePath(root, path).Replace('\\', '/');
 
-    static bool IsVerbatim(string relativePath)
-    {
-        var slash = relativePath.IndexOf('/');
-        return VerbatimPrefixRegex.IsMatch(slash < 0 ? relativePath : relativePath[..slash]);
-    }
-
     // The publisher prefix is whatever precedes "_<solutionUniqueName>/" in an existing web resource name.
     static string? FindPrefix(IReadOnlyList<SolutionSlot> slots, string solutionUniqueName)
     {
@@ -126,7 +117,7 @@ public static class BuildOutputSlotMatcher
         foreach (var s in slots.Where(s => s.Kind == SlotKind.WebResource))
         {
             var i = s.Key.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-            if (i > 0 && VerbatimPrefixRegex.IsMatch(s.Key[..(i + 1)])) return s.Key[..i];
+            if (i > 0 && WebResourceReader.IsVerbatimPath(s.Key[..(i + 1)])) return s.Key[..i];
         }
         return null;
     }

@@ -105,10 +105,8 @@ internal static class SolutionPackService
             .ToList();
         if (missing.Count == 0) return;
 
-        var shown = string.Join(", ", missing.Take(3));
-        var more = missing.Count > 3 ? $" (+{missing.Count - 3} more)" : "";
         throw new FlowlineException(ExitCode.ValidationFailed,
-            $"No committed binary for {shown}{more} — commit it, or pass --binaries-from-build to pack it from the build.");
+            $"No committed binary for {Shown(missing)} — commit it, or pass --binaries-from-build to pack it from the build.");
     }
 
     /// <summary>
@@ -196,6 +194,28 @@ internal static class SolutionPackService
     static string Shown(IReadOnlyList<string> names) =>
         string.Join(", ", names.Take(3)) + (names.Count > 3 ? $" (+{names.Count - 3} more)" : "");
 
+    /// <summary>
+    /// The pack both commands run: stage the committed solution, lay any build output over it (otherwise check that
+    /// every slot has a committed binary), pack, and delete the staged folder.
+    /// </summary>
+    internal static async Task PackFromCommitAsync(IAnsiConsole console, SubprocessCapture capture, ILogger logger, string uniqueName,
+        string dataverseSolutionFolder, string rootFolder, string zipPath, bool managed, IReadOnlyList<SlotCopy>? buildOutput, CancellationToken ct)
+    {
+        var staged = await StageTrackedSolutionAsync(dataverseSolutionFolder, rootFolder, capture, ct);
+        try
+        {
+            if (buildOutput is null)
+                EnsureSlotsHaveBinaries(staged);
+            else
+                OverlayBuildOutput(staged, buildOutput);
+            await PackAsync(console, capture, uniqueName, staged, zipPath, managed, ct);
+        }
+        finally
+        {
+            DeleteStagedFolder(staged, logger);
+        }
+    }
+
     /// <summary>Best effort: a staged folder left behind sits in the system temp folder, never in the repo.</summary>
     internal static void DeleteStagedFolder(string staged, ILogger? logger)
     {
@@ -244,12 +264,8 @@ internal static class SolutionPackService
 
     // Names the files rather than the folders it looked in — the scope is discovered, so restating it would
     // mean restating a list the user can't predict from the message.
-    internal static string BuildDirtyTreeMessage(IReadOnlyList<string> changes, string command)
-    {
-        var shown = string.Join(", ", changes.Take(3));
-        var more = changes.Count > 3 ? $" (+{changes.Count - 3} more)" : "";
-        return $"Uncommitted changes in {shown}{more} — commit or stash first, then {command}.";
-    }
+    internal static string BuildDirtyTreeMessage(IReadOnlyList<string> changes, string command) =>
+        $"Uncommitted changes in {Shown(changes)} — commit or stash first, then {command}.";
 
     /// <summary>
     /// Fails when the local build output differs from the binaries committed in the solution, so neither command
