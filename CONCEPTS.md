@@ -35,6 +35,9 @@ The same solution exploded into per-component files for source control — what 
 
 The two forms are not interchangeable, and conflating them is a live failure mode: code that reads inside an archive must target the packed layout, because the nested path only exists in source.
 
+### Build-output slot
+The place in [[Unpacked solution source]] where a binary that a build produces lives: a plugin assembly under the plugin assemblies folder, a plugin package under the plugin packages folder, or a web resource's content file, each matched by its metadata file rather than by path. In the default model a slot holds the copy `pull` exported and committed; `pack --binaries-from-build` overlays fresh build output on a temporary copy of the slots instead.
+
 ### Local-source identity shape
 The pattern by which a solution component's identity is recorded in unpacked solution source, used by [[Orphan component]] detection to check whether a live component is still declared locally. Three shapes recur across component types: an id embedded directly in the component's own file and mirrored by `id` in Solution.xml (e.g. Role); a schemaname/uniquename-keyed folder with no GUID anywhere locally (e.g. CustomApi, Bot); and a declaration inline within Customizations.xml's own named section, also with no GUID (e.g. ConnectionReference). A component type is only trusted for removal recommendations once its shape has a verified local-source check with test coverage for both directions — still-declared components suppressed, genuinely-removed components reported.
 
