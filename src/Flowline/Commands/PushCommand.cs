@@ -352,60 +352,8 @@ public abstract class PushCommandBase<TSettings>(CommandServices services, Datav
         PluginPackageMode pluginPackageMode,
         CancellationToken cancellationToken)
     {
-        var projectFolder = Path.GetDirectoryName(candidate.ProjectPath)!;
-        var didBuild = false;
-
-        if (settings.NoBuild)
-            Console.Skip($"Build {candidate.ProjectName} — skipping (--no-build active)");
-        else
-        {
-            didBuild = true;
-            if (pluginPackageMode != PluginPackageMode.Dll)
-                ClearStalePackages(candidate.BuildOutputRoot, note => Console.Verbose(note));
-
-            if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
-                throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
-        }
-
-        // R3: reflection read the output and found no plugin-bearing assembly, so this simply isn't a
-        // plugin project. Not an error — but never silent either, or it reads exactly like "my plugin
-        // didn't get registered". The case where reflection could NOT read the output is a different
-        // animal and ResolvePluginAssembly throws on it rather than returning null here: the discovered
-        // set is what the orphan sweeps treat as having local source, so guessing wrong deletes a live
-        // registration. Undeterminable fails the push; only a definite verdict skips.
-        var pluginsDll = PluginProjectResolver.ResolvePluginAssembly(candidate, note => Console.Verbose(note));
-        if (pluginsDll == null)
-        {
-            Console.Verbose($"Skipped {candidate.ProjectName} — no IPlugin or CodeActivity type in its build output");
-            return null;
-        }
-
-        // R1/KD1: a .nupkg anywhere under the build output root routes to the package deployment path
-        // automatically under PluginPackageMode.Auto (U2/R2's default); Nupkg requires one and Dll opts
-        // back into the classic path regardless. KD4: the mode is one per-solution setting, applied
-        // identically to every discovered project.
-        var pushPath = ResolvePluginPushPath(pluginsDll, candidate.BuildOutputRoot, pluginPackageMode);
-
-        // NuGet's Pack step (produces the .nupkg the line above just found) has its own incremental check
-        // that isn't aware of the recompiled DLL — if nothing else driving the nuspec changed (e.g. no new
-        // commit, since versioning is git-derived via MinVer), a build recompiles the assembly but leaves a
-        // previously-packed, now-stale .nupkg in place. Detected using paths already resolved above (no new
-        // path assumptions); self-heals with one forced rebuild rather than silently pushing stale content.
-        if (NeedsRepack(pushPath, pluginsDll, didBuild))
-        {
-            Console.Warning($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] doesn't carry the assembly just built — " +
-                "NuGet's Pack step didn't regenerate it (the package version likely didn't change). Forcing a full rebuild...");
-            if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, _capture, cancellationToken, rebuild: true) != 0)
-                throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
-            pushPath = ResolvePluginPushPath(pluginsDll, candidate.BuildOutputRoot, pluginPackageMode);
-        }
-
-        Console.Verbose($"Found {pushPath}");
-        Console.Info($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] found");
-
-        // Read off the built artifact, not assumed from the folder or project name — that's what makes a
-        // custom <AssemblyName> resolve (R4).
-        return BuildProjectPushTarget(pushPath, Path.GetFileNameWithoutExtension(pluginsDll), candidate.ProjectName, Console);
+        var built = await BuildPluginProjectAsync(Console, _capture, candidate, settings.NoBuild, pluginPackageMode, cancellationToken).ConfigureAwait(false);
+        return built is { } b ? BuildProjectPushTarget(b.PushPath, b.AssemblyName, candidate.ProjectName, Console) : null;
     }
 
     private async Task<string?> PrepareWebResourcesForPushAsync(
@@ -429,20 +377,7 @@ public abstract class PushCommandBase<TSettings>(CommandServices services, Datav
             Console.Warning("No WebResources project found — skipping web resources. Plugins are still pushed.");
             return null;
         }
-        var webResourcesFolder = Path.GetDirectoryName(layout.WebResourcesProjectPath)!;
-        var webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
-
-        if (settings.NoBuild)
-            Console.Skip("Build web resources - skipping (--no-build active)");
-        else if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, _capture, cancellationToken) != 0)
-            throw new FlowlineException(ExitCode.BuildFailed, "Web resources build failed — fix errors above.");
-
-        EnsureBuiltWebResources(webResourcesSyncFolder);
-
-        Console.Verbose($"Found {webResourcesSyncFolder}");
-        Console.Info($"[bold]{ConsolePath.FormatRelativePath(webResourcesSyncFolder)}[/] found");
-
-        return webResourcesSyncFolder;
+        return await BuildWebResourcesAsync(Console, _capture, layout.WebResourcesProjectPath, settings.NoBuild, cancellationToken);
     }
 
     private class StandaloneParams
@@ -479,6 +414,93 @@ public sealed class PushCommand(CommandServices services, DataverseConnector dat
 /// <summary>The push engine's pure helpers, reachable without a command instance or type argument.</summary>
 public static class PushSupport
 {
+    /// <summary>
+    /// Builds one plugin project in Release (unless <paramref name="noBuild"/>) and resolves what it produced:
+    /// the .dll or .nupkg to push or pack, and the assembly name read off the built artifact. Null when the
+    /// output holds no plugin type, so the project simply isn't a plugin project. Shared by push and by
+    /// pack's build-output mode, so both build and resolve projects the same way.
+    /// </summary>
+    internal static async Task<(string PushPath, string AssemblyName)?> BuildPluginProjectAsync(IAnsiConsole console, SubprocessCapture capture,
+        PluginProjectCandidate candidate, bool noBuild, PluginPackageMode pluginPackageMode, CancellationToken cancellationToken)
+    {
+        var projectFolder = Path.GetDirectoryName(candidate.ProjectPath)!;
+        var didBuild = false;
+
+        if (noBuild)
+            console.Skip($"Build {candidate.ProjectName} — skipping (--no-build active)");
+        else
+        {
+            didBuild = true;
+            if (pluginPackageMode != PluginPackageMode.Dll)
+                ClearStalePackages(candidate.BuildOutputRoot, note => console.Verbose(note));
+
+            if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, capture, cancellationToken) != 0)
+                throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
+        }
+
+        // R3: reflection read the output and found no plugin-bearing assembly, so this simply isn't a
+        // plugin project. Not an error — but never silent either, or it reads exactly like "my plugin
+        // didn't get registered". The case where reflection could NOT read the output is a different
+        // animal and ResolvePluginAssembly throws on it rather than returning null here: the discovered
+        // set is what the orphan sweeps treat as having local source, so guessing wrong deletes a live
+        // registration. Undeterminable fails the push; only a definite verdict skips.
+        var pluginsDll = PluginProjectResolver.ResolvePluginAssembly(candidate, note => console.Verbose(note));
+        if (pluginsDll == null)
+        {
+            console.Verbose($"Skipped {candidate.ProjectName} — no IPlugin or CodeActivity type in its build output");
+            return null;
+        }
+
+        // R1/KD1: a .nupkg anywhere under the build output root routes to the package deployment path
+        // automatically under PluginPackageMode.Auto (U2/R2's default); Nupkg requires one and Dll opts
+        // back into the classic path regardless. KD4: the mode is one per-solution setting, applied
+        // identically to every discovered project.
+        var pushPath = ResolvePluginPushPath(pluginsDll, candidate.BuildOutputRoot, pluginPackageMode);
+
+        // NuGet's Pack step (produces the .nupkg the line above just found) has its own incremental check
+        // that isn't aware of the recompiled DLL — if nothing else driving the nuspec changed (e.g. no new
+        // commit, since versioning is git-derived via MinVer), a build recompiles the assembly but leaves a
+        // previously-packed, now-stale .nupkg in place. Detected using paths already resolved above (no new
+        // path assumptions); self-heals with one forced rebuild rather than silently pushing stale content.
+        if (NeedsRepack(pushPath, pluginsDll, didBuild))
+        {
+            console.Warning($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] doesn't carry the assembly just built — " +
+                "NuGet's Pack step didn't regenerate it (the package version likely didn't change). Forcing a full rebuild...");
+            if (await DotNetUtils.BuildSolutionAsync(projectFolder, DotnetBuild.Release, capture, cancellationToken, rebuild: true) != 0)
+                throw new FlowlineException(ExitCode.BuildFailed, $"{candidate.ProjectName} build failed — fix errors above.");
+            pushPath = ResolvePluginPushPath(pluginsDll, candidate.BuildOutputRoot, pluginPackageMode);
+        }
+
+        console.Verbose($"Found {pushPath}");
+        console.Info($"[bold]{ConsolePath.FormatRelativePath(pushPath)}[/] found");
+
+        // Read off the built artifact, not assumed from the folder or project name — that's what makes a
+        // custom <AssemblyName> resolve (R4).
+        return (pushPath, Path.GetFileNameWithoutExtension(pluginsDll));
+    }
+
+    /// <summary>
+    /// Builds the WebResources project in Release (unless <paramref name="noBuild"/>) and returns its
+    /// <c>dist</c> folder, refusing an empty one. Shared by push and by pack's build-output mode.
+    /// </summary>
+    internal static async Task<string> BuildWebResourcesAsync(IAnsiConsole console, SubprocessCapture capture,
+        string webResourcesProjectPath, bool noBuild, CancellationToken cancellationToken)
+    {
+        var webResourcesFolder = Path.GetDirectoryName(webResourcesProjectPath)!;
+        var webResourcesSyncFolder = Path.Combine(webResourcesFolder, "dist");
+
+        if (noBuild)
+            console.Skip("Build web resources - skipping (--no-build active)");
+        else if (await DotNetUtils.BuildSolutionAsync(webResourcesFolder, DotnetBuild.Release, capture, cancellationToken) != 0)
+            throw new FlowlineException(ExitCode.BuildFailed, "Web resources build failed — fix errors above.");
+
+        EnsureBuiltWebResources(webResourcesSyncFolder);
+
+        console.Verbose($"Found {webResourcesSyncFolder}");
+        console.Info($"[bold]{ConsolePath.FormatRelativePath(webResourcesSyncFolder)}[/] found");
+
+        return webResourcesSyncFolder;
+    }
     /// <summary>One plugin artifact ready to push, with the assembly name Dataverse should see.</summary>
     /// <param name="ProjectName">
     /// The solution-file project this came from — what the user has to go fix when the push fails, and

@@ -1,5 +1,7 @@
 using CliWrap;
+using Flowline.Commands;
 using Flowline.Core;
+using Flowline.Core.Config;
 using Flowline.Core.Console;
 using Flowline.Core.Deploy;
 using Flowline.Core.Environments;
@@ -109,6 +111,82 @@ internal static class SolutionPackService
             $"No committed binary for {shown}{more} — commit it, or pass --binaries-from-build to pack it from the build.");
     }
 
+    /// <summary>
+    /// Builds every plugin project and the WebResources project the way push does, and matches what they produced
+    /// to the slots of the committed solution. Fails before anything is staged when a build output has no slot or a
+    /// slot has no build output, so every binary in the zip comes from the build.
+    /// </summary>
+    internal static async Task<IReadOnlyList<SlotCopy>> BuildForPackAsync(IAnsiConsole console, SubprocessCapture capture,
+        SolutionFileLayout layout, string solutionUniqueName, PluginPackageMode pluginPackageMode, bool noBuild, string rootFolder, CancellationToken ct)
+    {
+        var plugins = new List<PluginBuildOutput>();
+        foreach (var candidate in layout.PluginProjects)
+            if (await PushSupport.BuildPluginProjectAsync(console, capture, candidate, noBuild, pluginPackageMode, ct) is { } built)
+                plugins.Add(new PluginBuildOutput(built.AssemblyName, built.PushPath,
+                    IsPackage: built.PushPath.EndsWith(".nupkg", StringComparison.OrdinalIgnoreCase)));
+
+        var webResources = new List<WebResourceBuildOutput>();
+        if (layout.WebResourcesProjectPath is { } webResourcesProject)
+        {
+            var dist = await PushSupport.BuildWebResourcesAsync(console, capture, webResourcesProject, noBuild, ct);
+            webResources.AddRange(Directory.EnumerateFiles(dist, "*", SearchOption.AllDirectories)
+                .Select(file => new WebResourceBuildOutput(Path.GetRelativePath(dist, file).Replace('\\', '/'), file)));
+        }
+
+        var src = Path.Combine(layout.DataverseSolutionFolder, "src");
+        var match = BuildOutputSlotMatcher.Match(BuildOutputSlotMatcher.FindSlots(src), plugins, webResources, solutionUniqueName);
+        EnsureEveryOutputHasASlot(match);
+
+        var tracked = (await GitUtils.GetTrackedFilesAsync(src, rootFolder, capture, ct))
+            .Select(file => Path.GetRelativePath(src, Path.GetFullPath(Path.Combine(rootFolder, file))).Replace('\\', '/'))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (match.Copies.Any(copy => tracked.Contains(copy.SlotRelativePath)))
+        {
+            console.Warning("Plugin or web resource binaries are committed in git, and the build replaces them in the zip. To keep them out of source control, add this to .gitignore:");
+            console.WriteLine(GitignoreAdvice);
+        }
+
+        console.Warning("Packing fresh build output — DEV hasn't confirmed these binaries yet.");
+        return match.Copies;
+    }
+
+    internal static void EnsureEveryOutputHasASlot(SlotMatchResult match)
+    {
+        if (match.UnmatchedOutputs.Count > 0)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"No place in the solution for {Shown(match.UnmatchedOutputs)} — run 'push' then 'pull' to add it, then pack again.");
+        if (match.SlotsWithoutOutput.Count > 0)
+            throw new FlowlineException(ExitCode.ValidationFailed,
+                $"No build output for {Shown(match.SlotsWithoutOutput.Select(slot => slot.Key).ToList())} — add it to the plugin or WebResources project, or remove it from the solution.");
+    }
+
+    /// <summary>Lays the build output over a staged copy of the solution; the working tree is never written.</summary>
+    internal static void OverlayBuildOutput(string staged, IReadOnlyList<SlotCopy> copies)
+    {
+        foreach (var copy in copies)
+        {
+            var target = Path.Combine(staged, copy.SlotRelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(copy.SourcePath, target, overwrite: true);
+        }
+    }
+
+    internal const string GitignoreAdvice = """
+          # Plugin assembly / package output, packed from the build with --binaries-from-build
+          Solution/src/PluginAssemblies/**/*.dll
+          Solution/src/pluginpackages/**/*.nupkg
+
+          # Web resource content, keep the .data.xml metadata tracked
+          Solution/src/WebResources/**
+          !Solution/src/WebResources/**/
+          !Solution/src/WebResources/**/*.data.xml
+
+        After that, every pack and deploy needs --binaries-from-build, because the commit no longer holds the binaries.
+        """;
+
+    static string Shown(IReadOnlyList<string> names) =>
+        string.Join(", ", names.Take(3)) + (names.Count > 3 ? $" (+{names.Count - 3} more)" : "");
+
     /// <summary>Best effort: a staged folder left behind sits in the system temp folder, never in the repo.</summary>
     internal static void DeleteStagedFolder(string staged, ILogger? logger)
     {
@@ -131,13 +209,21 @@ internal static class SolutionPackService
     //
     // Takes no solution name: all three project paths come out of the already-loaded layout, so a relocated
     // or renamed project stays in scope without knowing what it is called.
-    internal static IReadOnlyList<string> GetPackInputPaths(SolutionFileLayout layout, string dataverseSolutionFolder) =>
-    [
-        dataverseSolutionFolder,
-        ..layout.PluginProjects.Select(c => c.ProjectPath),
-        // Omitted when null: no WebResources project is a real absence, not a scope gap.
-        ..layout.WebResourcesProjectPath is { } wr ? new[] { wr } : Array.Empty<string>()
-    ];
+    //
+    // With build output in the zip the project sources matter too, so the scope widens to the whole project
+    // folders: uncommitted source can't be compiled into a zip that then gets tagged as this commit. Build
+    // output folders are gitignored, so they stay out of it.
+    internal static IReadOnlyList<string> GetPackInputPaths(SolutionFileLayout layout, string dataverseSolutionFolder, bool includeProjectSources = false)
+    {
+        string Scope(string projectPath) => includeProjectSources ? Path.GetDirectoryName(projectPath)! : projectPath;
+        return
+        [
+            dataverseSolutionFolder,
+            ..layout.PluginProjects.Select(c => Scope(c.ProjectPath)),
+            // Omitted when null: no WebResources project is a real absence, not a scope gap.
+            ..layout.WebResourcesProjectPath is { } wr ? new[] { Scope(wr) } : Array.Empty<string>()
+        ];
+    }
 
     internal static async Task ValidateGitCleanAsync(IReadOnlyList<string> inputPaths, string rootFolder, SubprocessCapture capture, string command, CancellationToken ct)
     {

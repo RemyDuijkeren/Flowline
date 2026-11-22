@@ -26,6 +26,16 @@ public class PackCommand(CommandServices services) : FlowlineCommand<PackCommand
         [Description("Skip the solution checker gate")]
         [DefaultValue(false)]
         public bool SkipSolutionCheck { get; set; } = false;
+
+        [CommandOption("--binaries-from-build")]
+        [Description("Pack plugin and web resource binaries from a fresh build instead of the committed copies; the rest of the solution stays as committed")]
+        [DefaultValue(false)]
+        public bool BinariesFromBuild { get; set; } = false;
+
+        [CommandOption("--no-build")]
+        [Description("With --binaries-from-build: skip 'dotnet build' and use the existing Release output")]
+        [DefaultValue(false)]
+        public bool NoBuild { get; set; } = false;
     }
 
     // "drift" is the one hazard pack gates: a committed binary that differs from the local build output.
@@ -38,12 +48,22 @@ public class PackCommand(CommandServices services) : FlowlineCommand<PackCommand
         var layout = await SolutionFileLayout.LoadAsync(RootFolder, cancellationToken);
         var dataverseSolutionFolder = layout.DataverseSolutionFolder;
 
-        await SolutionPackService.ValidateGitCleanAsync(SolutionPackService.GetPackInputPaths(layout, dataverseSolutionFolder), RootFolder, _capture, "pack", cancellationToken);
+        if (settings.NoBuild && !settings.BinariesFromBuild)
+            throw new FlowlineException(ExitCode.ValidationFailed, "--no-build only applies with --binaries-from-build — add it, or drop --no-build.");
+
+        var inputPaths = SolutionPackService.GetPackInputPaths(layout, dataverseSolutionFolder, includeProjectSources: settings.BinariesFromBuild);
+        await SolutionPackService.ValidateGitCleanAsync(inputPaths, RootFolder, _capture, "pack", cancellationToken);
 
         if (FindMappingFile(dataverseSolutionFolder) is { } mappingFile)
             Console.Info($"Found {mappingFile} — Flowline doesn't read mapping files. Pack packs what's committed; --binaries-from-build packs fresh plugin and web resource builds instead.");
 
-        await SolutionPackService.ValidateDriftAsync(Console, RuntimeOptions.HasForce("drift"), sln.UniqueName, layout, dataverseSolutionFolder, "pack", cancellationToken);
+        // The drift guard compares build output with the committed binaries; with build output in the zip
+        // that difference is the point, so it doesn't apply.
+        IReadOnlyList<Flowline.Core.Deploy.SlotCopy> buildOutput = [];
+        if (settings.BinariesFromBuild)
+            buildOutput = await SolutionPackService.BuildForPackAsync(Console, _capture, layout, sln.UniqueName, sln.PluginPackageMode, settings.NoBuild, RootFolder, cancellationToken);
+        else
+            await SolutionPackService.ValidateDriftAsync(Console, RuntimeOptions.HasForce("drift"), sln.UniqueName, layout, dataverseSolutionFolder, "pack", cancellationToken);
 
         var version = DeployCommand.ReadLocalSolutionVersion(dataverseSolutionFolder);
         var zipPath = SolutionPackService.ResolveZipPath(RootFolder, settings.Output, sln.UniqueName, version, sln.IncludeManaged);
@@ -51,7 +71,10 @@ public class PackCommand(CommandServices services) : FlowlineCommand<PackCommand
         var staged = await SolutionPackService.StageTrackedSolutionAsync(dataverseSolutionFolder, RootFolder, _capture, cancellationToken);
         try
         {
-            SolutionPackService.EnsureSlotsHaveBinaries(staged);
+            if (settings.BinariesFromBuild)
+                SolutionPackService.OverlayBuildOutput(staged, buildOutput);
+            else
+                SolutionPackService.EnsureSlotsHaveBinaries(staged);
             await SolutionPackService.PackAsync(Console, _capture, sln.UniqueName, staged, zipPath, sln.IncludeManaged, cancellationToken);
         }
         finally

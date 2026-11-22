@@ -80,3 +80,80 @@ public class SolutionPackServiceGuardMessageTests
             .Should().Be("Local changes not in Dataverse — deploy would revert them. Run 'push' then 'pull' to capture them, or use --force drift to skip.");
     }
 }
+
+public class SolutionPackServiceBuildOutputTests : IDisposable
+{
+    readonly string _root = Path.Combine(Path.GetTempPath(), $"PackBuildOutput_{Guid.NewGuid():N}");
+
+    public SolutionPackServiceBuildOutputTests() => Directory.CreateDirectory(_root);
+
+    public void Dispose() => Directory.Delete(_root, recursive: true);
+
+    [Fact]
+    public void EnsureEveryOutputHasASlot_FailsWithPushPullFix_WhenBuildOutputHasNoSlot()
+    {
+        var match = new Flowline.Core.Deploy.SlotMatchResult([], ["Contoso.NewPlugins"], []);
+
+        var act = () => SolutionPackService.EnsureEveryOutputHasASlot(match);
+
+        act.Should().Throw<Flowline.Core.FlowlineException>()
+            .Where(e => e.ExitCode == Flowline.Core.ExitCode.ValidationFailed
+                        && e.Message.Contains("Contoso.NewPlugins")
+                        && e.Message.Contains("'push' then 'pull'"));
+    }
+
+    [Fact]
+    public void EnsureEveryOutputHasASlot_FailsNamingTheSlot_WhenSlotHasNoBuildOutput()
+    {
+        var slot = new Flowline.Core.Deploy.SolutionSlot(Flowline.Core.Deploy.SlotKind.WebResource, "cr_Sales/logo.svg", "WebResources/cr_Sales/logo.svg");
+        var match = new Flowline.Core.Deploy.SlotMatchResult([], [], [slot]);
+
+        var act = () => SolutionPackService.EnsureEveryOutputHasASlot(match);
+
+        act.Should().Throw<Flowline.Core.FlowlineException>()
+            .Where(e => e.ExitCode == Flowline.Core.ExitCode.ValidationFailed && e.Message.Contains("cr_Sales/logo.svg"));
+    }
+
+    [Fact]
+    public void OverlayBuildOutput_ReplacesStagedSlotAndLeavesSourceUntouched()
+    {
+        var source = Path.Combine(_root, "Solution", "src", "PluginAssemblies", "ContosoPlugins-1", "ContosoPlugins.dll");
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        File.WriteAllText(source, "committed");
+        var staged = Path.Combine(_root, "staged");
+        Directory.CreateDirectory(Path.Combine(staged, "PluginAssemblies", "ContosoPlugins-1"));
+        File.Copy(source, Path.Combine(staged, "PluginAssemblies", "ContosoPlugins-1", "ContosoPlugins.dll"));
+        var built = Path.Combine(_root, "bin", "Contoso.Plugins.dll");
+        Directory.CreateDirectory(Path.GetDirectoryName(built)!);
+        File.WriteAllText(built, "fresh build");
+
+        SolutionPackService.OverlayBuildOutput(staged, [new Flowline.Core.Deploy.SlotCopy(built, "PluginAssemblies/ContosoPlugins-1/ContosoPlugins.dll")]);
+
+        File.ReadAllText(Path.Combine(staged, "PluginAssemblies", "ContosoPlugins-1", "ContosoPlugins.dll")).Should().Be("fresh build");
+        File.ReadAllText(source).Should().Be("committed");
+    }
+
+    [Fact]
+    public void OverlayBuildOutput_CreatesASlotBinaryThatIsNotCommitted()
+    {
+        var staged = Path.Combine(_root, "staged");
+        Directory.CreateDirectory(staged);
+        var built = Path.Combine(_root, "dist", "main.js");
+        Directory.CreateDirectory(Path.GetDirectoryName(built)!);
+        File.WriteAllText(built, "js");
+
+        SolutionPackService.OverlayBuildOutput(staged, [new Flowline.Core.Deploy.SlotCopy(built, "WebResources/cr_Sales/main.js")]);
+
+        File.ReadAllText(Path.Combine(staged, "WebResources", "cr_Sales", "main.js")).Should().Be("js");
+    }
+
+    [Fact]
+    public void GitignoreAdvice_CarriesTheBlockAndWhatAdoptingItMeans()
+    {
+        var advice = SolutionPackService.GitignoreAdvice;
+
+        advice.Should().Contain("Solution/src/PluginAssemblies/**/*.dll");
+        advice.Should().Contain("!Solution/src/WebResources/**/*.data.xml");
+        advice.Should().Contain("--binaries-from-build");
+    }
+}
