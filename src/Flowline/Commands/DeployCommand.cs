@@ -156,6 +156,13 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         {
             deploymentInputPaths = SolutionPackService.GetPackInputPaths(layout!, dataverseSolutionFolder!); // non-null on the packed route
             await SolutionPackService.ValidateGitCleanAsync(deploymentInputPaths, RootFolder, _capture, "deploy", cancellationToken);
+
+            // Offline and cheap, so it fails before any target check or connection. The pack step stages again:
+            // ponytail: one extra copy of the tracked files, cheaper than holding a temp folder open across the
+            // whole deploy; hold it instead if solution folders grow large enough for the copy to show.
+            var precheck = await SolutionPackService.StageTrackedSolutionAsync(dataverseSolutionFolder!, RootFolder, _capture, cancellationToken);
+            try { SolutionPackService.EnsureSlotsHaveBinaries(precheck); }
+            finally { SolutionPackService.DeleteStagedFolder(precheck, Logger); }
         }
 
         var (targetEnv, existingSolutionInTarget, resolvedProfile) = await ValidateTargetAsync(target, sln, settings, cancellationToken);
@@ -274,8 +281,9 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
         {
             Logger.LogInformation("Packing: {SolutionName}", sln.UniqueName);
             packagePath = SolutionPackService.ResolveZipPath(slnFolder, output: null, sln.UniqueName, gateVersion, sln.IncludeManaged);
-            await SolutionPackService.PackAsync(Console, _capture, sln.UniqueName,
-                Path.Combine(dataverseSolutionFolder!, "src"), packagePath, sln.IncludeManaged, cancellationToken); // non-null on the packed route
+            var staged = await SolutionPackService.StageTrackedSolutionAsync(dataverseSolutionFolder!, RootFolder, _capture, cancellationToken); // non-null on the packed route
+            try { await SolutionPackService.PackAsync(Console, _capture, sln.UniqueName, staged, packagePath, sln.IncludeManaged, cancellationToken); }
+            finally { SolutionPackService.DeleteStagedFolder(staged, Logger); }
         }
 
         // R5: fires regardless of whether the subsequent import succeeds — the packed zip is already

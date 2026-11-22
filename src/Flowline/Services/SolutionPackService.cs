@@ -61,6 +61,67 @@ internal static class SolutionPackService
             throw new FlowlineException(ExitCode.BuildFailed, "Pack failed — check your solution source.");
     }
 
+    /// <summary>
+    /// Copies the files git tracks under <c>&lt;dataverseSolutionFolder&gt;/src</c> into a new temp folder and returns
+    /// it, so a pack reads the commit rather than whatever sits on disk: an ignored binary or stray file never
+    /// ships. The clean-tree check has already run, so the tracked files on disk equal HEAD in the checked-out
+    /// form pac reads today (line endings, filters and LFS behave as they always have). The caller deletes it.
+    /// </summary>
+    internal static async Task<string> StageTrackedSolutionAsync(string dataverseSolutionFolder, string rootFolder, SubprocessCapture capture, CancellationToken ct)
+    {
+        var src = Path.Combine(dataverseSolutionFolder, "src");
+        var staged = Directory.CreateTempSubdirectory("flowline-pack-").FullName;
+        try
+        {
+            // Copied in git's index order, the order a fresh checkout writes them: pac lists components in the
+            // order it finds folders, so this gives the same zip a clean CI clone of this commit gives.
+            foreach (var tracked in await GitUtils.GetTrackedFilesAsync(src, rootFolder, capture, ct))
+            {
+                var file = Path.GetFullPath(Path.Combine(rootFolder, tracked));
+                var target = Path.Combine(staged, Path.GetRelativePath(src, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target);
+            }
+            return staged;
+        }
+        catch
+        {
+            DeleteStagedFolder(staged, logger: null);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Without fresh build output, every plugin, plugin package and web resource slot must have its binary in the
+    /// commit. pac skips a missing one with only a warning, so this fails first and names the way out.
+    /// </summary>
+    internal static void EnsureSlotsHaveBinaries(string stagedSrc)
+    {
+        var missing = BuildOutputSlotMatcher.FindSlots(stagedSrc)
+            .Where(slot => !File.Exists(Path.Combine(stagedSrc, slot.BinaryRelativePath)))
+            .Select(slot => slot.Key)
+            .ToList();
+        if (missing.Count == 0) return;
+
+        var shown = string.Join(", ", missing.Take(3));
+        var more = missing.Count > 3 ? $" (+{missing.Count - 3} more)" : "";
+        throw new FlowlineException(ExitCode.ValidationFailed,
+            $"No committed binary for {shown}{more} — commit it, or pass --binaries-from-build to pack it from the build.");
+    }
+
+    /// <summary>Best effort: a staged folder left behind sits in the system temp folder, never in the repo.</summary>
+    internal static void DeleteStagedFolder(string staged, ILogger? logger)
+    {
+        try
+        {
+            Directory.Delete(staged, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger?.LogDebug(ex, "Could not delete staged pack folder {Folder}", staged);
+        }
+    }
+
     // The SAME path list scopes both the clean-check and the commit-sha lookup behind deploy's provenance note
     // and tag hint, so the two can never diverge.
     //
