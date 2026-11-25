@@ -13,22 +13,22 @@ execution: code
 ## Goal Capsule
 
 - **Objective:** A `pull` no longer commits avoidable connection references. Duplicates that hold the same connection are folded into one, references nothing uses are removed once someone confirms it, and the references that stay separate carry display names that say what they are for.
-- **Means:** a cleanup step inside `pull` that runs against DEV after the dirty-tree gate and before the version bump and export (Key Decisions, KTD1).
+- **Means:** a review inside `pull` that runs against DEV after the dirty-tree gate and before the version bump and export, and advises; the fix runs only when the caller passes `--tidy-connrefs` (Key Decisions, KTD1, KTD9).
 - **Product authority:** the Product Contract decides behavior; the Planning Contract decides mechanism within it; a unit overrides neither.
 - **Execution profile:** one PR, on its own branch with a worktree (`/ce-work` sets it up, per `AGENTS.md` Branching).
 - **Stop conditions:** stop and ask if U1 shows that Dataverse refuses a flow definition update even while the flow is off, that turning a re-pointed flow back on fails for a reason the caller cannot fix, or that the rewrite needs more than the map entry's reference fields. Stop and ask if any requirement turns out to need persistent state on disk.
 - **Finishes the work:** the executor through `/ce-work`. U1 needs a scratch DEV the executor can reach; if none is reachable, the user runs U1's checks. The user ships.
-- **Open blockers:** None. U1 needs a reachable scratch DEV (see Finishes the work). The `--force all` question under Deferred / Open Questions must be answered before U5.
+- **Open blockers:** None. U1 needs a reachable scratch DEV (see Finishes the work).
 
 ---
 
 ## Product Contract
 
-**Product Contract preservation:** changed: R20 added and the `pull --dry-run` deferral removed from Scope Boundaries (Flowline's agent conventions require a dry run for environment writes git cannot undo; user-directed during planning). Restructured, no scope change: R3 states its evidence rule in full (a partly bound settings file makes members differ, matching AE9), R9 gains the keeper rule for protected references, R7 states the order of writes, R12 names the patterns' source; the resolved Outstanding Questions moved into KTDs and U1.
+**Product Contract preservation:** changed on 2026-11-25 (user-directed): the fix became opt-in through `--tidy-connrefs`, the `pull --dry-run` added during planning and the scoped `--force` specifier were both dropped, and R16, R17 and R20 were rewritten to match. The cleanup is a helper beside `pull`'s core job, so it never gates or blocks the export. Restructured, no scope change: R3 states its evidence rule in full (a partly bound settings file makes members differ, matching AE9), R9 gains the keeper rule for protected references, R7 states the order of writes, R12 names the patterns' source; the resolved Outstanding Questions moved into KTDs and U1.
 
 ### Summary
 
-Before `pull` exports, it reviews the solution's connection references in DEV. References that hold the same connection everywhere are merged into the most-used one, references nothing uses are offered for removal, and references that share a connector but use different accounts are either merged on request or kept apart with a clearer display name. The export then captures the cleaned-up state, so source control and every later deploy carry it. `pull --dry-run` shows what the cleanup would do and changes nothing.
+Before `pull` exports, it reviews the solution's connection references in DEV and says what it found. That review only reads; exporting and unpacking stay `pull`'s core job, and the review never blocks them. When the caller passes `--tidy-connrefs`, `pull` untangles what it found: references that hold the same connection everywhere are merged into the most-used one, references nothing uses are offered for removal, and references that share a connector but use different accounts are either merged on request or kept apart with a clearer display name. The export then captures the cleaned-up state, so source control and every later deploy carry it.
 
 ### Problem Frame
 
@@ -49,7 +49,9 @@ Flowline already touches connection references in three places, and none of them
 - **A removed reference is deleted from DEV only when nothing depends on it.** Otherwise it is only taken out of this solution. The PROD copy is left behind and flagged by orphan cleanup, as today. (session-settled: user-directed, chosen over never deleting, which leaves clutter, and over also deleting the PROD copy at deploy, which changes orphan cleanup for connection references from manual to automatic.) Governs R10, R11.
 - **References nothing uses are proposed for removal.** The user asked for this in the same pass as the merge. It is a proposal, not an automatic step, because a reference can be created ahead of the flow that will use it. Governs R5, R10.
 - **A rename changes the display name only.** The display name is one field, touches no flow and needs no new binding in any environment. (session-settled: user-directed, chosen over also replacing the logical name: a logical-name change means creating a new reference, re-pointing its flows and deleting the old one, and each rename leaves a PROD orphan and needs a binding carried into every settings file.) Governs R13, R14.
-- **`pull` gets a `--dry-run`.** The cleanup makes `pull` write to DEV in ways git cannot undo, which ends the exemption Flowline's agent conventions gave it. (session-settled: user-directed, chosen over keeping the exemption and treating the unattended report as the preview: an agent could not preview what a forced run would do without also exporting.) Governs R20.
+- **The review always runs; the fix is opt-in through `--tidy-connrefs`.** The cleanup is a helper, not a hazard of `pull`'s job: duplicates happen easily in DEV and the user wants help untangling them, not a gate. One flag behaves the same for a person and an agent. (session-settled: user-directed, chosen over an opt-out prompt at every interactive `pull`: that needs a separate flag for agents anyway, and it keeps asking about different-account pairs the user already chose to keep.) Governs R16, R17.
+- **The flag is named `--tidy-connrefs`.** It merges, removes and renames, so a whole-job name reads right in the advice for every kind of finding; `connref` is already the token users type in `settings --type connref`. (session-settled: user-directed, chosen over `--dedupe-connrefs`, which undersells removal and renames, and over a fully spelled-out name.) Governs R16, R17.
+- **No `pull --dry-run` and no `--force` specifier.** `pull`'s `--force` specifiers guard local overwrites (`dirty`, `config`); putting a DEV write under `--force all` would change what existing scripts do. A run without `--tidy-connrefs` is the preview, so the dry-run exemption in Flowline's agent conventions still holds: every DEV write `pull` makes can be switched off (`--bump none`, no `--tidy-connrefs`), and what is left is reversible with git. (session-settled: user-directed, chosen over adding both flags, which was the earlier planning decision, and over a specifier excluded from `all`.) Governs R16, R20.
 - **"Unused" is not "orphan".** In Flowline an orphan is a live component that source no longer declares (`CONCEPTS.md`). A reference that the solution declares but nothing uses is called unused here, to keep the two apart.
 
 ### Requirements
@@ -85,30 +87,30 @@ Flowline already touches connection references in three places, and none of them
 
 **Interaction and unattended runs**
 
-- R15. At a terminal, the review asks one confirmation for all same-connection groups together, one question per different-account group, one question for the unused references, and one per rename offer. The same-connection confirmation names, per group, any environment with missing evidence.
-- R16. An unattended `pull` changes nothing in DEV by default. It reports every group, unused reference and flagged name, then continues with the export.
-- R17. A scoped `--force` specifier lets an unattended `pull` merge same-connection groups that have no missing evidence and remove unused references. Different-account merges and renames happen only at a terminal, because they need a person's judgment or a name.
+- R15. With `--tidy-connrefs` at a terminal, the review asks one confirmation for all same-connection groups together, one question per different-account group, one question for the unused references, and one per rename offer. The same-connection confirmation names, per group, any environment with missing evidence.
+- R16. Without `--tidy-connrefs`, `pull` changes nothing in DEV for connection references, at a terminal or not. When the review finds something, `pull` prints a short advice block: how many same-connection groups, different-account groups, unused references and generated names it found, and a line naming `pull --tidy-connrefs` as the fix. It then continues with the export. Where the advice's counts come from is decided by measurement (KTD13); if they come from the exported source, the block says "possible", because only the flagged run checks live DEV.
+- R17. With `--tidy-connrefs` and no terminal, `pull` merges same-connection groups that have no missing evidence and removes unused references. Different-account groups and renames are only reported, because they need a person's judgment or a name.
 - R18. When any merge, removal or flow reactivation fails, `pull` stops before the version bump and the export, and names what was done and what was not. Running `pull` again resumes from the state DEV is in.
 - R19. The `pull` result lists each merge, removal and rename it made, so the change can be described in the commit.
-- R20. `pull --dry-run` runs the pre-flight checks and the review, prints what the cleanup would merge, remove and rename, including what the scoped `--force` would do unattended, and stops. It writes nothing: no DEV change, no version bump, no export, no settings file, no `.flowline`, no CHANGES.md. When nothing would change it says so in one line.
+- R20. Without `--tidy-connrefs`, the review never blocks the export: when it cannot run (no SDK connection, a malformed settings file, a failed read), `pull` prints one warning and continues as it does today. With `--tidy-connrefs`, a review that cannot run stops `pull` before any write, because the caller asked for the cleanup.
 
 ### Key Flows
 
 - F1. Interactive pull with duplicates
-  - **Trigger:** A developer runs `pull` at a terminal after building flows in DEV.
+  - **Trigger:** A developer runs `pull --tidy-connrefs` at a terminal after building flows in DEV, usually after a plain `pull` advised it.
   - **Steps:** The existing pre-flight passes. The review finds two same-connection groups, one different-account group, one unused reference and three generated names. The developer confirms the two same-connection merges in one answer, keeps the different-account pair separate and renames both, removes the unused reference, and accepts one of the suggested renames. Flows are re-pointed and cycled off and on, settings entries are removed, and leftovers are deleted or removed from the solution. `pull` then bumps the version and exports.
   - **Outcome:** The commit holds one reference per real connection, clear names on the kept pair, and settings files without the removed entries.
   - **Covered by:** R1, R3, R4, R5, R6, R7, R8, R10, R11, R13, R15, R19
-- F2. Unattended pull
-  - **Trigger:** A script or agent runs `pull` with no terminal.
-  - **Steps:** The review runs and reports what it found. Without the scoped specifier, nothing in DEV changes and the export proceeds. With it, same-connection groups with full evidence are merged and unused references removed, and the rest is still only reported.
+- F2. Unattended pull with the flag
+  - **Trigger:** A script or agent runs `pull --tidy-connrefs` with no terminal.
+  - **Steps:** The review runs. Same-connection groups with full evidence are merged and unused references removed; different-account groups and generated names are only reported. `pull` then bumps and exports.
   - **Outcome:** Unattended runs never make a judgment call on behalf of a person.
-  - **Covered by:** R16, R17, R18
-- F3. Dry run
-  - **Trigger:** A developer or agent runs `pull --dry-run`.
-  - **Steps:** Pre-flight and review run. The planned merges, removals and rename offers are printed, with what `--force` would do unattended. The run ends.
-  - **Outcome:** The same plan a real run would act on, and nothing written.
-  - **Covered by:** R20
+  - **Covered by:** R17, R18
+- F3. Pull without the flag
+  - **Trigger:** A developer or agent runs `pull`, at a terminal or not.
+  - **Steps:** The review runs and only reads. When it finds something, the advice block prints, naming `pull --tidy-connrefs`. The export runs as it does today.
+  - **Outcome:** The user learns the duplicates exist, and nothing in DEV changed for them. This run is also the preview of what the flag would act on.
+  - **Covered by:** R2, R16, R20
 
 ### Acceptance Examples
 
@@ -117,12 +119,12 @@ Flowline already touches connection references in three places, and none of them
 - AE3. **Covers R9.** **Given** `ref_A` is used by four flows, **and** `ref_B` by one flow and a canvas app in this solution, **when** their group is merged, **then** `ref_B` is the keeper and the four flows move to it.
 - AE4. **Covers R10.** **Given** `ref_B` has no users left in this solution but a flow in another solution still uses it, **when** it is removed, **then** it is taken out of this solution, stays in DEV, and the review names the flow in the other solution.
 - AE5. **Covers R8, R18.** **Given** a merge re-points three flows that were on, **and** the third cannot be turned on again, **when** `pull` runs, **then** `pull` stops before the version bump, names the third flow as left off, and does not export.
-- AE6. **Covers R16, R17.** **Given** an unattended `pull` without the scoped specifier finds one same-connection group, **when** it runs, **then** it reports the group, changes nothing in DEV, and exports.
+- AE6. **Covers R16.** **Given** a `pull` without `--tidy-connrefs` finds one same-connection group, **when** it runs, at a terminal or not, **then** it prints the advice block naming `pull --tidy-connrefs`, asks nothing, changes nothing in DEV, and exports.
 - AE7. **Covers R13, R14.** **Given** the developer keeps a different-account pair separate and accepts the suggested names, **when** the rename runs, **then** both display names change and both logical names and bindings stay as they were.
-- AE8. **Covers R3, R17.** **Given** `ref_A` and `ref_B` share a connection in DEV and in the TEST settings file, **and** there is no PROD settings file, **when** an unattended `pull` runs with the scoped specifier, **then** the group is reported with PROD named as missing evidence and is not merged.
+- AE8. **Covers R3, R17.** **Given** `ref_A` and `ref_B` share a connection in DEV and in the TEST settings file, **and** there is no PROD settings file, **when** an unattended `pull --tidy-connrefs` runs, **then** the group is reported with PROD named as missing evidence and is not merged.
 - AE9. **Covers R3.** **Given** the UAT settings file binds `ref_B` but leaves the keeper `ref_A` unbound, **when** the review runs, **then** the pair is a different-account group and UAT is named.
 - AE10. **Covers R7, R18.** **Given** a merge re-pointed every flow, **and** saving the settings files then failed, **when** `pull` is run again, **then** the leftover references are found as unused and their removal edits the settings files again.
-- AE11. **Covers R20.** **Given** the review finds one group and one unused reference, **when** `pull --dry-run` runs, **then** both are printed with what would happen, and no file in the repo and nothing in DEV changes.
+- AE11. **Covers R20.** **Given** the UAT settings file is malformed, **when** `pull` runs without `--tidy-connrefs`, **then** it prints one warning that the review could not run, exports, and exits as it would have without the review; **and when** `pull --tidy-connrefs` runs, **then** it stops with the config error before any write to DEV.
 
 ### Scope Boundaries
 
@@ -136,8 +138,9 @@ Flowline already touches connection references in three places, and none of them
 
 ### Dependencies / Assumptions
 
-- Most `pull` runs are by a person at a terminal, which is what makes R15 worth building. If `pull` turns out to be mostly unattended, R16 and R17 carry the feature and the interactive path matters less.
-- Running the review on every `pull` is fast enough for solutions with many flows. Unmeasured; one definition read per flow of the solution.
+- Users read `pull`'s output, so the advice block (R16) is how they learn to pass `--tidy-connrefs`. If duplicates stay unfixed after this ships, the fallback is an opt-out prompt at the terminal; that was the runner-up, and it is a small change on top of this design.
+- `pull --tidy-connrefs` at a terminal is the common way to fix, which is what makes R15 worth building. Unattended runs with the flag (R17) cover only the safe subset.
+- Running the live review on every `pull` is fast enough for solutions with many flows. Unmeasured; one definition read per flow and one dependency check per reference. U1 times it, and KTD13 falls back to a source-only advice check if it is too slow.
 - The platform's default naming shape is stable enough to detect (R12). Microsoft documents it as connector plus solution name plus a random suffix; U1 confirms the patterns.
 
 ### Sources / Research
@@ -148,7 +151,8 @@ Flowline already touches connection references in three places, and none of them
 - `src/Flowline.Core/Configure/SettingsSectionEntries.cs:28` and `src/Flowline.Core/Configure/SettingsFileGaps.cs:70`: settings-file reference entries carry LogicalName, ConnectionId and ConnectorId.
 - `src/Flowline/Utils/PacConnections.cs:41-48` lists connections through `pac`, limited to what the signed-in identity can see.
 - `src/Flowline/Utils/SolutionChangeSummary.cs:313-330` already reports reference adds, removes and display-name changes in CHANGES.md. Nothing in `src/` reads a flow's `clientdata` or writes a reference's display name.
-- `.claude/skills/cli-for-agents/SKILL.md`: `ConfirmGated`, scoped `--force`, and the `--dry-run` rule with `pull`'s exemption in §4.
+- `.claude/skills/cli-for-agents/SKILL.md`: `ConfirmGated`, scoped `--force` (§3), and the `--dry-run` rule with `pull`'s exemption in §4, which rests on C6 in `docs/reviews/2026-09-08-cli-command-surface-design-review.md:250-252` ("`sync --bump none`, read the summary, `git checkout -- Solution/src` is the dry run").
+- `src/Flowline/Commands/PullCommand.cs:116` writes the solution version to DEV on every `pull` unless `--bump none`; `:35` is the existing opt-out flag precedent, `--no-build`.
 - Microsoft Learn, "Use a connection reference in a solution": the designer reuses existing references from this or other solutions before creating one, a new connection created in the designer creates a reference, and default names carry connector, solution name and a random suffix.
 - Microsoft Learn, "Work with cloud flows using code": `clientdata` holds the flow definition and its `connectionReferences` map; each map entry carries `connection.connectionReferenceLogicalName` (and in the sample also `connection.name`), and actions point at the map key through `host.connectionName`; flows are updated through the workflow table.
 - Microsoft Learn, "Check for solution component dependencies": `RetrieveDependenciesForDelete` lists what would block deleting a component.
@@ -161,17 +165,22 @@ Flowline already touches connection references in three places, and none of them
 ### Key Technical Decisions
 
 - KTD1. **The cleanup runs between the dirty gate and the version bump in `pull`, on an SDK connection made with the PAC profile `pull` already resolves.** `pull` is pac-only today, and the DEV check at `PullCommand.cs:50` returns the profile and throws it away. Keeping it avoids a second profile prompt and keeps the SDK and `pac` calls on one identity. All prompts run outside any spinner, because a prompt inside `Console.Status()` throws. Governs R1, R18.
-- KTD2. **The engine lives in a new Core feature folder, `src/Flowline.Core/ConnectionReferences/`; `PullCommand` owns prompts, the force gate and exit codes.** The cleanup needs only the SDK and files, so the project boundary rule in `AGENTS.md` puts it in Core. It splits into a read step that produces a review, a pure classifier, and an apply step that takes the confirmed choices.
+- KTD2. **The engine lives in a new Core feature folder, `src/Flowline.Core/ConnectionReferences/`; `PullCommand` owns the flag, prompts, the advice block and exit codes.** The cleanup needs only the SDK and files, so the project boundary rule in `AGENTS.md` puts it in Core. It splits into a read step that produces a review, a pure classifier, and an apply step that takes the confirmed choices.
 - KTD3. **A use is counted per flow.** A flow counts once for each reference its definition map names, however many map entries name it. The rewrite changes every entry naming a non-kept reference, including stale entries no action points at. Governs R6, R7.
 - KTD4. **Re-pointing rewrites only the map entry's reference fields.** Each entry naming a non-kept reference gets the keeper's logical name, and `connection.name` is removed or set to match the keeper, whichever U1 shows the platform accepts on turn-on. Action and trigger keys stay untouched, so no action in the definition changes. Governs R7.
 - KTD5. **One flow at a time: read freshness, off if on, rewrite, back on.** The review records each flow's state, last-modified time and row version. Before writing, the flow is re-read; if a maker changed it since the review, the cleanup stops instead of overwriting (R18). The definition update itself is conditional on the row version read (Dataverse optimistic concurrency), so a save that lands between the re-read and the write is a mismatch and the same stop, not a lost edit. A Suspended flow in a group puts that group in the "not merged" bucket with a reason, because Suspended cannot be restored by a write. Turning a flow back on runs in a finally path on a fresh token with a short timeout, so a failure or Ctrl+C still restores it; anything left off is listed in the stop message. A hard kill can still leave a flow off; nothing is stored on disk to recover that (Stop condition). Governs R8, R18.
 - KTD6. **Write order is fixed: re-point flows, then settings files, then deletes and removals, then renames.** Wherever a failure lands, the next `pull` finds the remaining work: a reference whose flows already moved shows up as unused, and its removal edits the settings files again. The shared settings template is edited in the same settings step, which runs before `RefreshSharedTemplateAsync`, so the template's vanished-entry carry does not put a removed entry back. Governs R7, R11, R18.
-- KTD7. **Settings evidence comes from the role files `deploymentSettings.<role>.json` for each non-DEV role in `EnvironmentRoles.All`, beside the cdsproj.** A role without a file is missing evidence. The shared `deploymentSettings.json` gives no evidence, because its connection ids are empty by design, but it is edited by R11 like the role files. A malformed settings file stops the review with the existing config error rather than being skipped. Comparisons are case-insensitive. Governs R3, R11.
+- KTD7. **Settings evidence comes from the role files `deploymentSettings.<role>.json` for each non-DEV role in `EnvironmentRoles.All`, beside the cdsproj.** A role without a file is missing evidence. The shared `deploymentSettings.json` gives no evidence, because its connection ids are empty by design, but it is edited by R11 like the role files. A malformed settings file ends the review with the existing config error rather than being skipped; R20 decides whether that error is a warning (no flag) or stops `pull` (with the flag). Comparisons are case-insensitive. Governs R3, R11.
 - KTD8. **"Can't tell" means "in use".** A flow whose definition is empty or does not parse, or a dependency check that faults, makes every reference it might touch ineligible for "unused" and for delete. The `RetrieveDependenciesForDelete` precedent in `WebResourceDependencyChecker` treats a fault as unchecked and moves on; this cleanup inverts that. The delete check also reads other-solution membership, as orphan cleanup does, and a reference held by another solution is only removed from this one. The connection reference component type is read from its `solutioncomponent` row, because it is environment-specific. Governs R5, R10.
-- KTD9. **One force specifier, `connection-references`, covers both unattended actions.** Merges and the removal of their leftovers are one change, so a second specifier would only let a run merge and then strand the leftovers. The gate is decided before calling `ConfirmGated`, which throws when unattended and unforced: interactive asks, forced acts on R17's subset, anything else reports. Governs R16, R17.
-- KTD10. **A stopped cleanup exits with `PartialSuccess` (18).** Part of the run's writes landed and the recovery is "fix, then re-run", which is what that code already means for deploy and `settings apply`. Its description is extended to name `pull`. A report-only run and a dry run with findings exit 0. Governs R18, R20.
-- KTD11. **`--dry-run` shares the review and plan with the real run and exits right after printing it.** It runs the DEV check, solution checks and the dirty gate, then skips `Config.Save`, every write, the bump, the export and the template refresh. Because the apply step consumes the same plan object the dry run prints, the preview cannot drift from the action. The Core writers already accept `RunMode.DryRun`, which this reuses where a writer is reached at all. Governs R20.
+- KTD9. **One boolean flag, `--tidy-connrefs`, decides the mode; it is not a `--force` specifier.** `pull`'s force specifiers stay `dirty`, `config`, `all` (`PullCommand.cs:42`), so `--force all` keeps meaning local overwrites only. Mode: no flag means advise; flag at a terminal means ask (R15); flag with no terminal means act on R17's subset. `ConfirmGated` does not fit, because it throws when unattended and unforced, while the flag itself is the unattended consent; the mode is decided up front, as `SettingsComponentCommands.CanOffer` does. Merges and the removal of their leftovers sit under the one flag, so a run cannot merge and then strand the leftovers. Governs R15, R16, R17.
+- KTD10. **A stopped cleanup exits with `PartialSuccess` (18).** It is only reachable with `--tidy-connrefs`, so the caller asked for the writes, part of them landed, and the recovery is "fix, then re-run", which is what that code already means for deploy and `settings apply`. Its description is extended to name `pull`. A run without the flag never changes `pull`'s exit code, including when the review could not run. Governs R18, R20.
+- KTD11. **The advice block and the fix share one review.** Without the flag the review prints its counts and stops there; with the flag the apply step consumes that same review, so the advice a user acted on cannot drift from what the flag does. `pull` gets no `--dry-run`: the run without the flag is the preview, and §4's exemption is restated rather than dropped (U6). Governs R16, R20.
 - KTD12. **Rename suggestions come from the connector name plus the bound account's display name when the caller can see that connection, else the connector name alone.** `pac connection list` only returns the caller's own connections, so the account part is best effort. The suggestion is a starting point the user edits. Name collisions with an existing display name are refused at the prompt. Governs R13.
+- KTD13. **The advice without the flag uses the live review by default; a source-only check is the fallback if U1's timing says the live review is too slow.** Both feed the same pure classifier (U2), so the fallback changes only the input. (session-settled: user-directed, chosen over committing to either source before measuring.)
+  - **Default, live review:** the same read the flagged run does, before the export. Exact counts, but every `pull` opens an SDK connection and reads each flow's definition and each reference's dependencies.
+  - **Fallback, source-only:** after the export, next to the drift warnings (`PullCommand.cs:150-170`), read the unpacked solution: references and display names from `Customizations.xml` (already parsed at `SolutionChangeSummary.cs:313-330`), flow reference maps from the unpacked flow definitions, and the role settings files. No call to DEV, and no SDK connection without the flag. It flags two or more references on one connector as possible duplicates, a reference no flow in source names as possibly unused, and generated display names. It cannot see the DEV connection or canvas app and agent use, so the block says "possible".
+  - **Threshold:** fall back when the live review adds more than 5 seconds, or more than 10% of the `pull` time, on U1's timing solution. Proposed numbers; the user confirms them when U1 reports.
+  - Governs R16.
 
 ### High-Level Technical Design
 
@@ -181,11 +190,14 @@ Where the cleanup sits in `pull`, and what each mode does:
 flowchart TB
   A[DEV check, solution checks, dirty gate] --> B[Connect SDK with pull's PAC profile]
   B --> C[Review: read refs, flows, dependencies, settings evidence; classify]
+  B -->|cannot run, no flag| W[Warn]
+  C -->|cannot run, no flag| W
+  C -->|cannot run, --tidy-connrefs| X[Stop before any write]
+  W --> J
   C --> D{Mode}
-  D -->|--dry-run| E[Print plan and stop: exit 0]
-  D -->|unattended, no specifier| F[Report]
-  D -->|unattended, --force connection-references| G[Act on full-evidence groups and unused refs]
-  D -->|terminal| H[Ask: groups, unused, renames]
+  D -->|no flag| F[Advice block naming pull --tidy-connrefs]
+  D -->|--tidy-connrefs, no terminal| G[Act on full-evidence groups and unused refs]
+  D -->|--tidy-connrefs, terminal| H[Ask: groups, unused, renames]
   G --> I[Apply in order: flows, settings, deletes and removals, renames]
   H --> I
   F --> J[Bump, export, template refresh, report]
@@ -232,7 +244,8 @@ stateDiagram-v2
 
 ### System-Wide Impact
 
-- **Agents and scripts:** an unattended `pull` keeps its current behavior unless `--force connection-references` or `--force all` is passed. A script already passing `--force all` (to get `dirty` and `config`) now also merges and removes references; CHANGELOG calls this out under Changed.
+- **Agents and scripts:** a `pull` without `--tidy-connrefs` writes nothing new to DEV and keeps its exit codes; the only visible change is the advice block. `--force all` is unchanged. An agent that reads the advice can re-run with the flag.
+- **Every `pull`:** with the KTD13 default, it opens an SDK connection to DEV and reads references, flows and dependencies, flag or not. With the fallback, a `pull` without the flag stays pac-only and only reads local files. U1's timing decides which.
 - **Exit-code contract:** `PartialSuccess` gains a `pull` meaning; the contract tables in the shipped skill and wiki 12-AI-Agents change with it (U6).
 - **Orphan cleanup:** gains a shared removal call (U4) with no behavior change; its connection reference handler stays report-only.
 - **Settings files:** `pull` now edits role files as well as the shared template, so a `pull` can leave settings changes to commit alongside the solution source.
@@ -253,7 +266,7 @@ stateDiagram-v2
 ### U1. Prove the flow rewrite against a real DEV
 
 - **Goal:** Confirm how a cloud flow's definition is re-pointed and cycled, and capture fixtures the tests build on.
-- **Requirements:** R7, R8, R12; settles the Assumptions and KTD4's open branch.
+- **Requirements:** R7, R8, R12, R16; settles the Assumptions, KTD4's open branch and KTD13's choice.
 - **Dependencies:** none.
 - **Files:** `tests/Flowline.Core.Tests/ConnectionReferences/Fixtures/` (captured flow definitions with one and two map entries, and a sample of generated reference names); findings recorded in this plan's Assumptions and KTD4.
 - **Approach:**
@@ -264,9 +277,11 @@ stateDiagram-v2
   5. Record the default display-name and logical-name patterns from three generated references.
   6. Repeat step 4 with the flow and connection created by one identity and the rewrite and turn-on run by a second identity with System Customizer or higher; record whether turn-on succeeds. If it fails, stop and ask before U4, because a shared DEV makes this the common case.
   7. Confirm the workflow table honors a row-version-conditional update (KTD5).
+  8. Time the live review's reads (SDK connect, reference read, flow definition read, one dependency check per reference) against a plain `pull --bump none` on the same solution. Use a solution with at least 30 cloud flows and 10 references, or the largest one available, and record both numbers. Apply KTD13's threshold, and report the result to the user before U5.
+  9. Confirm that the unpacked solution's flow definitions carry each flow's connection reference map with the logical names, which the KTD13 fallback needs. If they don't, the fallback can only flag possible duplicates and generated names, and U1 records that.
 - **Execution note:** This is a live check, not code. Scrub tenant ids, connection ids and names from captured fixtures before committing them.
 - **Test expectation:** none, it produces fixtures and findings.
-- **Verification:** The Assumptions read as confirmed or the stop condition fires; the fixture folder holds scrubbed definitions.
+- **Verification:** The Assumptions read as confirmed or the stop condition fires; the fixture folder holds scrubbed definitions; KTD13 records the measured times and the chosen advice source.
 
 ### U2. Read and classify connection references
 
@@ -350,7 +365,7 @@ stateDiagram-v2
 
 ### U5. Wire the cleanup into `pull`
 
-- **Goal:** `pull` runs the review, asks or reports or acts per mode, applies, and stops or continues, with `--dry-run` and the new force specifier.
+- **Goal:** `pull` runs the review, advises without the flag, asks or acts with `--tidy-connrefs`, applies, and stops or continues.
 - **Requirements:** R1, R2, R13, R15, R16, R17, R18, R19, R20; F1, F2, F3; KTD1, KTD9, KTD10, KTD11, KTD12.
 - **Dependencies:** U2, U3, U4.
 - **Files:**
@@ -358,41 +373,40 @@ stateDiagram-v2
   - `src/Flowline.Core/ExitCode.cs` (extend `PartialSuccess`'s description)
   - `tests/Flowline.Tests/PullCommandTests.cs`
 - **Approach:**
-  1. Inject `DataverseConnector`; keep the PAC profile from the DEV check; connect after the dirty gate.
-  2. Add `--dry-run` to the pull settings and `connection-references` to its force specifiers.
-  3. Move `Config.Save` after the dry-run exit, so a dry run writes nothing.
-  4. Decide the mode before any `ConfirmGated` call (KTD9); prompts run outside spinners.
+  1. Inject `DataverseConnector`; keep the PAC profile from the DEV check; connect after the dirty gate. With the KTD13 fallback, connect only when `--tidy-connrefs` is passed, and run the source-only advice after the export.
+  2. Add `--tidy-connrefs` to the pull settings, with the description "Merge duplicate connection references, remove unused ones and rename default names in DEV". The force specifiers stay as they are.
+  3. Decide the mode up front (KTD9); prompts run outside spinners.
+  4. Without the flag, catch a review that cannot run and print one warning (R20); with it, let the error stop `pull`.
   5. Build rename suggestions from `PacConnections` (KTD12).
-  6. Print the review and results naming references and flows only, never connection ids.
+  6. Print the advice, review and results naming references and flows only, never connection ids.
   7. On a stop, throw `PartialSuccess` with done and not-done lists; on success, continue to the bump.
-  8. Keep the mode decision and report formatting as `internal static` seams for tests.
+  8. Keep the mode decision and advice and report formatting as `internal static` seams for tests.
 - **Patterns to follow:** `SettingsComponentCommands.CanOffer` for the interactive-or-report gate, `SettingsApplyCommand`'s connect-then-report shape, `docs/tone-of-voice.md` for every message.
 - **Test scenarios:**
-  - Mode gate: interactive without force asks; unattended with `connection-references` acts; unattended without it reports; `--force all` counts as the specifier.
-  - Covers AE6. Unattended without the specifier: the report lists the group and the decision is "report".
-  - Covers AE8. Forced unattended: a group with missing evidence is excluded from the act set.
-  - Covers AE11. Dry-run report lists planned merges, removals, renames and the forced subset; nothing-to-do prints one line.
-  - Force specifier validation accepts `connection-references` and rejects an unknown value with the valid list.
+  - Mode gate: no flag advises, at a terminal or not; flag at a terminal asks; flag with no terminal acts; `--force all` without the flag still advises.
+  - Covers AE6. Without the flag: the advice block names `pull --tidy-connrefs` and the decision is "advise".
+  - Covers AE8. Flag with no terminal: a group with missing evidence is excluded from the act set.
+  - Covers AE11. A review that cannot run: a warning and the export without the flag; a stop before any write with it.
   - R2: an empty review prints only under `--verbose`.
   - The stop message names done items, not-done items and flows left off.
-- **Verification:** A Release build of `pull --dry-run` against a scratch DEV prints the review and leaves `git status` clean; an interactive `pull` merges a seeded duplicate and the export shows one reference.
+- **Verification:** A Release build of `pull --bump none` against a scratch DEV with a seeded duplicate prints the advice block and leaves DEV unchanged; `pull --tidy-connrefs` at a terminal merges the duplicate and the export shows one reference.
 
 ### U6. Update docs and contracts
 
-- **Goal:** Every surface that documents `pull`, its flags, force specifiers or exit codes matches the new behavior.
-- **Requirements:** R16, R17, R18, R20; KTD9, KTD10.
+- **Goal:** Every surface that documents `pull`, its flags or exit codes matches the new behavior.
+- **Requirements:** R16, R17, R18, R20; KTD9, KTD10, KTD11.
 - **Dependencies:** U5.
 - **Files:**
-  - `src/Flowline/Program.cs` (pull description and a `--dry-run` example)
+  - `src/Flowline/Program.cs` (pull description and a `--tidy-connrefs` example)
   - `README.md` (pull row)
-  - `CHANGELOG.md` (Unreleased: Added for the cleanup and `--dry-run`, Changed for `pull` now writing to DEV before export)
-  - `plugin/skills/flowline/SKILL.md` (pull behavior, flags, force table, exit-code table)
-  - `.claude/skills/cli-for-agents/SKILL.md` (§4 drops `pull`'s exemption; §9 fixes the stale `PullCommand.cs:30-33` cite)
+  - `CHANGELOG.md` (Unreleased: Added for `--tidy-connrefs`, Changed for `pull` now reading DEV connection references and printing advice)
+  - `plugin/skills/flowline/SKILL.md` (pull behavior, the new flag, exit-code table)
+  - `.claude/skills/cli-for-agents/SKILL.md` (§4 keeps `pull`'s exemption and restates why: every DEV write `pull` makes can be switched off, `--bump none` and no `--tidy-connrefs`; one line that an opt-in helper action gets a boolean flag, not a `--force` specifier; §9 fixes the stale `PullCommand.cs:30-33` cite)
   - `docs/ALM-strategy.md` (one line in §9 that DEV-side reference removal leaves the PROD copy to orphan cleanup)
   - `../Flowline.wiki/07-Pull.md`, `../Flowline.wiki/04-Command-Reference.md`, `../Flowline.wiki/12-AI-Agents.md` (read `../Flowline.wiki/AGENTS.md` first)
 - **Approach:** Close with the literal search over `Program.cs`, `src/Flowline/Templates/` and `plugin/skills/` from `docs/solutions/conventions/cli-surface-change-doc-sweep.md`; run `/tone` on changed `.cs` files when available, else check against `docs/tone-of-voice.md`.
 - **Test expectation:** none, documentation only.
-- **Verification:** The doc-sweep search finds no stale `pull` flag or specifier list; wiki pages updated or the reason they could not be is reported.
+- **Verification:** The doc-sweep search finds no stale `pull` flag list; wiki pages updated or the reason they could not be is reported.
 
 ---
 
@@ -402,9 +416,9 @@ stateDiagram-v2
 |---|---|---|
 | Build | `dotnet build Flowline.slnx` | Compiles; Core does not reference `Flowline` |
 | Core tests | `dotnet test tests/Flowline.Core.Tests/Flowline.Core.Tests.csproj` | U2, U3, U4 behavior |
-| CLI tests | `dotnet test tests/Flowline.Tests/Flowline.Tests.csproj` | U5 seams, force validation |
+| CLI tests | `dotnet test tests/Flowline.Tests/Flowline.Tests.csproj` | U5 seams, mode gate |
 | Full suite | `dotnet test Flowline.slnx` | Nothing else broke (cross-cutting: orphan cleanup extraction) |
-| Live smoke | Release build of `pull --dry-run` and an interactive `pull` against a scratch DEV with a seeded duplicate | R1, R15, R20 end to end; messages per `docs/tone-of-voice.md` |
+| Live smoke | Release build of `pull --bump none` (advice, DEV unchanged) and `pull --tidy-connrefs` at a terminal against a scratch DEV with a seeded duplicate | R1, R15, R16 end to end; messages per `docs/tone-of-voice.md` |
 | Docs | Literal search from `docs/solutions/conventions/cli-surface-change-doc-sweep.md` | U6 |
 
 CI source of truth is `.github/workflows/ci.yml`. Use a Release build to judge user-facing output, because Debug propagates exceptions as stack traces.
@@ -423,12 +437,8 @@ CI source of truth is `.github/workflows/ci.yml`. Use a Release build to judge u
 
 ## Deferred / Open Questions
 
-Review items left for the author. Only the first must be settled before U5; none blocks U1 to U4.
+None open.
 
-### From 2026-11-23 review
+### Resolved 2026-11-25
 
-- **Should `--force all` include the cleanup?** KTD9 and System-Wide Impact (P1, adversarial, confidence 75)
-
-  Scripts that already pass `--force all` for the dirty and config gates would, after upgrading, start turning flows off and on and deleting or removing references in DEV. Git cannot undo those writes, and the script's author never opted in. Flowline's convention (`.claude/skills/cli-for-agents/SKILL.md` §3) defines `all` as everything the command gates, so excluding it breaks that rule for one specifier; including it makes the CHANGELOG line the only warning.
-
-  Change: either keep `all` covering `connection-references` per the convention (current plan), or exclude it so the cleanup acts unattended only when `connection-references` is named, and update KTD9, the U5 mode-gate test and the System-Wide Impact bullet.
+- **Should `--force all` include the cleanup?** (2026-11-23 review, P1, adversarial, confidence 75.) Moot: the cleanup has no force specifier. It runs only with `--tidy-connrefs` (KTD9), so `--force all` keeps its current meaning and no existing script changes behavior.
