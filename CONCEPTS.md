@@ -253,6 +253,10 @@ fails the push before any Dataverse write.
 - "Orphan" carries two directions and they are not the same thing — an [[Orphan component]] is in the
   environment and missing from source; a [[Global orphan]] is in source and missing from the solution.
   A sweep written for one is not safe for the other.
+- An unused connection reference is not an [[Orphan component]]. It is declared in the solution and
+  nothing uses it: no cloud flow, canvas app, agent or other component. An orphan is live in the
+  environment and missing from source. `pull` proposes removing unused references; orphan cleanup
+  flags orphans.
 - A [[PAC auth profile]] and the [[PAC token store]] had been treated as one thing. They are distinct:
   the profile says who and where, the store holds the token, and they live in different places with
   different platform rules. Finding a profile does not mean a token is reachable.
