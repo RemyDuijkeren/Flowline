@@ -521,6 +521,7 @@ namespace Flowline
                   .WithDescription("Export the solution from DEV, bump the patch version, unpack it to source-controlled XML, and write CHANGES.md and the context docs. Run after testing in DEV, with a clean working tree. DEV only, via --env dev (default) or a DEV URL.")
                   .WithExample("pull")
                   .WithExample("pull", "--managed", "--bump", "minor")
+                  .WithExample("pull", "--tidy-connrefs")
                   .WithExample("pull", "--env", "https://contoso-dev.crm4.dynamics.com");
 
             // Pack (solution zip without a target environment)

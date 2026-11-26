@@ -484,6 +484,10 @@ rather than replacing them
 survives a deploy that omits it, and `Overwrite Customizations` does not reach these component
 types. Correcting form drift means removing the active layer for that form.
 
+**Removing a connection reference in DEV leaves its copies downstream.** `pull --tidy-connrefs`
+deletes or removes references only in DEV, so their copies in test, UAT and prod stay until
+deploy's orphan cleanup flags them for manual handling.
+
 **Drift is detected and reset, not prevented.** Rule 1 still governs (§8.2) — customization belongs
 in a development environment — but the Power Platform makes that rule hard to enforce, and this
 model removes the backstop that would otherwise make a violation visible. In the managed model, an

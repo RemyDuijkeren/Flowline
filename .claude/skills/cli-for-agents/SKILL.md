@@ -68,10 +68,12 @@ purpose: `-f|--force <SPECIFIER>`, repeatable, `all` for everything the command 
 Dataverse settings only, so a command with nothing to force doesn't list it in help.
 
 - Read it with `settings.HasForce("<specifier>")` — never `settings.Force.Any()`.
+- An opt-in helper action (pull's `--tidy-connrefs`) gets its own boolean flag, not a `--force`
+  specifier, so `--force all` keeps its meaning.
 - New hazard → new specifier, added to that command's `ValidForceSpecifiers` override
   ([PushCommand.cs:467-469](../../../src/Flowline/Commands/PushCommand.cs#L467-L469),
   [DeployCommand.cs:95-96](../../../src/Flowline/Commands/DeployCommand.cs#L95-L96),
-  [PullCommand.cs:42-43](../../../src/Flowline/Commands/PullCommand.cs#L42-L43),
+  [PullCommand.cs:48-49](../../../src/Flowline/Commands/PullCommand.cs#L48-L49),
   [ProvisionCommand.cs:43-44](../../../src/Flowline/Commands/ProvisionCommand.cs#L43-L44), whose
   `overwrite` specifier gates an existing target instead of the removed `--allow-overwrite` flag;
   config-only commands reuse `FlowlineSettings.ConfigOnlyValidSpecifiers`). The base command validates it for you
@@ -87,7 +89,9 @@ Dataverse settings only, so a command with nothing to force doesn't list it in h
 settled the exceptions:
 
 - `pull` and `generate`: reversible with git. For `pull`, `--bump none`, read the summary, then
-  `git checkout -- Solution/src` is the dry run.
+  `git checkout -- Solution/src` is the dry run. Every DEV write `pull` makes can be switched off
+  (`--bump none`, and no `--tidy-connrefs`), and what is left is reversible with git. A pull
+  without `--tidy-connrefs` is the preview of the cleanup.
 - `provision`, `clone`, `init`: no value. `provision` already validates region and type before
   the copy.
 - `deploy --dry-run` still takes the pre-deploy backup.
@@ -179,7 +183,7 @@ makes Dataverse match source again and reports the unchanged parts with `console
 never a duplicate step registration, duplicate web resource, or second assembly.
 
 Deliberate exceptions exist and stay that way: `pull` bumps the patch version every run
-([PullCommand.cs:30-33](../../../src/Flowline/Commands/PullCommand.cs#L30-L33); `--bump none` skips it) — that's the
+([PullCommand.cs:30-35](../../../src/Flowline/Commands/PullCommand.cs#L30-L35); `--bump none` skips it) — that's the
 point of the command, not a defect. For a state-advancing command, make the advance visible in output so a retrying agent
 can tell it moved, and don't gate it behind an "already done" check.
 

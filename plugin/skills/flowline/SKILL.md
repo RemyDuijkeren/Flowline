@@ -185,8 +185,17 @@ some cleanup failed.
   `--skip-solution-check`, `--skip-component-check`, `--binaries-from-build` (pack plugin and web
   resource binaries from the build instead of the committed copies), `--no-build`.
 - `pack`: `--output <dir>`, `--skip-solution-check`, `--binaries-from-build`, `--no-build`.
-- `pull`: `--bump patch|minor|major|none`, `--managed [false]`, `--no-build`,
-  `--env <role|url>` (DEV only).
+- `pull`: `--bump patch|minor|major|none`, `--managed [false]`, `--no-build`, `--tidy-connrefs`,
+  `--env <role|url>` (DEV only). Every pull reads the solution's connection references in DEV before
+  the bump and export, and warns with counts plus `Run 'flowline pull --tidy-connrefs' to untangle
+  them.` when it finds duplicates, different-account groups, unused references or default names.
+  Without the flag nothing changes in DEV, the exit code is unchanged, and a review that can't run
+  is one warning. `--tidy-connrefs` applies the cleanup before the export: at a terminal it asks;
+  unattended it merges same-connection groups that have a settings file for every role and removes
+  unused references, and only reports different-account groups and renames. It is a boolean flag, not
+  a `--force` specifier, so `--force all` does not turn it on. There is no `pull --dry-run`: a pull
+  without the flag is the preview, and with `--bump none` it writes nothing to DEV. Copies of removed
+  references stay in TEST/UAT/PROD, where `deploy` reports them as orphans.
 - `init`: `--env <role|url>` (DEV only), `--publisher-prefix <prefix>`, `--publisher-name`, `--display-name`.
 - `diff`: two optional ref positionals: `diff`, `diff A`, `diff A B`, `diff A..B` (shorthand for
   `A B`), `diff A...B` (merge base of A and B, against B); without a second ref the right side is the
@@ -238,7 +247,7 @@ Exit codes are a stable public API — they don't change meaning across Flowline
 | 15 | ValidationFailed | Missing dependencies, invalid `--force` value, an unknown option, schema mismatch, contradictory flags, a `settings` target that is neither a role nor a URL, a scripted `settings toggle`/`set` write with no component name, or a managed `deploy` target still holding a staged upgrade | Read the error; a staged upgrade prints the `pac` command for each fix, so check Solution history in the target before running either; a flag conflict names both flags, an unknown option names it, and a missing name or swapped order prints the line to run |
 | 16 | Timeout | PAC CLI 60-minute limit exceeded | Retry; check environment health |
 | 17 | ForceRequired | Destructive operation needs explicit confirmation, including a declined confirmation prompt (e.g. `deploy`'s first-import prompt, `provision`'s overwrite prompt) | Add the `--force <specifier>` the message names |
-| 18 | PartialSuccess | `deploy` imported but some orphan cleanup failed, `settings apply` couldn't write some components, or a `settings capture` sweep couldn't reach an environment | One failure and every failure share this code — read the printed counts. Fix what the output names and re-run; both commands are safe to repeat |
+| 18 | PartialSuccess | `deploy` imported but some orphan cleanup failed, `settings apply` couldn't write some components, a `settings capture` sweep couldn't reach an environment, or `pull --tidy-connrefs` stopped part way (nothing exported) | One failure and every failure share this code — read the printed counts. Fix what the output names and re-run; both commands are safe to repeat |
 | 19 | Inconclusive | A check couldn't run to completion — `drift`'s empty-input guard skipped the comparison, a deploy verification step couldn't finish (e.g. a locked directory or a Dataverse query fault), or every component a `settings apply` file declared was missing from the target | Not a pass/fail signal — read the printed reason. For `settings apply` it usually means the wrong settings file or the wrong environment |
 | 20 | WriteTargetOccupied | A file already occupies a path the command would write to (e.g. `scaffold` meeting an existing template file) | Nothing is broken — something valid is in the way. Move the named file aside, or run the command somewhere else |
 | 21 | AssemblyNotRegistered | Deploy imported, but a plug-in package holds an assembly with no registration in the target, or one registered with no plugin types | Create the `pluginassembly` record under that package (sandbox isolation, matching version/culture/public key token), then deploy again so the content write populates its plugin types — repeats every deploy until that record exists |
