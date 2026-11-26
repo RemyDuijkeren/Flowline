@@ -326,7 +326,7 @@ public static class SolutionComponentInventory
     static List<Guid> Ids(IReadOnlyList<(Guid ObjectId, int ComponentType)> all, int componentType) =>
         all.Where(c => c.ComponentType == componentType).Select(c => c.ObjectId).ToList();
 
-    static async Task<List<(Guid ObjectId, int ComponentType)>> QuerySolutionComponentIdsAsync(
+    internal static async Task<List<(Guid ObjectId, int ComponentType)>> QuerySolutionComponentIdsAsync(
         IOrganizationServiceAsync2 service, string solutionUniqueName, CancellationToken ct)
     {
         var query = new QueryExpression("solutioncomponent")

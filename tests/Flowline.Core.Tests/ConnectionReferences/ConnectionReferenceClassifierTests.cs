@@ -33,7 +33,7 @@ public class ConnectionReferenceClassifierTests
     static Classification Classify(IEnumerable<ConnectionReference> refs, params CloudFlow[] flows) =>
         ConnectionReferenceClassifier.Classify(refs.ToList(), flows);
 
-    // Table row 1: same connection in DEV, every role file binds them alike.
+    // Same connection in DEV, every role file binds them alike.
     [Fact]
     public void SharedDevConnectionAndAlikeEverywhere_IsSameConnectionGroup()
     {
@@ -60,7 +60,6 @@ public class ConnectionReferenceClassifierTests
         result.SameConnection.Should().ContainSingle();
     }
 
-    // Table row 2, AE8.
     [Fact]
     public void RoleWithoutFile_IsMissingEvidence()
     {
@@ -69,7 +68,7 @@ public class ConnectionReferenceClassifierTests
         result.SameConnection.Should().ContainSingle().Which.MissingEvidence.Should().Equal(EnvironmentRole.Prod);
     }
 
-    // Table row 4, AE1: DEV alike, PROD differs.
+    // DEV alike, PROD differs.
     [Fact]
     public void DifferentBindingInOneRole_IsDifferentAccountGroupWithBindings()
     {
@@ -84,7 +83,7 @@ public class ConnectionReferenceClassifierTests
         group.Members.Select(m => m.Bindings[EnvironmentRole.Prod].ConnectionId).Should().BeEquivalentTo(["p1", "p2"]);
     }
 
-    // Table row 4, AE9: the file binds one member and leaves the other undeclared.
+    // The file binds one member and leaves the other undeclared.
     [Fact]
     public void BoundInOneMemberUndeclaredInOther_Differs()
     {
@@ -113,7 +112,7 @@ public class ConnectionReferenceClassifierTests
         result.SameConnection.Should().ContainSingle();
     }
 
-    // Table row 3: two match each other, the third differs.
+    // Two match each other, the third differs.
     [Fact]
     public void TwoMatchOneDiffers_IsSameConnectionPairPlusDifferentAccountGroup()
     {
@@ -137,7 +136,7 @@ public class ConnectionReferenceClassifierTests
         result.DifferentAccount.Should().BeEmpty();
     }
 
-    // AE2: five uses against two.
+    // Five uses against two.
     [Fact]
     public void Keeper_IsTheMostUsed()
     {
@@ -160,7 +159,6 @@ public class ConnectionReferenceClassifierTests
         Classify([newer, older], Flow(F1), Flow(F2)).SameConnection.Single().Keeper.Should().Be(older);
     }
 
-    // AE3.
     [Fact]
     public void MemberUsedByCanvasApp_BecomesKeeperEvenWithFewerUses()
     {

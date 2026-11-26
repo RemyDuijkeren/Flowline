@@ -23,22 +23,26 @@ public sealed record ConnectionReferenceReview(
 /// <summary>Reads a solution's connection references, their uses and the settings evidence from DEV, then classifies them.</summary>
 public static class ConnectionReferenceReviewer
 {
-    const int CloudFlowCategory = 5;
-
     public static async Task<ConnectionReferenceReview> ReadAsync(
         IOrganizationServiceAsync2 service,
         string solutionUniqueName,
         IReadOnlyList<RoleEvidence> evidence,
         CancellationToken ct)
     {
-        var components = await ReadComponentsAsync(service, solutionUniqueName, ct).ConfigureAwait(false);
+        var components = await SolutionComponentInventory.QuerySolutionComponentIdsAsync(service, solutionUniqueName, ct).ConfigureAwait(false);
         var componentIds = components.Select(c => c.ObjectId).ToHashSet();
 
-        var rows = await ReadReferenceRowsAsync(service, components.Select(c => c.ObjectId).ToList(), ct).ConfigureAwait(false);
+        var rows = await ReadReferenceRowsAsync(service, componentIds.ToList(), ct).ConfigureAwait(false);
+        // No references: nothing to classify, so the flow definitions, the heaviest read, are skipped.
+        if (rows.Count == 0)
+            return new ConnectionReferenceReview([], [], ConnectionReferenceClassifier.Classify([], []));
+
         var flows = await ReadFlowsAsync(
             service, components.Where(c => c.ComponentType == SolutionComponentInventory.WorkflowComponentType)
                 .Select(c => c.ObjectId).ToList(), ct).ConfigureAwait(false);
-        var dependents = await ReadDependentsAsync(service, rows.Select(r => r.Id).ToList(), ct).ConfigureAwait(false);
+        var dependents = (await ReadDependentsAsync(service, rows.Select(r => r.Id).ToList(), ct).ConfigureAwait(false))
+            ?.ToLookup(d => d.RequiredId);
+        var componentTypes = components.GroupBy(c => c.ObjectId).ToDictionary(g => g.Key, g => g.First().ComponentType);
 
         // One flow that cannot be read might name any reference, so no reference can be called unused.
         var flowNames = flows.ToDictionary(f => f.Id, f => FlowConnectionMap.ReferencedLogicalNames(f.Definition));
@@ -48,15 +52,15 @@ public static class ConnectionReferenceReviewer
         var references = rows.Select(r =>
         {
             var fromMap = flows.Where(f => flowNames[f.Id]?.Contains(r.LogicalName) == true).Select(f => f.Id);
-            var fromDependency = dependents?.Where(d => d.Required == r.Id && flowIds.Contains(d.Dependent)).Select(d => d.Dependent) ?? [];
-            var other = dependents?
-                .Where(d => d.Required == r.Id && !flowIds.Contains(d.Dependent) && componentIds.Contains(d.Dependent)
+            var fromDependency = dependents?[r.Id].Where(d => flowIds.Contains(d.DependentId)).Select(d => d.DependentId) ?? [];
+            var other = dependents?[r.Id]
+                .Where(d => !flowIds.Contains(d.DependentId) && componentIds.Contains(d.DependentId)
                             && d.ComponentType != SolutionComponentInventory.WorkflowComponentType)
-                .Select(d => new Dependent(d.Dependent, d.ComponentType)).DistinctBy(d => d.Id).ToList() ?? [];
+                .Select(d => new Dependent(d.DependentId, d.ComponentType)).DistinctBy(d => d.Id).ToList() ?? [];
 
             return new ConnectionReference(
                 r.Id, r.LogicalName, r.DisplayName, r.ConnectorId, r.ConnectionId, r.CreatedOn,
-                components.FirstOrDefault(c => c.ObjectId == r.Id).ComponentType,
+                componentTypes.GetValueOrDefault(r.Id),
                 BindingsFor(evidence, r.LogicalName),
                 fromMap.Concat(fromDependency).Distinct().ToList(), other, useUnknown);
         }).ToList();
@@ -68,21 +72,6 @@ public static class ConnectionReferenceReviewer
         evidence.ToDictionary(
             e => e.Role,
             e => new RoleBinding(e.HasFile, e.ConnectionIds.TryGetValue(logicalName, out var id) ? id : null));
-
-    static async Task<List<(Guid ObjectId, int ComponentType)>> ReadComponentsAsync(
-        IOrganizationServiceAsync2 service, string solutionUniqueName, CancellationToken ct)
-    {
-        var query = new QueryExpression("solutioncomponent") { ColumnSet = new ColumnSet("objectid", "componenttype") };
-        var solutionLink = query.AddLink("solution", "solutionid", "solutionid", JoinOperator.Inner);
-        solutionLink.LinkCriteria.AddCondition("uniquename", ConditionOperator.Equal, solutionUniqueName);
-
-        var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
-        return entities
-            .Select(e => (ObjectId: e.GetAttributeValue<Guid>("objectid"), Type: e.GetAttributeValue<OptionSetValue>("componenttype")?.Value))
-            .Where(c => c.ObjectId != Guid.Empty && c.Type is not null)
-            .Select(c => (c.ObjectId, c.Type!.Value))
-            .ToList();
-    }
 
     sealed record ReferenceRow(Guid Id, string LogicalName, string DisplayName, string ConnectorId, string? ConnectionId, DateTime? CreatedOn);
 
@@ -127,7 +116,7 @@ public static class ConnectionReferenceReviewer
             NoLock = true,
         };
         query.Criteria.AddCondition("workflowid", ConditionOperator.In, workflowIds.Cast<object>().ToArray());
-        query.Criteria.AddCondition("category", ConditionOperator.Equal, CloudFlowCategory);
+        query.Criteria.AddCondition("category", ConditionOperator.Equal, SolutionComponentInventory.WorkflowCategoryModernFlow);
 
         var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
         return entities
@@ -143,7 +132,7 @@ public static class ConnectionReferenceReviewer
     // One query on the dependency table for every reference, not a RetrieveDependenciesForDelete per
     // reference: it is far faster, and the table is a superset, which errs toward "in use". A fault returns
     // null, meaning "can't tell", the opposite of the web resource checker, which moves on.
-    static async Task<List<(Guid Required, Guid Dependent, int ComponentType)>?> ReadDependentsAsync(
+    static async Task<List<(Guid RequiredId, Guid DependentId, int ComponentType)>?> ReadDependentsAsync(
         IOrganizationServiceAsync2 service, List<Guid> referenceIds, CancellationToken ct)
     {
         if (referenceIds.Count == 0) return [];

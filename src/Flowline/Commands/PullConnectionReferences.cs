@@ -113,7 +113,6 @@ internal static class PullConnectionReferences
     }
 
     /// <summary>The advice block a pull without the flag prints: one line of counts, one naming the fix. Empty when nothing is actionable.</summary>
-    /// <remarks>Groups held back are left out: the flag cannot merge them either.</remarks>
     internal static IReadOnlyList<string> AdviceLines(Classification c)
     {
         var parts = new List<string>();
@@ -235,9 +234,7 @@ internal static class PullConnectionReferences
                 removeUnused.AddRange(c.Unused);
         }
 
-        var moved = mergeSame.SelectMany(g => g.Move)
-            .Concat(mergeDifferent.SelectMany(g => g.Members.Where(m => m != ConnectionReferenceClassifier.PickKeeper(g.Members))))
-            .ToHashSet();
+        var moved = new CleanupChoices(mergeSame, mergeDifferent, [], []).Moves().Select(m => m.From).ToHashSet();
         renameOffers.AddRange(c.GeneratedNames);
         var offers = renameOffers.Where(r => !moved.Contains(r) && !removeUnused.Contains(r)).DistinctBy(r => r.Id).ToList();
 

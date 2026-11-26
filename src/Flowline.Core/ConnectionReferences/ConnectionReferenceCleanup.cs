@@ -21,7 +21,18 @@ public sealed record CleanupChoices(
     IReadOnlyList<SameConnectionGroup> MergeSame,
     IReadOnlyList<DifferentAccountGroup> MergeDifferent,
     IReadOnlyList<ConnectionReference> RemoveUnused,
-    IReadOnlyList<Rename> Renames);
+    IReadOnlyList<Rename> Renames)
+{
+    /// <summary>Each reference that folds into another, with its keeper.</summary>
+    public IReadOnlyList<(ConnectionReference From, ConnectionReference Keeper)> Moves() =>
+        MergeSame.SelectMany(g => g.Move.Select(m => (m, g.Keeper)))
+            .Concat(MergeDifferent.SelectMany(g =>
+            {
+                var keeper = ConnectionReferenceClassifier.PickKeeper(g.Members);
+                return g.Members.Where(m => m != keeper).Select(m => (m, keeper));
+            }))
+            .ToList();
+}
 
 public enum CleanupStatus { Done, Failed, NotAttempted }
 
@@ -47,13 +58,7 @@ public static class ConnectionReferenceCleanup
         CleanupChoices choices,
         CancellationToken ct)
     {
-        var moves = choices.MergeSame.SelectMany(g => g.Move.Select(m => (From: m, Keeper: g.Keeper)))
-            .Concat(choices.MergeDifferent.SelectMany(g =>
-            {
-                var keeper = ConnectionReferenceClassifier.PickKeeper(g.Members);
-                return g.Members.Where(m => m != keeper).Select(m => (From: m, Keeper: keeper));
-            }))
-            .ToList();
+        var moves = choices.Moves();
         var keeperOf = moves.ToDictionary(m => m.From.LogicalName, m => m.Keeper.LogicalName, StringComparer.OrdinalIgnoreCase);
         var removable = moves.Select(m => m.From).Concat(choices.RemoveUnused).DistinctBy(r => r.Id).ToList();
 
@@ -96,12 +101,14 @@ public static class ConnectionReferenceCleanup
         var rewritten = Rewrite(flow.Definition, keeperOf);
         if (rewritten is null)
             return new CleanupOutcome("flow", flow.Name, CleanupStatus.Failed, "The flow's definition could not be read.");
+        // Listed through the dependency table only, the definition names no moved reference: nothing to write.
+        if (rewritten == flow.Definition)
+            return new CleanupOutcome("flow", flow.Name, CleanupStatus.Done, "already on the keeper");
         if (flow.RowVersion is null)
             return new CleanupOutcome("flow", flow.Name, CleanupStatus.Failed, "The review holds no row version for the flow, so it cannot be updated safely.");
 
         try
         {
-            // Only clientdata is written, never statecode: the flow stays in the state it is in.
             var target = new Entity("workflow", flow.Id) { ["clientdata"] = rewritten, RowVersion = flow.RowVersion };
             await service.ExecuteAsync(
                 new UpdateRequest { Target = target, ConcurrencyBehavior = ConcurrencyBehavior.IfRowVersionMatches }, ct).ConfigureAwait(false);
@@ -128,6 +135,7 @@ public static class ConnectionReferenceCleanup
         catch (JsonException) { return null; }
         if (root?["properties"]?["connectionReferences"] is not JsonObject map) return null;
 
+        var changed = false;
         foreach (var entry in map)
         {
             if (entry.Value?["connection"] is not JsonObject connection) continue;
@@ -135,8 +143,10 @@ public static class ConnectionReferenceCleanup
             if (name is null || !keeperOf.TryGetValue(name, out var keeper)) continue;
             connection["connectionReferenceLogicalName"] = keeper;
             connection.Remove("name");
+            changed = true;
         }
 
+        if (!changed) return definition;
         return root.ToJsonString(new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
     }
 
