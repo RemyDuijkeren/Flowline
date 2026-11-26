@@ -50,6 +50,25 @@ internal static class SettingsSectionEntries
             .FirstOrDefault();
     }
 
+    /// <summary>Removes every entry in one section whose name matches one of <paramref name="names"/>, and returns the names removed.</summary>
+    public static List<string> Remove(
+        SettingsDocument document, string section, string nameProperty, IReadOnlySet<string> names)
+    {
+        var removed = new List<string>();
+        if (!document.PassThrough.TryGetValue(section, out var node) || node is not JsonArray array) return removed;
+
+        for (var i = array.Count - 1; i >= 0; i--)
+        {
+            var name = (array[i] as JsonObject)?[nameProperty]?.GetValue<string>();
+            if (name is null || !names.Contains(name)) continue;
+
+            array.RemoveAt(i);
+            removed.Insert(0, name);
+        }
+
+        return removed;
+    }
+
     /// <summary>
     /// Appends entries the existing file declares that the regenerated skeleton no longer has, and names
     /// them.
