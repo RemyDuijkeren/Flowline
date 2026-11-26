@@ -73,8 +73,13 @@ public static class ConnectionReferenceCleanup
         if (removable.Count > 0)
             steps.Add(("settings", "settings files", () => Task.FromResult(RemoveSettingsEntries(settingsFolder, removable))));
 
+        // A dependent that is one of this solution's own components means the reference is still in use here,
+        // for example a flow a maker saved after the review: that stops the cleanup instead of detaching it.
+        var ownComponents = review.Flows.Select(f => f.Id)
+            .Concat(review.References.SelectMany(r => r.OtherDependents.Select(d => d.Id)))
+            .ToHashSet();
         foreach (var reference in removable)
-            steps.Add(("reference", reference.LogicalName, () => DeleteOrRemoveAsync(service, solutionUniqueName, reference, ct)));
+            steps.Add(("reference", reference.LogicalName, () => DeleteOrRemoveAsync(service, solutionUniqueName, reference, ownComponents, ct)));
 
         foreach (var rename in choices.Renames)
             steps.Add(("rename", rename.Reference.LogicalName, () => RenameAsync(service, rename, ct)));
@@ -84,7 +89,18 @@ public static class ConnectionReferenceCleanup
         foreach (var (kind, name, run) in steps)
         {
             if (stopped) { outcomes.Add(new CleanupOutcome(kind, name, CleanupStatus.NotAttempted)); continue; }
-            var outcome = await run().ConfigureAwait(false);
+            CleanupOutcome outcome;
+            try
+            {
+                outcome = await run().ConfigureAwait(false);
+            }
+            // Anything a step did not turn into an outcome (a timeout, a dropped connection, Ctrl+C) still ends
+            // as a failed step, so the caller reports what landed instead of losing the list.
+            catch (Exception ex)
+            {
+                outcome = new CleanupOutcome(kind, name, CleanupStatus.Failed,
+                    ex is OperationCanceledException && ct.IsCancellationRequested ? "Cancelled." : ex.Message);
+            }
             outcomes.Add(outcome);
             stopped = outcome.Status == CleanupStatus.Failed;
         }
@@ -164,11 +180,15 @@ public static class ConnectionReferenceCleanup
     }
 
     static async Task<CleanupOutcome> DeleteOrRemoveAsync(
-        IOrganizationServiceAsync2 service, string solutionUniqueName, ConnectionReference reference, CancellationToken ct)
+        IOrganizationServiceAsync2 service, string solutionUniqueName, ConnectionReference reference,
+        IReadOnlySet<Guid> ownComponents, CancellationToken ct)
     {
         try
         {
             var dependents = await DependentsAsync(service, reference, ct).ConfigureAwait(false);
+            if (dependents.Any(d => ownComponents.Contains(d.GetAttributeValue<Guid>("dependentcomponentobjectid"))))
+                return new CleanupOutcome("reference", reference.LogicalName, CleanupStatus.Failed,
+                    "A component of this solution still uses it, so it was left in place.");
             var otherSolutions = await OtherSolutionsAsync(service, solutionUniqueName, reference.Id, ct).ConfigureAwait(false);
 
             var keepReasons = new List<string>();

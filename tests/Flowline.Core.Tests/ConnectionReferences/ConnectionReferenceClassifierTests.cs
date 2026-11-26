@@ -250,4 +250,28 @@ public class ConnectionReferenceClassifierTests
 
         result.GeneratedNames.Should().Equal(keeper);
     }
+
+    [Fact]
+    public void DifferentAccountGroupWithTwoCanvasAppMembers_IsHeldBackNotOffered()
+    {
+        var a = Ref("a", dev: "conn-1", flows: [F1], canvasApps: 1);
+        var b = Ref("b", dev: "conn-2", flows: [F2], canvasApps: 1);
+
+        var c = Classify([a, b], Flow(F1), Flow(F2));
+
+        c.DifferentAccount.Should().BeEmpty();
+        c.NotMerged.Should().ContainSingle().Which.Members.Should().BeEquivalentTo([a, b]);
+    }
+
+    [Fact]
+    public void DifferentAccountGroupWithASuspendedFlow_IsHeldBackNotOffered()
+    {
+        var a = Ref("a", dev: "conn-1", flows: [F1]);
+        var b = Ref("b", dev: "conn-2", flows: [F2]);
+
+        var c = Classify([a, b], Flow(F1), Flow(F2, state: 2));
+
+        c.DifferentAccount.Should().BeEmpty();
+        c.NotMerged.Single().Reason.Should().Contain("suspended");
+    }
 }

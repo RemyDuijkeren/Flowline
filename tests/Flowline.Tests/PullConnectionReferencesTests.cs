@@ -4,6 +4,7 @@ using Flowline.Core;
 using Flowline.Core.ConnectionReferences;
 using Flowline.Core.Environments;
 using Spectre.Console.Cli;
+using Spectre.Console.Testing;
 
 namespace Flowline.Tests;
 
@@ -153,5 +154,52 @@ public class PullConnectionReferencesTests
         ex.Message.Should().Be(
             "Connection reference cleanup stopped at flow 'Invoice mail': it changed in DEV since the review. " +
             "Done: flow 'Order sync'. Not done: reference 'new_b'. Nothing was exported. Fix it, then re-run 'flowline pull --tidy-connrefs'.");
+    }
+
+    // -- binding lines --
+
+    [Fact]
+    public void BindingLines_NumberConnectionsPerEnvironment_AndNeverShowTheIds()
+    {
+        RoleBinding Bound(string id) => new(true, id);
+        var a = Ref("new_a", conn: "shared-commondataser-aaaa") with
+        {
+            Bindings = new Dictionary<EnvironmentRole, RoleBinding> { [EnvironmentRole.Prod] = Bound("prod-svc-1") },
+        };
+        var b = Ref("new_b", conn: "shared-commondataser-aaaa") with
+        {
+            Bindings = new Dictionary<EnvironmentRole, RoleBinding> { [EnvironmentRole.Prod] = Bound("prod-svc-2") },
+        };
+        var c = Ref("new_c", conn: null);
+
+        var lines = PullConnectionReferences.BindingLines([a, b, c]);
+
+        lines.Should().Equal(
+            "new_a  DEV: connection 1, Prod: connection 1",
+            "new_b  DEV: connection 1, Prod: connection 2",
+            "new_c  DEV: unbound, Prod: unbound");
+        string.Join("\n", lines).Should().NotContain("shared-commondataser").And.NotContain("prod-svc");
+    }
+
+    // -- the run without and with the flag when the review cannot run --
+
+    [Fact]
+    public async Task Run_WithoutFlag_ReviewThatCannotRun_WarnsAndReturns()
+    {
+        var console = new TestConsole();
+
+        await PullConnectionReferences.RunAsync(console, _ => throw new InvalidOperationException("no token"),
+            "https://dev", "Contoso", Directory.CreateTempSubdirectory().FullName, tidy: false, interactive: false, CancellationToken.None);
+
+        console.Output.Should().Contain("Couldn't check connection references: no token");
+    }
+
+    [Fact]
+    public async Task Run_WithFlag_ReviewThatCannotRun_Stops()
+    {
+        var act = () => PullConnectionReferences.RunAsync(new TestConsole(), _ => throw new InvalidOperationException("no token"),
+            "https://dev", "Contoso", Directory.CreateTempSubdirectory().FullName, tidy: true, interactive: false, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("no token");
     }
 }

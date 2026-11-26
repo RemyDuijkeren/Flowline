@@ -206,21 +206,23 @@ internal static class PullConnectionReferences
 
         foreach (var g in c.DifferentAccount)
         {
-            var keeper = ConnectionReferenceClassifier.PickKeeper(g.Members);
             console.Info("Same connector, different accounts:");
-            foreach (var m in g.Members)
+            foreach (var line in BindingLines(g.Members))
+                console.MarkupLine($"  {Markup.Escape(line)}");
+
+            // A lone reference that differs from a merged group has nothing to merge into: offer a name only.
+            if (g.Members.Count < 2)
             {
-                var roles = string.Join(", ", m.Bindings.Where(b => b.Value.HasFile)
-                    .Select(b => $"{b.Key}: {b.Value.ConnectionId ?? "unbound"}"));
-                console.MarkupLine($"  [bold]{Markup.Escape(m.LogicalName)}[/] DEV: {Markup.Escape(m.DevConnectionId ?? "unbound")}" +
-                                   (roles.Length > 0 ? $", {Markup.Escape(roles)}" : ""));
+                renameOffers.AddRange(g.Members);
+                continue;
             }
 
+            var keeper = ConnectionReferenceClassifier.PickKeeper(g.Members);
             var merge = $"Merge into {keeper.LogicalName}";
             const string Keep = "Keep them separate";
             var answer = await console.PromptAsync(new SelectionPrompt<string>()
                 .Title(FlowlineConsoleExtensions.Question("Merge them?"))
-                .AddChoices(merge, Keep), ct);
+                .AddChoices(Markup.Escape(merge), Keep), ct);
             if (answer == Keep) renameOffers.AddRange(g.Members);
             else mergeDifferent.Add(g);
         }
@@ -271,6 +273,32 @@ internal static class PullConnectionReferences
         }
 
         return new CleanupChoices(mergeSame, mergeDifferent, removeUnused, renames);
+    }
+
+    /// <summary>
+    /// One line per member showing how it is bound in DEV and each role, without connection ids: members bound
+    /// to the same connection in an environment get the same number there, so a reader sees what matches.
+    /// </summary>
+    internal static IReadOnlyList<string> BindingLines(IReadOnlyList<ConnectionReference> members)
+    {
+        var roles = members.SelectMany(m => m.Bindings.Where(b => b.Value.HasFile).Select(b => b.Key)).Distinct().OrderBy(r => r).ToList();
+        string Tag(IEnumerable<string?> ids, string? id)
+        {
+            if (string.IsNullOrWhiteSpace(id)) return "unbound";
+            var distinct = ids.Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i!.ToLowerInvariant()).Distinct().ToList();
+            return $"connection {distinct.IndexOf(id.ToLowerInvariant()) + 1}";
+        }
+
+        return members.Select(m =>
+        {
+            var parts = new List<string> { $"DEV: {Tag(members.Select(x => x.DevConnectionId), m.DevConnectionId)}" };
+            foreach (var role in roles)
+            {
+                var ids = members.Select(x => x.Bindings.TryGetValue(role, out var b) ? b.ConnectionId : null);
+                parts.Add($"{role}: {Tag(ids, m.Bindings.TryGetValue(role, out var own) ? own.ConnectionId : null)}");
+            }
+            return $"{m.LogicalName}  {string.Join(", ", parts)}";
+        }).ToList();
     }
 
     static string Names(IEnumerable<ConnectionReference> refs) =>

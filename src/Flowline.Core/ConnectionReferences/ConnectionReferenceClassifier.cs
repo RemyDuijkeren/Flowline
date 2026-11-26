@@ -117,7 +117,13 @@ public static class ConnectionReferenceClassifier
 
             // A lone reference that differs from a merged group's members is still a different-account case.
             if (rest.Count >= 2 || (rest.Count == 1 && groups.Count > 0))
-                different.Add(new DifferentAccountGroup(connector.Key, rest));
+            {
+                // The same holds as for a same-connection group: a person may choose to merge these, so a
+                // group that could not be merged safely is held back with its reason.
+                var reason = rest.Count >= 2 ? NotMergedReason(rest, flowState) : null;
+                if (reason is not null) notMerged.Add(new NotMergedGroup(connector.Key, rest, reason));
+                else different.Add(new DifferentAccountGroup(connector.Key, rest));
+            }
         }
 
         var moved = same.SelectMany(g => g.Move).ToHashSet();

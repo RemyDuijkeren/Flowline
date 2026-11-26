@@ -297,4 +297,42 @@ public sealed class ConnectionReferenceCleanupTests : IDisposable
         JsonNode.DeepEquals(actual, expected).Should().BeTrue();
         JsonNode.DeepEquals(actual, JsonNode.Parse(original)).Should().BeFalse();
     }
+
+    [Fact]
+    public async Task Reference_still_used_by_a_flow_of_this_solution_stops_instead_of_being_detached()
+    {
+        _dependents[IdB] = [Dependent(F2, 29)];
+        var outcomes = await Apply(Service(), Review([A, B], FourFlows), MergeGroup());
+
+        var b = outcomes.Single(o => o.Name == "new_b");
+        b.Status.Should().Be(CleanupStatus.Failed);
+        b.Detail.Should().Contain("still uses it");
+        _log.Should().NotContain(l => l.StartsWith("delete") || l.StartsWith("remove"));
+    }
+
+    [Fact]
+    public async Task A_step_that_throws_a_non_fault_exception_ends_as_a_failed_step_and_keeps_the_list()
+    {
+        var service = Service();
+        service.ExecuteAsync(Arg.Is<OrganizationRequest>(r => r is RetrieveDependenciesForDeleteRequest), Arg.Any<CancellationToken>())
+            .Returns<Task<OrganizationResponse>>(_ => throw new TimeoutException("Dataverse took too long"));
+
+        var outcomes = await Apply(service, Review([A, B], FourFlows), MergeGroup(new Rename(A, "Dataverse")));
+
+        outcomes.Where(o => o.Kind == "flow").Should().OnlyContain(o => o.Status == CleanupStatus.Done);
+        var b = outcomes.Single(o => o.Name == "new_b");
+        b.Status.Should().Be(CleanupStatus.Failed);
+        b.Detail.Should().Be("Dataverse took too long");
+        outcomes.Single(o => o.Kind == "rename").Status.Should().Be(CleanupStatus.NotAttempted);
+    }
+
+    [Fact]
+    public async Task Flow_whose_definition_does_not_name_the_moved_reference_is_not_written()
+    {
+        var flows = new[] { Flow(F1, 1, Definition("new_a")), Flow(F2, 1), Flow(F3, 1), Flow(F4, 0) };
+        var outcomes = await Apply(Service(), Review([A, B], flows), MergeGroup());
+
+        _updates.Select(u => u.Target.Id).Should().NotContain(F1).And.HaveCount(3);
+        outcomes.Single(o => o.Name == flows[0].Name).Status.Should().Be(CleanupStatus.Done);
+    }
 }
