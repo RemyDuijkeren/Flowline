@@ -16,7 +16,7 @@ execution: code
 - **Means:** a review inside `pull` that runs against DEV after the dirty-tree gate and before the version bump and export, and advises; the fix runs only when the caller passes `--tidy-connrefs` (Key Decisions, KTD1, KTD9).
 - **Product authority:** the Product Contract decides behavior; the Planning Contract decides mechanism within it; a unit overrides neither.
 - **Execution profile:** one PR, on its own branch with a worktree (`/ce-work` sets it up, per `AGENTS.md` Branching).
-- **Stop conditions:** stop and ask if U1 shows that Dataverse refuses a flow definition update even while the flow is off, that turning a re-pointed flow back on fails for a reason the caller cannot fix, or that the rewrite needs more than the map entry's reference fields. Stop and ask if any requirement turns out to need persistent state on disk.
+- **Stop conditions:** stop and ask if an in-place rewrite of a flow that is on turns out to change its state or leave it broken, or if the rewrite needs more than the map entry's reference fields. Stop and ask if any requirement turns out to need persistent state on disk.
 - **Finishes the work:** the executor through `/ce-work`. U1 needs a scratch DEV the executor can reach; if none is reachable, the user runs U1's checks. The user ships.
 - **Open blockers:** None. U1 needs a reachable scratch DEV (see Finishes the work).
 
@@ -45,7 +45,7 @@ Flowline already touches connection references in three places, and none of them
 - **A duplicate is judged on every environment, not only DEV.** In DEV most references are bound to the maker's own connection, so DEV alone makes deliberate splits look like duplicates. (session-settled: user-directed, chosen over judging on DEV bindings alone, and over judging on DEV with a warning: a PROD split across two service accounts would be silently merged.) Governs R3, R4.
 - **The merge keeps the reference with the most uses.** The most-used reference is treated as the main one. (session-settled: user-directed, chosen over a suggested keeper the user can override.) Governs R6.
 - **Ties go to the oldest reference.** Unattended runs need a deterministic keeper, and the oldest is the one most likely already bound everywhere. Governs R6.
-- **Flows that are on are turned off for the rewrite and back on afterwards.** It is DEV, so a short off period is acceptable. (session-settled: user-directed, chosen over requiring a flag for the off/on cycle, and over refusing until the user turns flows off.) Governs R8.
+- **Flows are rewritten in place, whatever their state.** U1 showed Dataverse accepts a definition rewrite while a flow is on and keeps it on, and validates the definition on save. With no state change, a crash or Ctrl+C can never leave a flow off. (session-settled: user-directed on 2026-11-26 after U1, chosen over the earlier decision to turn flows off, rewrite and turn them back on, which in turn had been chosen over requiring a flag for that cycle and over refusing until the user turns flows off.) Governs R8.
 - **A removed reference is deleted from DEV only when nothing depends on it.** Otherwise it is only taken out of this solution. The PROD copy is left behind and flagged by orphan cleanup, as today. (session-settled: user-directed, chosen over never deleting, which leaves clutter, and over also deleting the PROD copy at deploy, which changes orphan cleanup for connection references from manual to automatic.) Governs R10, R11.
 - **References nothing uses are proposed for removal.** The user asked for this in the same pass as the merge. It is a proposal, not an automatic step, because a reference can be created ahead of the flow that will use it. Governs R5, R10.
 - **A rename changes the display name only.** The display name is one field, touches no flow and needs no new binding in any environment. (session-settled: user-directed, chosen over also replacing the logical name: a logical-name change means creating a new reference, re-pointing its flows and deleting the old one, and each rename leaves a PROD orphan and needs a binding carried into every settings file.) Governs R13, R14.
@@ -71,7 +71,7 @@ Flowline already touches connection references in three places, and none of them
 **Merging**
 
 - R7. Merging a group points every cloud flow of this solution that uses a non-kept reference at the keeper, then treats the non-kept references as removable under R10. All re-pointing happens before any settings file is edited, and settings files are edited before any reference is deleted or removed.
-- R8. A flow that is on when it has to be rewritten is turned off, rewritten and turned on again. A flow that cannot be turned on again is named in the result.
+- R8. A flow is rewritten without changing its state: a flow that is on stays on. A flow whose rewrite Dataverse refuses is named in the result and is left as it was.
 - R9. Only cloud flows are re-pointed. A reference that a non-flow component of this solution uses (a canvas app, an agent) becomes the keeper of its group; a group with two such references is not merged, and the review says why.
 
 **Removing**
@@ -90,7 +90,7 @@ Flowline already touches connection references in three places, and none of them
 - R15. With `--tidy-connrefs` at a terminal, the review asks one confirmation for all same-connection groups together, one question per different-account group, one question for the unused references, and one per rename offer. The same-connection confirmation names, per group, any environment with missing evidence.
 - R16. Without `--tidy-connrefs`, `pull` changes nothing in DEV for connection references, at a terminal or not. When the review finds something, `pull` prints a short advice block: how many same-connection groups, different-account groups, unused references and generated names it found, and a line naming `pull --tidy-connrefs` as the fix. It then continues with the export. Where the advice's counts come from is decided by measurement (KTD13); if they come from the exported source, the block says "possible", because only the flagged run checks live DEV.
 - R17. With `--tidy-connrefs` and no terminal, `pull` merges same-connection groups that have no missing evidence and removes unused references. Different-account groups and renames are only reported, because they need a person's judgment or a name.
-- R18. When any merge, removal or flow reactivation fails, `pull` stops before the version bump and the export, and names what was done and what was not. Running `pull` again resumes from the state DEV is in.
+- R18. When any flow rewrite, merge or removal fails, `pull` stops before the version bump and the export, and names what was done and what was not. Running `pull` again resumes from the state DEV is in.
 - R19. The `pull` result lists each merge, removal and rename it made, so the change can be described in the commit.
 - R20. Without `--tidy-connrefs`, the review never blocks the export: when it cannot run (no SDK connection, a malformed settings file, a failed read), `pull` prints one warning and continues as it does today. With `--tidy-connrefs`, a review that cannot run stops `pull` before any write, because the caller asked for the cleanup.
 
@@ -98,7 +98,7 @@ Flowline already touches connection references in three places, and none of them
 
 - F1. Interactive pull with duplicates
   - **Trigger:** A developer runs `pull --tidy-connrefs` at a terminal after building flows in DEV, usually after a plain `pull` advised it.
-  - **Steps:** The existing pre-flight passes. The review finds two same-connection groups, one different-account group, one unused reference and three generated names. The developer confirms the two same-connection merges in one answer, keeps the different-account pair separate and renames both, removes the unused reference, and accepts one of the suggested renames. Flows are re-pointed and cycled off and on, settings entries are removed, and leftovers are deleted or removed from the solution. `pull` then bumps the version and exports.
+  - **Steps:** The existing pre-flight passes. The review finds two same-connection groups, one different-account group, one unused reference and three generated names. The developer confirms the two same-connection merges in one answer, keeps the different-account pair separate and renames both, removes the unused reference, and accepts one of the suggested renames. Flows are re-pointed in place, settings entries are removed, and leftovers are deleted or removed from the solution. `pull` then bumps the version and exports.
   - **Outcome:** The commit holds one reference per real connection, clear names on the kept pair, and settings files without the removed entries.
   - **Covered by:** R1, R3, R4, R5, R6, R7, R8, R10, R11, R13, R15, R19
 - F2. Unattended pull with the flag
@@ -118,7 +118,7 @@ Flowline already touches connection references in three places, and none of them
 - AE2. **Covers R6.** **Given** a same-connection group where `ref_A` is used by five flows and `ref_B` by two, **when** the group is merged, **then** the two flows move to `ref_A` and `ref_B` becomes removable.
 - AE3. **Covers R9.** **Given** `ref_A` is used by four flows, **and** `ref_B` by one flow and a canvas app in this solution, **when** their group is merged, **then** `ref_B` is the keeper and the four flows move to it.
 - AE4. **Covers R10.** **Given** `ref_B` has no users left in this solution but a flow in another solution still uses it, **when** it is removed, **then** it is taken out of this solution, stays in DEV, and the review names the flow in the other solution.
-- AE5. **Covers R8, R18.** **Given** a merge re-points three flows that were on, **and** the third cannot be turned on again, **when** `pull` runs, **then** `pull` stops before the version bump, names the third flow as left off, and does not export.
+- AE5. **Covers R8, R18.** **Given** a merge re-points three flows that are on, **and** Dataverse refuses the third rewrite, **when** `pull` runs, **then** the first two are re-pointed and still on, the third is unchanged and still on, and `pull` stops before the version bump, names the third flow, and does not export.
 - AE6. **Covers R16.** **Given** a `pull` without `--tidy-connrefs` finds one same-connection group, **when** it runs, at a terminal or not, **then** it prints the advice block naming `pull --tidy-connrefs`, asks nothing, changes nothing in DEV, and exports.
 - AE7. **Covers R13, R14.** **Given** the developer keeps a different-account pair separate and accepts the suggested names, **when** the rename runs, **then** both display names change and both logical names and bindings stay as they were.
 - AE8. **Covers R3, R17.** **Given** `ref_A` and `ref_B` share a connection in DEV and in the TEST settings file, **and** there is no PROD settings file, **when** an unattended `pull --tidy-connrefs` runs, **then** the group is reported with PROD named as missing evidence and is not merged.
@@ -168,7 +168,7 @@ Flowline already touches connection references in three places, and none of them
 - KTD2. **The engine lives in a new Core feature folder, `src/Flowline.Core/ConnectionReferences/`; `PullCommand` owns the flag, prompts, the advice block and exit codes.** The cleanup needs only the SDK and files, so the project boundary rule in `AGENTS.md` puts it in Core. It splits into a read step that produces a review, a pure classifier, and an apply step that takes the confirmed choices.
 - KTD3. **A use is counted per flow.** A flow counts once for each reference its definition map names, however many map entries name it. The rewrite changes every entry naming a non-kept reference, including stale entries no action points at. Governs R6, R7.
 - KTD4. **Re-pointing rewrites only the map entry's reference fields.** Each entry naming a non-kept reference gets the keeper's logical name, and `connection.name` is removed. U1 (2026-11-26): an entry with only the logical name saves and turns on; a `connection.name` naming a connection that does not exist makes Dataverse refuse the save itself, even with the flow off, because the definition is validated against connections on save. Action and trigger keys stay untouched, so no action in the definition changes. Governs R7.
-- KTD5. **One flow at a time: read freshness, off if on, rewrite, back on.** The review records each flow's state, last-modified time and row version. Before writing, the flow is re-read; if a maker changed it since the review, the cleanup stops instead of overwriting (R18). The definition update itself is conditional on the row version read (Dataverse optimistic concurrency), so a save that lands between the re-read and the write is a mismatch and the same stop, not a lost edit. A Suspended flow in a group puts that group in the "not merged" bucket with a reason, because Suspended cannot be restored by a write. Turning a flow back on runs in a finally path on a fresh token with a short timeout, so a failure or Ctrl+C still restores it; anything left off is listed in the stop message. A hard kill can still leave a flow off; nothing is stored on disk to recover that (Stop condition). Governs R8, R18.
+- KTD5. **One flow at a time: one conditional definition update, no state change.** The review records each flow's row version. The definition update is conditional on that row version (Dataverse optimistic concurrency, confirmed in U1), so a maker's save since the review is a version mismatch and stops the cleanup instead of being overwritten (R18). No separate re-read is needed, and no state is written, so there is nothing to restore on failure or cancellation. Dataverse validates the definition against the keeper's connection on save, so a re-point it cannot honor is refused and the flow stays as it was. A Suspended flow in a group still puts that group in the "not merged" bucket with a reason, because U1 did not test a rewrite of a Suspended flow. Governs R8, R18.
 - KTD6. **Write order is fixed: re-point flows, then settings files, then deletes and removals, then renames.** Wherever a failure lands, the next `pull` finds the remaining work: a reference whose flows already moved shows up as unused, and its removal edits the settings files again. The shared settings template is edited in the same settings step, which runs before `RefreshSharedTemplateAsync`, so the template's vanished-entry carry does not put a removed entry back. Governs R7, R11, R18.
 - KTD7. **Settings evidence comes from the role files `deploymentSettings.<role>.json` for each non-DEV role in `EnvironmentRoles.All`, beside the cdsproj.** A role without a file is missing evidence. The shared `deploymentSettings.json` gives no evidence, because its connection ids are empty by design, but it is edited by R11 like the role files. A malformed settings file ends the review with the existing config error rather than being skipped; R20 decides whether that error is a warning (no flag) or stops `pull` (with the flag). Comparisons are case-insensitive. Governs R3, R11.
 - KTD8. **"Can't tell" means "in use".** A flow whose definition is empty or does not parse, or a dependency check that faults, makes every reference it might touch ineligible for "unused" and for delete. The `RetrieveDependenciesForDelete` precedent in `WebResourceDependencyChecker` treats a fault as unchecked and moves on; this cleanup inverts that. The delete check also reads other-solution membership, as orphan cleanup does, and a reference held by another solution is only removed from this one. The connection reference component type is read from its `solutioncomponent` row, because it is environment-specific. U1 (2026-11-26): the review classifies "unused" from one query on the `dependency` table for all of the solution's references (0.3 s for 45 references), not one `RetrieveDependenciesForDelete` per reference (about 0.45 s each, 20 s for 45). The table is a superset: on 45 references it showed one dependent that `RetrieveDependenciesForDelete` did not, which errs toward "in use". It updates immediately after a flow is re-pointed. `RetrieveDependenciesForDelete` still runs per reference at delete time (U4). Governs R5, R10.
@@ -180,7 +180,7 @@ Flowline already touches connection references in three places, and none of them
   - **Default, live review:** the same read the flagged run does, before the export. Exact counts, but every `pull` opens an SDK connection and reads each flow's definition and each reference's dependencies.
   - **Fallback, source-only:** after the export, next to the drift warnings (`PullCommand.cs:150-170`), read the unpacked solution: references and display names from `Customizations.xml` (already parsed at `SolutionChangeSummary.cs:313-330`), flow reference maps from the unpacked flow definitions, and the role settings files. No call to DEV, and no SDK connection without the flag. It flags two or more references on one connector as possible duplicates, a reference no flow in source names as possibly unused, and generated display names. It cannot see the DEV connection or canvas app and agent use, so the block says "possible".
   - **Threshold:** fall back when the live review adds more than 5 seconds, or more than 10% of the `pull` time, on U1's timing solution. Proposed numbers; the user confirms them when U1 reports.
-  - **U1 result (2026-11-26, AutomateValue Dev):** SDK connect 0.27 s with a cached token. Reading references, flows with definitions and the dependency table: about 0.8 s for a 6-flow, 2-reference solution, and about 1.5 to 3 s for the 124-flow, 45-reference Default solution. Baseline: `pac solution export` of the 6-flow solution took 2 min 54 s, and unpack 2 s. The live review stays under both thresholds, so the default stands and the fallback is not built. With per-reference `RetrieveDependenciesForDelete` it would have been about 20 s on the large solution, hence KTD8's single dependency query.
+  - **U1 result (2026-11-26, AutomateValue Dev):** SDK connect 0.27 s with a cached token. Reading references, flows with definitions and the dependency table: about 0.8 s for a 6-flow, 2-reference solution, and about 1.5 to 3 s for the 124-flow, 45-reference Default solution. Baseline: `pac solution export` of the 6-flow solution took 2 min 54 s, and unpack 2 s. The live review stays under both thresholds, so the default stands and the fallback is not built (user confirmed 2026-11-26). With per-reference `RetrieveDependenciesForDelete` it would have been about 20 s on the large solution, hence KTD8's single dependency query.
   - Governs R16.
 
 ### High-Level Technical Design
@@ -221,18 +221,10 @@ Per flow during a merge (KTD5):
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Check: re-read state and modified time
-  Check --> Stop: changed since review
-  Check --> Off: was on
-  Check --> Rewrite: was off
-  Off --> Rewrite
-  Rewrite --> On: was on
-  Rewrite --> Done: was off
-  On --> Done
-  On --> LeftOff: turn-on fails
-  Rewrite --> Restore: rewrite fails
-  Restore --> Stop
-  LeftOff --> Stop
+  [*] --> Rewrite: update definition if row version matches
+  Rewrite --> Done: accepted, state unchanged
+  Rewrite --> Stop: version mismatch (changed since review)
+  Rewrite --> Stop: refused (connection or validation)
   Done --> [*]
   Stop --> [*]
 ```
@@ -240,10 +232,10 @@ stateDiagram-v2
 ### Assumptions
 
 - Confirmed by U1 (2026-11-26): a flow definition update is accepted while the flow is off, and turning it on again works against the keeper's binding without extra steps.
-- Found by U1 (2026-11-26): a definition update is also accepted while the flow is **on**, and the flow stays on with the new reference. Tested only with both references bound to the same connection; a re-point to a reference bound to a different connection while on is untested. This contradicts the ToolBox author's report, and KTD5's off/on cycle is now a choice for the user, not a platform requirement.
+- Found by U1 (2026-11-26): a definition update is also accepted while the flow is **on**, and the flow stays on with the new reference. Tested only with both references bound to the same connection; a re-point to a reference bound to a different connection while on is untested. This contradicts the ToolBox author's report, and the user chose in-place rewrites (KTD5).
 - Confirmed by U1 (2026-11-26): the workflow table's connection-references column stays empty for these flows, on or off, and needs no write.
 - Confirmed by U1 (2026-11-26): the workflow table honors a row-version-conditional update; a stale row version is refused with "The version of the existing record doesn't match the RowVersion property provided."
-- Not verified (U1 step 6): a rewrite and turn-on by a second identity. No second account was available. U4's stop path, which names a flow that cannot be turned on again, covers the failure.
+- Not verified (U1 step 6): a rewrite and turn-on by a second identity. No second account was available. U4's stop path, which names a flow whose rewrite is refused, covers the failure.
 - Found by U1 (2026-11-26): the unpacked solution's flow JSON carries `properties.connectionReferences` with each entry's `connection.connectionReferenceLogicalName`, so a source-only check could read it. Map keys vary (`shared_x`, `shared_x_1`, `shared_x-1`), so only entry values are rewritten.
 - Found by U1 (2026-11-26): generated logical names follow `<prefix>_shared<connector>_<5 hex>`, and generated display names follow `<connector display name> <solution name>-<5 hex>` or the bare connector display name (`tests/Flowline.Core.Tests/ConnectionReferences/Fixtures/connection-reference-names.json`).
 - The Dataverse client's built-in retry handles throttling during the review; a write that still fails is a failure under R18.
@@ -260,7 +252,7 @@ stateDiagram-v2
 
 | Risk | Mitigation |
 |---|---|
-| A flow is left off after a hard kill mid-cycle and exported as off | One flow off at a time (KTD5) keeps the window small; the stop message lists flows left off; accepted, not persisted |
+| An in-place rewrite to a reference bound to a different connection behaves differently while the flow is on (untested in U1) | Dataverse validates on save, so a refusal leaves the flow unchanged and stops under R18; the live smoke covers a different-account merge |
 | A re-pointed flow in a different-account merge needs a connection the caller cannot use, so turn-on fails | Stops under R18 with the flow named; the user fixes sharing and re-runs |
 | The rewrite misses a field the platform checks on turn-on | U1 captures a real definition and proves the rewrite on it before U4 is built |
 | Removing a reference from this solution breaks a fresh install where another solution's flow uses it | Only reachable when another solution's flow uses it; R10 keeps it in DEV, and the review names that flow |
@@ -348,19 +340,16 @@ stateDiagram-v2
   - `src/Flowline.Core/OrphanCleanup/OrphanCleanupService.cs` (use the extracted call)
   - `tests/Flowline.Core.Tests/ConnectionReferences/ConnectionReferenceCleanupTests.cs`
 - **Approach:**
-  1. Re-point flows one at a time per KTD5, reusing `ComponentStateWriter.ApplyAsync` for off and on and a direct workflow update for the definition.
+  1. Re-point flows one at a time per KTD5 with a row-version-conditional workflow update of the definition only.
   2. Run the settings step from U3.
   3. For each removable reference, re-run the delete check; delete when clear, else remove from the solution; use `ComponentStateWriter.IsDependencyFault` as the backstop on delete.
   4. Apply renames as a display-name update, mirroring `ComponentValueWriter`'s binding update.
   5. Stop at the first failure and return what was done and what was not.
 - **Patterns to follow:** `src/Flowline.Core/Configure/ComponentStateWriter.cs`, `src/Flowline.Core/Configure/ComponentValueWriter.cs`, `OrphanCleanupService` cross-solution membership check.
 - **Test scenarios:**
-  - Happy path: a group of two, three flows on, one off; each on-flow sees off, rewrite, on in that order; the off-flow sees only the rewrite.
-  - Covers AE5. Turn-on fails for the third flow: stop, third flow listed as left off, no settings edit, no delete.
-  - A rewrite fails: that flow is turned back on, then stop.
-  - A flow modified since the review: no write to it, stop with the flow named.
-  - The definition update fails on a row-version mismatch: treated as changed since the review, flow turned back on, stop.
-  - Cancellation during the cycle: the flow is turned back on with a fresh token.
+  - Happy path: a group of two, three flows on, one off; each flow sees exactly one conditional definition update and no state write.
+  - Covers AE5. The third rewrite is refused: stop, first two done, third named, no settings edit, no delete.
+  - The definition update fails on a row-version mismatch: treated as changed since the review, stop with the flow named.
   - Covers AE4. A reference another solution's flow uses: removed from this solution, not deleted.
   - A reference held by another solution with no dependents: removed from this solution, not deleted.
   - A delete that faults with a dependency error: falls back to removal from the solution.
@@ -394,7 +383,7 @@ stateDiagram-v2
   - Covers AE8. Flag with no terminal: a group with missing evidence is excluded from the act set.
   - Covers AE11. A review that cannot run: a warning and the export without the flag; a stop before any write with it.
   - R2: an empty review prints only under `--verbose`.
-  - The stop message names done items, not-done items and flows left off.
+  - The stop message names done items, not-done items and the flow whose rewrite was refused.
 - **Verification:** A Release build of `pull --bump none` against a scratch DEV with a seeded duplicate prints the advice block and leaves DEV unchanged; `pull --tidy-connrefs` at a terminal merges the duplicate and the export shows one reference.
 
 ### U6. Update docs and contracts
