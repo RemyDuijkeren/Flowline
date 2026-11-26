@@ -3,6 +3,7 @@ using Flowline.Core;
 using Flowline.Core.Config;
 using Flowline.Core.Configure;
 using Flowline.Core.Console;
+using Flowline.Core.Dataverse;
 using Flowline.Core.Deploy;
 using Flowline.Core.Environments;
 using Flowline.Core.Solutions;
@@ -18,7 +19,7 @@ namespace Flowline.Commands;
 
 public enum BumpComponent { Patch, Minor, Major, None }
 
-public class PullCommand(CommandServices services, EnvironmentTargetResolver environmentTargetResolver) :
+public class PullCommand(CommandServices services, EnvironmentTargetResolver environmentTargetResolver, DataverseConnector dataverseConnector) :
     FlowlineCommand<PullCommand.Settings>(services)
 {
     public sealed class Settings : EnvironmentSettings
@@ -37,6 +38,11 @@ public class PullCommand(CommandServices services, EnvironmentTargetResolver env
         [Description("Skip the 'dotnet build' validation step")]
         [DefaultValue(false)]
         public bool NoBuild { get; set; } = false;
+
+        [CommandOption("--tidy-connrefs")]
+        [Description("Merge duplicate connection references, remove unused ones and rename default names in DEV")]
+        [DefaultValue(false)]
+        public bool TidyConnRefs { get; set; } = false;
     }
 
     internal static readonly string[] ValidSpecifiers = ["dirty", "config", "all"];
@@ -47,7 +53,7 @@ public class PullCommand(CommandServices services, EnvironmentTargetResolver env
         // R3: DEV-only — refused before any PAC profile resolve, connect, or .flowline write.
         var target = await environmentTargetResolver.ResolveAsync(settings.Env, Config, onlyRole: EnvironmentRole.Dev, IsInteractive(), RuntimeOptions,
             (url, ct) => Validator.GetEnvironmentInfoByUrlAsync(url, RuntimeOptions, settings.NoCache, ct), cancellationToken);
-        var (devEnv, _) = await Environments.CheckByUrlAsync(target.Url, target.Role, cancellationToken, devOnly: true);
+        var (devEnv, devProfile) = await Environments.CheckByUrlAsync(target.Url, target.Role, cancellationToken, devOnly: true);
 
         // Solution is the single one configured in .flowline — sync is project-mode only
         var (projectSln, slnInfo) = await GetAndCheckSolutionAsync(null, devEnv.EnvironmentUrl!, settings.IncludeManaged.IsSet ? settings.IncludeManaged.Value : (bool?)null, cancellationToken);
@@ -100,6 +106,13 @@ public class PullCommand(CommandServices services, EnvironmentTargetResolver env
                 throw new FlowlineException(ExitCode.DirtyWorkingDirectory, $"Uncommitted changes in '{srcDisplayPlain}' — Commit or stash changes first, or re-run with --force dirty.");
             }
         }
+
+        // Before the bump and export, so a cleanup the caller asked for lands in this export. Reuses the PAC
+        // profile the DEV check resolved, so the SDK and pac calls run as one identity with no second prompt.
+        await PullConnectionReferences.RunAsync(Console,
+            ct => dataverseConnector.ConnectViaPacAsync(devProfile, devEnv.EnvironmentUrl!, ct),
+            devEnv.EnvironmentUrl!, slnInfo.SolutionUniqueName!, dataverseSolutionFolder,
+            settings.TidyConnRefs, IsInteractive(), cancellationToken);
 
         // Bump version in Dataverse before sync so the downloaded XML reflects the new version
         var skipBump = settings.Bump == BumpComponent.None;
