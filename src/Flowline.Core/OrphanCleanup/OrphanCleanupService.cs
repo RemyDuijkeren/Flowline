@@ -10,6 +10,7 @@ using Flowline.Core.Deploy;
 using Flowline.Core.OrphanCleanup;
 using Flowline.Core.OrphanCleanup.Handlers;
 using Flowline.Core.Console;
+using Flowline.Core.Solutions;
 using Flowline.Core.Models;
 using Flowline.Core.WebResources;
 
@@ -934,12 +935,7 @@ public class OrphanCleanupService(IAnsiConsole console, IEnumerable<IOrphanHandl
     {
         if (entry.Action == OrphanAction.RemoveFromSolution)
         {
-            await service.ExecuteAsync(new OrganizationRequest("RemoveSolutionComponent")
-            {
-                ["ComponentId"]        = entry.ObjectId,
-                ["ComponentType"]      = entry.ComponentType,
-                ["SolutionUniqueName"] = solutionName
-            }, ct).ConfigureAwait(false);
+            await SolutionComponentRemoval.RemoveAsync(service, solutionName, entry.ObjectId, entry.ComponentType, ct).ConfigureAwait(false);
             return;
         }
 

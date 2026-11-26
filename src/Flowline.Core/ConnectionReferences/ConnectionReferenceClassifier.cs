@@ -157,7 +157,7 @@ public static class ConnectionReferenceClassifier
 
     // A member used by a non-flow component must stay, because only flows are re-pointed. Otherwise the most
     // used, then the oldest; the logical name only makes ties deterministic.
-    static ConnectionReference PickKeeper(List<ConnectionReference> members) =>
+    public static ConnectionReference PickKeeper(IEnumerable<ConnectionReference> members) =>
         members
             .OrderByDescending(m => m.OtherDependents.Count > 0)
             .ThenByDescending(m => m.UseCount)
