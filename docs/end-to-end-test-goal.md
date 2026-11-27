@@ -77,10 +77,13 @@ Solutions:
   delete` refuses it. Never use it for anything needing a deletable solution.
 - `FlowlineDeployTest`: unmanaged, normal, deletable. Use this for first-import and delete scenarios.
 
-Workspaces live at `C:\Code\FlowlineTests\solutions\<Name>\`, one self-contained Flowline project per
-solution, each with its own `.flowline` and `.git` (co-located separate repos, per
+Workspaces live at `C:\Code\FlowlineTests\solutions\<Name>\` on the Windows machine and at
+`~/Projects/AutomateValue-Dev/solutions/<Name>/` on the Linux machine. Each is one self-contained
+Flowline project per solution, each with its own `.flowline` and `.git` (co-located separate repos, per
 `docs/folder-structure.md` §4). Run commands from inside the specific solution's folder; Flowline
-resolves by walking up to the nearest `.flowline`.
+resolves by walking up to the nearest `.flowline`. The `Cr07982` and `FlowlineDeployTest` workspaces
+below exist on the Windows machine only; on Linux, clone a fixture into a fresh folder first
+(`git init`, one commit, then `clone`).
 
 - `Cr07982\`: the project-structure-flexibility fixture. **Keep it, don't rebuild it, and don't
   assume the scaffolded default layout when reading output:**
@@ -129,9 +132,9 @@ exists, so a new-publisher test must pick a *fresh* prefix or it silently exerci
 ## Bug-fix policy
 
 - **Capture the unit-suite baseline before the first fix**, and compare against it after every fix.
-  Last known good: 2125 passed / 0 failed / 4 skipped (2026-08-20). Treat that number as dated, not
-  authoritative. The 4 skips are the live-MSAL `ConnectViaPacAsync_*` tests, which carry an explicit
-  `Skip` reason; anything red beyond those is a real regression.
+  Last known good: Core 2128 passed / 4 skipped, CLI 1573 passed / 7 skipped (2026-11-26). Treat that number as dated, not
+  authoritative. The Core skips are the live-MSAL `ConnectViaPacAsync_*` tests and the CLI skips need
+  `pac` on PATH; each carries an explicit `Skip` reason. Anything red beyond those is a real regression.
 - Fix inline when the root cause is clear and small (parsing slip, null ref, wrong exit code,
   misleading message). Re-run the exact failing scenario to confirm.
 - **Verify the fix against the actual test or spec first.** One past "fix" (flipping `[DefaultValue]`
@@ -143,6 +146,10 @@ exists, so a new-publisher test must pick a *fresh* prefix or it silently exerci
   `dotnet tool install -g flowline --add-source <nupkg-dir> --version <exact-version>`. **Pin the
   exact version**, otherwise install can silently resolve the published package from nuget.org.
   Purge the NuGet cache if the version string didn't change.
+- **Testing a branch or worktree:** run its Release binary by absolute path
+  (`<worktree>/src/Flowline/bin/Release/net10.0/Flowline`) instead of reinstalling the global tool,
+  so the installed `flowline` is not swapped for a branch build. Use absolute paths throughout: the
+  agent shell resets its working directory after each command.
 - **Run the CLI from a Release build.** A Debug build propagates exceptions past the handler, so
   correct error handling prints a raw stack trace and reads as broken.
 
@@ -153,8 +160,8 @@ against an already-cloned, pushed or synced folder) where relevant.
 
 ### `clone`
 
-- Fresh empty folder, with and without each env URL (`--dev`, `--prod`, `--uat`, `--test`), with and
-  without `--managed`.
+- Fresh empty folder, with and without `--env <role|url>` (there are no `--dev`/`--prod` options; an
+  unknown option exits 15), with and without `--managed`.
 - Idempotent re-clone into an already-cloned folder: skip messages, no errors, no duplicate
   `Plugins/` or `WebResources/` projects even when the real ones were moved or renamed, solution file
   untouched.
@@ -180,7 +187,7 @@ against an already-cloned, pushed or synced folder) where relevant.
   invalid characters, or starts with a digit; a `<name>` over 65 chars; a `--display-name` over 256.
 - **DEV-only refusal**: targeting a Production-type environment must refuse before any create call;
   Sandbox and Developer proceed.
-- **No-TTY errors**: missing `--dev` and missing `--publisher-prefix` each error naming the flag,
+- **No-TTY errors**: missing `--env` and missing `--publisher-prefix` each error naming the flag,
   never derive one, never hang.
 - **Duplicate-name refusal** before any write.
 - **`✓ DEV set to <env>`** written to `.flowline` only after create, scaffold and build all succeed, and
@@ -224,6 +231,54 @@ against an already-cloned, pushed or synced folder) where relevant.
 - Non-interactive `--managed` reconfirmation gate when the flag conflicts with the configured value:
   rejects cleanly *before* the long export, no hang.
 - A moved or renamed WebResources project must still be found, not reported as phantom drift.
+
+#### `pull` connection reference review and `--tidy-connrefs`
+
+**Fixture.** A dedicated DEV solution seeded by a small SDK harness, because each tidy run uses it up.
+Make the harness re-seedable, with seed, state and reset modes. Round 2026-11-26 used
+`FlowlineConnRefE2E`, prefix `flcr`. Every reference was bound to the one DEV Dataverse connection,
+and every flow was on:
+- `flcr_dvA` used by two flows, and `flcr_dvB` used by one: the same-connection pair.
+- `flcr_dvD` and `flcr_dvE`, one flow each. They differ only by their prod connection id in the role
+  files, which makes them the different-account group.
+- `flcr_shared<connector>_<5 hex>`, with display name `Microsoft Dataverse E2E-<5 hex>`: the
+  generated name.
+- `flcr_unused`.
+- `flcr_foreign`, used only by a flow **outside** the solution: the foreign component that must
+  survive.
+
+Add the role files (`deploymentSettings.{test,uat,prod}.json`) only after the cases that need them
+missing. The state mode prints every flow's and reference's row version. Diff it before and after
+each case: that diff is the negative control, not the CLI's output.
+
+**Cases.**
+- Plain `pull` with findings: a two-line advice block, and zero DEV row versions changed.
+- `pull --force all` does not turn the cleanup on.
+- Dirty `Solution/src/` plus `--tidy-connrefs`: exit 12, no DEV write.
+- Unattended, no role files:
+  - Unused references are removed.
+  - A reference used from outside the solution is removed from the solution, not deleted.
+  - A same-connection group is reported as `Not merging … no settings file for …` (AE8) and not
+    merged.
+- Unattended, all role files present:
+  - The same-connection group merges, and the flow stays on.
+  - Entries leave all four settings files.
+  - Different-account groups and default names are only reported.
+- Re-run: `nothing to change`, said honestly.
+- Interactive: merge, keep separate, remove, and each rename choice.
+- Row-version refusal: save a flow out of band while the prompt waits. The cleanup stops with exit
+  18 and a done / not-done list, nothing is exported, and a re-run recovers.
+
+**Driving the prompts through a pty.** `pexpect` (Python) works:
+- Pass the full environment (`{**os.environ, "TERM": "xterm-256color"}`). A stripped environment
+  loses the token cache's D-Bus session and fails as `Session expired`, which looks like a Flowline
+  bug and is not.
+- Spectre redraws a prompt on every keypress. After answering, sleep and drain the output before
+  the next `expect`, or the redraw re-matches and keys are sent twice.
+- Down arrow is `\x1b[B`, Enter is `\r`, and a confirmation is `y\r`.
+
+**Can't be covered on this environment:** a second DEV Dataverse connection (there is one), a
+suspended flow, and a canvas app using a reference.
 
 ### `sln add`
 
@@ -345,10 +400,11 @@ Don't re-report these.
 State these explicitly in the round writeup rather than quietly skipping them.
 
 - **Interactive pickers** (clone solution pick, init publisher/name/environment): no TTY in an agent
-  harness, so `IsInteractive()` is false and prompts never render. Unit-tested only.
+  harness, so `IsInteractive()` is false and prompts never render. Unit-tested only, unless driven
+  through a pty (see the `pull --tidy-connrefs` notes below).
 - **Privilege fault** (a user lacking create rights should give a clean error, not a raw SDK
   exception): no locked-down test user.
-- **`--dev` with no matching PAC profile leading to `pac auth create`**: not triggerable with a single
+- **`--env <dev-url>` with no matching PAC profile leading to `pac auth create`**: not triggerable with a single
   tenant-wide universal profile. A foreign URL resolves the profile and fails later as `Dev
   environment not found` instead.
 - **`--force delete-form-handlers`**: needs a Dataverse form whose handler points at a function no

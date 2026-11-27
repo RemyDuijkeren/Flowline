@@ -6,6 +6,128 @@ suite. Newest round first. The matrix, fixtures and constraints these rounds run
 
 ---
 
+## Round 2026-11-26: pull connection reference cleanup (`--tidy-connrefs`)
+
+This round exercises the connection reference review that branch `feat/pull-tidy-connrefs` (#26) adds
+to `pull`. It covers advice without the flag, the unattended merge and removal with the flag, and
+the interactive questions at a terminal, all against live DEV. It is the first round on the Linux
+machine, and the first to drive Flowline's interactive prompts, through a pty.
+
+- **Date:** 2026-11-26
+- **Build:** `src/Flowline/Flowline.csproj`, Release, at `b11aac0` plus the two inline fixes below
+  (`0.21.1-alpha.0.30`). The worktree binary was run by absolute path; the global tool was not
+  reinstalled.
+- **Target:** DEV (`automatevalue-dev`) only. TEST and PROD were not contacted.
+- **Writes:**
+  - Fixture seed, plus one out-of-band save of flow `E2E E` (case I1), by a scratch SDK harness.
+  - Through Flowline:
+    - 4 flow definition rewrites (`E2E B`, `D`, `E`, `G`).
+    - 5 reference deletes (`flcr_unused`, `dvB`, `dvD`, `dvE`, the generated-name one).
+    - 1 reference removed from the solution (`flcr_foreign`).
+    - 2 display-name renames.
+    - A version write of 1.0.1 (case A's default bump).
+- **Fixtures:** solution `FlowlineConnRefE2E`, publisher prefix `flcr`, seeded by a scratch harness.
+  The shape is in the goal doc under `pull`. Every reference was bound to the one DEV Dataverse
+  connection ("My Test Connection"). All 7 flows were on, and `E2E Foreign` was outside the solution
+  and used `flcr_foreign`. Workspace:
+  `~/Projects/AutomateValue-Dev/solutions/FlowlineConnRefE2E/`, its own git repo, committed between
+  cases. The role files (`deploymentSettings.{test,uat,prod}.json`) were added before case D, with
+  invented connection ids.
+
+### Results
+
+| # | Case | Expected (from the plan) | Observed | Exit |
+|---|---|---|---|---|
+| 0 | `clone FlowlineConnRefE2E --env <dev>` on a fresh repo | Clone completes | Export and scaffold OK, then build fails with NU5017; no AGENTS.md or settings file. Re-run: completes. [Finding](test-findings/build-validation-nu5017-on-scaffolded-plugins-project.md) | **13**, then 0 |
+| A | Plain `pull` (default bump, build on) | Advice block, no DEV write | `! Connection references in DEV: 1 duplicate group on one connection, 2 unused.` plus the `--tidy-connrefs` line. All 14 DEV row versions identical before and after. Build then fails with NU5017 | **13** |
+| A2 | `pull --force all --no-build --bump none` | `--force all` does not turn the cleanup on | Same advice, 14 row versions identical | 0 |
+| B | Dirty `Solution/src/` plus `--tidy-connrefs` | Dirty gate stops before any cleanup | `Uncommitted changes in 'Solution/src/'`; 14 row versions identical | 12 |
+| C | `--tidy-connrefs`, unattended, no role files | Unused removed; group with missing evidence reported, not merged (AE8) | `flcr_unused` deleted; `flcr_foreign` removed from the solution only, record and outside flow untouched. **The 5-member group was skipped with no line at all.** Fixed inline, see below | 0 |
+| C2 | Same, after the fix | AE8 line; nothing to change | `Not merging flcr_dvB, flcr_dvD, flcr_dvE, flcr_shared…_a1b2c into flcr_dvA: no settings file for Prod, Uat, Test…` then `↷ nothing to change`; DEV identical to C | 0 |
+| D | Role files added, `--tidy-connrefs --verbose`, unattended | `dvA`/`dvB` merge; the different-account group and default name are only reported | Flow `E2E B` re-pointed and still on; `flcr_dvB` deleted; entries removed from 4 settings files; `Left for a person: 1 group on different accounts, 1 default name.` | 0 |
+| E | Re-run D | Nothing to do, said honestly | `Left for a person…` then `↷ Connection references: nothing to change`; DEV unchanged | 0 |
+| I1 | Interactive (pty): `Merge into flcr_dvA`, while flow `E2E E` is saved out of band at the prompt | Row-version refusal stops the cleanup, reports done and not done, no export | `✓ Re-pointed flow E2E D`, then `stopped at flow 'E2E E': The flow changed since the review… Done: flow 'E2E D'. Not done: flow 'E2E G', the settings files, reference…`; working tree clean | **18** |
+| I2 | Interactive re-run: keep separate, remove unused, renames | Fresh review sees `flcr_dvD` as unused; renames write the display name only | `flcr_dvD` deleted, 4 settings files cleaned, 2 renames landed. The driver double-sent keys (see "Not covered"), so which rename went where was not the plan | 0 |
+| I3 | Interactive: `Merge into flcr_dvA` | Different-account merge completes | Flows `E2E E` and `E2E G` re-pointed and still on; `flcr_dvE` and `flcr_shared…_a1b2c` deleted; prod file left with `flcr_dvA` only | 0 |
+| G | Plain `pull --bump none` with the build on, after a clean hand build | Build passes | `✓ Build FlowlineConnRefE2E done in 5s`. NU5017 is intermittent: 2 of 4 Flowline builds failed | 0 |
+| F | Plain `pull --verbose`, then `--tidy-connrefs`, on the tidy solution | Silent advice; tidy message | `Connection references: nothing to tidy` (verbose only); `✓ Connection references are tidy` | 0, 0 |
+
+### Case A is the one worth trusting
+
+Case A is the negative control for "advice never writes". A review that wrote while advising would
+print the same two lines, so the lines prove nothing on their own. The proof is the 14 row versions
+(7 flows, 7 references) read before and after, which were identical. Cases A2 and B repeat that
+check. Against them, case D moved exactly 2 of the 13 numbers, flow `E2E B` and the deleted
+`flcr_dvB`, and left the other 11 untouched.
+
+### Fixed inline
+
+- **Unattended run said nothing about a held-back group (AE8).** `--tidy-connrefs` without a
+  terminal skipped a same-connection group with missing evidence silently. An agent reading the
+  output would believe the duplicates were gone. It now prints one `Not merging … no settings file
+  for …` line per such group. There is a regression test in `PullConnectionReferencesTests`. Full
+  suite: 2128 passed / 4 skipped (Core) and 1573 passed / 7 skipped (CLI).
+- **Output leaked type codes and `(s)` plurals:** `still used by 1 component(s) (types 29)` and
+  `1 file(s) changed` now read `still used by 1 component outside this solution` and `1 file
+  changed`. The existing test was tightened to the exact text.
+
+### What these runs confirmed
+
+- **Advice:** advice mode makes no DEV write, and `--force all` does not change that (A, A2).
+- **Dirty gate:** the gate runs before the cleanup (B).
+- **Outside use:** a reference used only from outside the solution is removed from the solution,
+  not deleted. Its record and the outside flow both survive (C).
+- **Flows stay on:** in-place rewrites of flows that are on, including the different-account merge,
+  left every flow on, with the new reference in its definition (D, I1, I3).
+- **Interrupted merge:**
+  - The row-version check refuses a flow saved after the review.
+  - The stop lists done and not-done items with exit 18.
+  - The export is skipped.
+  - A re-run picks up the leftovers as a fresh review (I1, I2).
+- **Settings files:** entries are removed from the shared file and all three role files (D, I2, I3).
+- **Interactive questions:** they render and accept selection, confirm and text input through a
+  real pty (I1 to I3).
+- **Log file:** the non-verbose run's log carries the cleanup lines (C2).
+
+### Observation: `--verbose` adds nothing to the review
+
+Case D ran with `--verbose` and made real DEV writes. The connection reference section printed exactly
+the same lines as a run without it. There was no count of references and flows read, no timing, and
+no line per write. The summary lines do name each write, so nothing is hidden. But the goal doc's
+"with: the real step-by-step work" check has nothing to judge here. This is not filed as a finding.
+Add verbose lines only if someone needs to debug a review.
+
+### Not covered
+
+- **A second DEV connection.** This environment has one Dataverse connection, so every
+  different-account group differed by role file only. A merge across two DEV connections has never
+  run live.
+- **Suspended-flow and canvas-app hold-backs.** Unit-tested only; there was no cheap way to build
+  either fixture.
+- **A second identity.** All writes ran as one user.
+- **Rename mapping as scripted.** I2's driver matched each prompt's redraw and double-sent keys. The
+  renames that landed were real writes of the display name only, but not the planned mapping, and
+  "Type a name" with a name already taken was never exercised.
+- **The review failing with the flag on.** Unit-tested only (`Run_WithFlag_ReviewThatCannotRun_Stops`).
+- **Settings save failure mid-cleanup (AE10).** Unit-tested only.
+- **Everything outside the slice:** push, deploy, drift, init, `sln add`, project-structure
+  flexibility, TEST and PROD. The orphan cleanup's switch to the shared removal call was not run
+  live through `push` or `deploy`; the same call ran live through case C.
+
+### State left behind
+
+- **DEV:** the fixture is still there, pending approval to delete:
+  - Solution `FlowlineConnRefE2E` 1.0.1 and publisher `flcr`.
+  - References `flcr_dvA` (renamed "flcr_dvA (My Test Connection)") and `flcr_foreign`.
+    `flcr_foreign` is outside the solution now.
+  - Seven flows named `E2E *`, all on, on a monthly recurrence that lists one account row.
+- **Workspace:** `~/Projects/AutomateValue-Dev/solutions/FlowlineConnRefE2E/`, kept, one commit
+  per case.
+- **Connection:** "My Test Connection" in DEV, kept, because the fixture needs it.
+- **Flowline repo:** the inline fixes and these docs are uncommitted in the worktree.
+
+---
+
 ## Round 2026-08-25 — deploy registers a missing package assembly before importing
 
 Verifies the pre-import repair built from rounds 2026-08-24 and 2026-08-24b: `deploy` creates the
