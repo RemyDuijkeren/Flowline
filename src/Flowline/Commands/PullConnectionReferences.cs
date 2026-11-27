@@ -88,6 +88,8 @@ internal static class PullConnectionReferences
         else
         {
             choices = UnattendedChoices(c);
+            foreach (var line in MissingEvidenceLines(c))
+                console.Info(line);
             var leftDifferent = c.DifferentAccount.Count;
             var leftNames = c.GeneratedNames.Count;
             if (leftDifferent + leftNames > 0)
@@ -139,6 +141,13 @@ internal static class PullConnectionReferences
     /// </summary>
     internal static CleanupChoices UnattendedChoices(Classification c) =>
         new(c.SameConnection.Where(g => g.MissingEvidence.Count == 0).ToList(), [], c.Unused, []);
+
+    /// <summary>One line per same-connection group an unattended run leaves, naming the environments it could not compare (R17, AE8).</summary>
+    internal static IReadOnlyList<string> MissingEvidenceLines(Classification c) =>
+        c.SameConnection.Where(g => g.MissingEvidence.Count > 0)
+            .Select(g => $"Not merging {Names(g.Move)} into {Names([g.Keeper])}: no settings file for " +
+                         $"{string.Join(", ", g.MissingEvidence)}, so they can't be compared there.")
+            .ToList();
 
     // ponytail: generated display names end in "<solution>-<5 hex>"; stripping that leaves the connector's
     // name. A display name that never had the suffix is used whole.

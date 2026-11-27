@@ -127,6 +127,26 @@ public class PullConnectionReferencesTests
         choices.Renames.Should().BeEmpty();
     }
 
+    [Fact]
+    public void MissingEvidenceLines_NameEachHeldGroupAndItsMissingRoles_Only()
+    {
+        var a = Ref("new_a");
+        var b = Ref("new_b");
+        var c = Ref("new_c");
+        var d = Ref("new_d");
+        var classification = Empty() with
+        {
+            SameConnection =
+            [
+                new SameConnectionGroup(Dataverse, a, [b], b.FlowIds, []),
+                new SameConnectionGroup(Dataverse, c, [d], d.FlowIds, [EnvironmentRole.Test, EnvironmentRole.Prod]),
+            ],
+        };
+
+        PullConnectionReferences.MissingEvidenceLines(classification).Should().Equal(
+            "Not merging [bold]new_d[/] into [bold]new_c[/]: no settings file for Test, Prod, so they can't be compared there.");
+    }
+
     // -- rename suggestion --
 
     [Theory]

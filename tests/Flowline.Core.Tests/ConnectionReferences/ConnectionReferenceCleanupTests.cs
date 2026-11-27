@@ -193,7 +193,7 @@ public sealed class ConnectionReferenceCleanupTests : IDisposable
         outcomes.Should().OnlyContain(o => o.Status == CleanupStatus.Done);
         _log.Should().NotContain(l => l.StartsWith("delete"));
         _log.Should().Contain($"remove:{IdB}:type={RefType}:solution=Contoso");
-        outcomes.Single(o => o.Name == "new_b").Detail.Should().Contain("1 component");
+        outcomes.Single(o => o.Name == "new_b").Detail.Should().Be("removed from this solution only: still used by 1 component outside this solution");
     }
 
     [Fact]

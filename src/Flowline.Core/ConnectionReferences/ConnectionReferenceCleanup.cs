@@ -171,7 +171,7 @@ public static class ConnectionReferenceCleanup
         try
         {
             var changed = SettingsEntryRemover.Remove(settingsFolder, references.Select(r => r.LogicalName));
-            return new CleanupOutcome("settings", "settings files", CleanupStatus.Done, $"{changed.Count} file(s) changed");
+            return new CleanupOutcome("settings", "settings files", CleanupStatus.Done, $"{changed.Count} {(changed.Count == 1 ? "file" : "files")} changed");
         }
         catch (FlowlineException ex)
         {
@@ -193,9 +193,9 @@ public static class ConnectionReferenceCleanup
 
             var keepReasons = new List<string>();
             if (dependents.Count > 0)
-                keepReasons.Add($"still used by {dependents.Count} component(s) (types {string.Join(", ", dependents.Select(d => d.GetAttributeValue<OptionSetValue>("dependentcomponenttype")?.Value).Distinct())})");
+                keepReasons.Add($"still used by {dependents.Count} {(dependents.Count == 1 ? "component" : "components")} outside this solution");
             if (otherSolutions.Count > 0)
-                keepReasons.Add($"also in solution(s) {string.Join(", ", otherSolutions)}");
+                keepReasons.Add($"also in {(otherSolutions.Count == 1 ? "solution" : "solutions")} {string.Join(", ", otherSolutions)}");
 
             if (keepReasons.Count == 0)
             {
