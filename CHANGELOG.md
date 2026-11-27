@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Plugins project that `clone`, `init` and `scaffold plugins` create now builds on .NET SDK 11. `pac plugin init` writes a single `<TargetFramework>`, and on SDK 11 the Power Apps plugin build targets then pack an empty package and fail with NU5017, which stopped `clone` before it finished and `pull` after the export. Flowline now writes `<TargetFrameworks>net462</TargetFrameworks>` instead; the build output and package are unchanged. For a project created earlier, make the same one-line change in `Plugins/<Name>.Plugins.csproj`.
 - `push webresources` no longer republishes a text web resource whose only difference is line endings or a UTF-8 byte order mark. A checkout on Windows and one on Linux of the same commit now push nothing new. The drift warnings from `pull` and `deploy` ignore the same differences. Images and other binary types still compare byte for byte, and what gets uploaded is unchanged.
 - `push plugins` no longer reports steps registered on a service endpoint (Azure Service Bus, webhook, Event Hub) as orphans under `Microsoft.Crm.ServiceBus.dll`. `--force delete-orphans` and `--force all` used to delete them, which cut off the integration the endpoint feeds. ([#21](https://github.com/RemyDuijkeren/Flowline/issues/21))
 

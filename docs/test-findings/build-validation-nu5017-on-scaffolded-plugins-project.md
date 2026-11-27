@@ -1,56 +1,55 @@
-# Build validation fails with NU5017 on a freshly scaffolded Plugins project
+# Build validation fails with NU5017 on a freshly scaffolded Plugins project under SDK 11
 
-- **Status:** open, not fixed inline
-- **Severity:** medium. It is intermittent: 2 of 4 Flowline builds on one fresh clone failed.
-  `clone` then stops before writing `AGENTS.md`, `CLAUDE.md` and `deploymentSettings.json`, and
-  `pull` stops after the export with exit 13.
+- **Status:** fixed for new scaffolds. Projects scaffolded before the fix need a one-line edit (below).
+- **Severity:** high on SDK 11. Every build of the Plugins project that has to pack fails, so `clone`
+  stops before writing `AGENTS.md`, `CLAUDE.md` and `deploymentSettings.json`, `pull` stops after
+  the export with exit 13. `push plugins` builds the same project, so any build of it that repacks
+  fails too (not run on a pre-fix project).
 - **Found:** 2026-11-26, round "pull connection reference cleanup" in
-  [`../end-to-end-test-log.md`](../end-to-end-test-log.md). First seen in an earlier session's `clone`
-  smoke the same day.
-- **Component:** the build step `clone` and `pull` share (`src/Flowline/Utils/DotNetUtils.cs`,
-  `BuildArguments`), against the template Plugins project.
-- **Machine:** Linux, .NET SDKs 10.0.403 and 11.0.100 installed; no `global.json`, so SDK 11.0.100
-  builds.
-
-## Repro
-
-1. Empty folder with `git init` and one commit.
-2. `flowline clone <solution> --env <dev-url>` for a solution with no plugin assemblies.
-3. Observed: `NuGet.Build.Tasks.Pack.targets(232,5): error NU5017: Cannot create a package that has no
-   dependencies nor content.` on `Plugins/<Name>.Plugins.csproj`, then `✗ Build failed`, exit 13.
-4. Re-run the same `clone`: the build passes in 2s and clone completes, exit 0.
-5. `flowline pull` (default bump, build on) on that clone: the same NU5017 after the export, exit 13.
-6. Every hand build succeeded:
-   - Right after the failure: `dotnet build <Name>.slnx`, the same with `--configuration Debug
-     -t:Rebuild`, and a copy of `Plugins/` built alone under SDK 10.0.403 and under 11.0.100.
-   - After wiping every `bin/` and `obj/`: `dotnet build <Name>.slnx --configuration Debug`.
-   - After changing the version in `Solution.xml`, which is what a bump does.
-7. A later `flowline pull --bump none` with the build on, on the same clone, also passed (exit 0).
-
-So the failure does not follow from Flowline's arguments, from a cold `obj/`, or from a version
-change alone. It is intermittent. The branch it was found on (`feat/pull-tidy-connrefs`) changes no
-build, template or `dotnet` invocation code.
+  [`../end-to-end-test-log.md`](../end-to-end-test-log.md). Root cause found 2026-11-27.
+- **Component:** `src/Flowline/Services/ProjectScaffolder.cs`, the Plugins scaffold after
+  `pac plugin init`.
+- **Machine:** Linux, .NET SDKs 10.0.403 and 11.0.100, `Microsoft.PowerApps.MSBuild.Plugin` 1.52.1
+  (the template floats `1.*`). 2.16.1, the latest on nuget.org, fails the same way.
 
 ## Root cause
 
-Not established. In the clone log, `<Name>.Plugins -> .../bin/Debug/net462/publish/` is printed and
-the pack fails about 100 ms later. That points at the pack step that
-`Microsoft.PowerApps.MSBuild.Plugin` runs against the publish folder, and at the state that `clone`
-or `pull` leaves just before the build. The `pull` run that failed had just written a new version
-(1.0.1) into `Solution.xml`. Neither a cold build nor a version change reproduces it by hand. The
-remaining suspects are timing in the publish-then-pack sequence and something in the environment
-that Flowline's child process gets.
+`pac plugin init` writes `<TargetFramework>net462</TargetFramework>`. The PowerApps plugin targets
+(`build/Microsoft.PowerApps.MSBuild.Plugin.targets`, target `GetTfmPublishedFiles`) put the publish
+folder into the package and then set `IncludeBuildOutput=false`. Their own comment says that property
+must not be set earlier, because it relies on the per-framework step running in a separate project
+instance.
 
-## Suggested direction
+SDK 11 changed that. In `NuGet.Build.Tasks.Pack.targets`, `_WalkEachTargetPerFramework` now builds a
+project with no `TargetFrameworks` without the `TargetFramework=` additional property, so the step runs
+in the same instance as the pack task. A `-v:diag` log shows the pack task receiving the dll and pdb
+in `BuildOutputInPackage` together with `IncludeBuildOutput=False` on 11.0.100, and `True` on
+10.0.403. With `False` the published files are dropped, the package is empty, and NuGet raises NU5017.
 
-Loop a hand build of a fresh clone (wipe `bin/` and `obj/` each time) to see whether it ever fails
-outside Flowline. If it does, it is a tooling race in the PowerApps plugin pack targets under SDK 11,
-not a Flowline bug. If it never does, diff the environment Flowline passes to its child `dotnet`
-against the shell's.
+## Why it looked intermittent
 
-Not fixed inline because the root cause is unknown, and it sits in the build tooling shared by every
-command rather than in the slice under test.
+- **SDK choice follows the working directory.** The Flowline repo's `global.json` pins 10.0.4xx, so
+  every hand build launched from there ran on SDK 10 and passed. Flowline runs `dotnet` in the
+  workspace, which has no `global.json`, so it got 11.0.100.
+- **Passes on SDK 11 were a skipped pack.** When a package from an SDK 10 build is already in `bin/`
+  and the version is unchanged, `GenerateNuspec` is skipped as up to date and the build succeeds,
+  shipping that older package even after a source change. A version change (a new commit moves
+  MinVer's version) forces the pack, and it fails. Reproduced: SDK 10 build, SDK 11 build passes,
+  SDK 11 build with `-p:MinVerVersionOverride=0.0.2` fails.
+- **Clean and rebuild make it worse.** A wiped `bin/` and `obj/` fails 6 of 6 times on SDK 11 and
+  0 of 6 on SDK 10.
 
-## Workaround
+## Fix
 
-Re-run `clone`, or run `pull --no-build`.
+The scaffolder rewrites the singular `<TargetFramework>` to `<TargetFrameworks>` right after
+`pac plugin init`. With the plural form, SDK 11 runs the per-framework step in its own instance, as
+SDK 10 did. The output path (`bin/<Config>/net462/`), the publish folder and the package contents
+(`lib/net462/<Name>.Plugins.dll`) are identical on both SDKs. Verified live on SDK 11: a fresh `clone`
+built first time, and `pull --bump none` after wiping `bin/` and `obj/` repacked a package with the dll.
+A second fresh clone (`FlowlineDeployTest`) then passed `push`, `pull` with the default bump, and
+`pack --binaries-from-build`, all building on SDK 11.
+
+## Existing projects
+
+In `Plugins/<Name>.Plugins.csproj`, change `<TargetFramework>net462</TargetFramework>` to
+`<TargetFrameworks>net462</TargetFrameworks>`. Flowline does not migrate existing projects.

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CliWrap;
 using Flowline.Core;
 using Flowline.Core.Config;
@@ -126,6 +127,17 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
         if (File.Exists(path))
             File.Delete(path);
     }
+
+    /// <summary>Rewrites a single <c>&lt;TargetFramework&gt;</c> as <c>&lt;TargetFrameworks&gt;</c>, leaving everything else as is.</summary>
+    /// <remarks>
+    /// <c>pac plugin init</c> writes the singular form. From SDK 11, NuGet's pack runs a single-framework
+    /// project's per-framework step in the same project instance, so the <c>IncludeBuildOutput=false</c> that
+    /// <c>Microsoft.PowerApps.MSBuild.Plugin</c> (1.52.1 and 2.16.1 alike) sets in that step reaches the pack
+    /// task, which drops the published assembly and fails with NU5017. The plural form keeps that step in its
+    /// own instance, as SDK 10 did, and builds the same <c>bin/&lt;Config&gt;/net462/</c> output and package.
+    /// </remarks>
+    internal static string UsePluralTargetFrameworks(string csproj) =>
+        Regex.Replace(csproj, "<TargetFramework>([^<;]+)</TargetFramework>", "<TargetFrameworks>$1</TargetFrameworks>");
 
     internal async Task ScaffoldAgentsFileAsync(string slnFolder, string solutionName, string slnFileName, CancellationToken cancellationToken)
     {
@@ -576,6 +588,8 @@ public class ProjectScaffolder(IAnsiConsole console, SubprocessCapture capture)
                     Directory.Move(initFolder, pluginsFolder);
                     console.Verbose($"Moved {Path.GetFileName(initFolder)} to {Path.GetFileName(pluginsFolder)}");
                 }
+
+                File.WriteAllText(pluginsCsproj, UsePluralTargetFrameworks(File.ReadAllText(pluginsCsproj)));
 
                 // Add Flowline.Attributes NuGet package
                 await Cli.Wrap("dotnet")

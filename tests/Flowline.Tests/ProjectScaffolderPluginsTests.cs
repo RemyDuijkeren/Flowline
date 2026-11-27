@@ -22,6 +22,20 @@ namespace Flowline.Tests;
 /// </remarks>
 public class ProjectScaffolderPluginsTests
 {
+    [Theory]
+    [InlineData("<TargetFramework>net462</TargetFramework>", "<TargetFrameworks>net462</TargetFrameworks>")]
+    [InlineData("<TargetFrameworks>net462</TargetFrameworks>", "<TargetFrameworks>net462</TargetFrameworks>")]
+    [InlineData("<TargetFrameworks>net462;net48</TargetFrameworks>", "<TargetFrameworks>net462;net48</TargetFrameworks>")]
+    public void UsePluralTargetFrameworks_RewritesOnlyTheSingularForm_AndIsIdempotent(string framework, string expected)
+    {
+        var csproj = $"<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    {framework}\n    <SignAssembly>true</SignAssembly>\n  </PropertyGroup>\n</Project>";
+
+        var once = ProjectScaffolder.UsePluralTargetFrameworks(csproj);
+
+        once.Should().Be(csproj.Replace(framework, expected));
+        ProjectScaffolder.UsePluralTargetFrameworks(once).Should().Be(once);
+    }
+
     static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "flowline-tests-" + Guid.NewGuid().ToString("N"));
