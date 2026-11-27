@@ -34,8 +34,7 @@ that builds.
 
 ### NU5017
 
-Root cause found and fixed in the scaffolder; details in
-[`test-findings/build-validation-nu5017-on-scaffolded-plugins-project.md`](test-findings/build-validation-nu5017-on-scaffolded-plugins-project.md).
+Root cause found and fixed in the scaffolder (`8bf4ee4`; the finding file was deleted once fixed).
 SDK 11 only: a clean Plugins build fails 6 of 6 on 11.0.100 and 0 of 6 on 10.0.403, and
 `Microsoft.PowerApps.MSBuild.Plugin` 2.16.1 fails the same way. Clean or rebuild does not help; the
 earlier passes were a skipped pack reusing a package from an SDK 10 hand build. With the fix, two
@@ -73,7 +72,7 @@ fresh clones built first time on SDK 11.
 
 ### New finding
 
-[`test-findings/deploy-orphan-cleanup-deletes-carried-package-over-stale-sibling.md`](test-findings/deploy-orphan-cleanup-deletes-carried-package-over-stale-sibling.md):
+Fixed in `33ccca1` (the finding file was deleted once fixed):
 deploy's orphan cleanup marks the plugin package the solution still carries for deletion when the
 target holds a stale sibling assembly in it. Dataverse refused the delete on a dependency, then the
 import failed on the same leftovers. Reproduced offline. Predates 0.18.0. Every `deploy test`
@@ -153,7 +152,7 @@ machine, and the first to drive Flowline's interactive prompts, through a pty.
 
 | # | Case | Expected (from the plan) | Observed | Exit |
 |---|---|---|---|---|
-| 0 | `clone FlowlineConnRefE2E --env <dev>` on a fresh repo | Clone completes | Export and scaffold OK, then build fails with NU5017; no AGENTS.md or settings file. Re-run: completes. [Finding](test-findings/build-validation-nu5017-on-scaffolded-plugins-project.md) | **13**, then 0 |
+| 0 | `clone FlowlineConnRefE2E --env <dev>` on a fresh repo | Clone completes | Export and scaffold OK, then build fails with NU5017; no AGENTS.md or settings file. Re-run: completes. Fixed in `8bf4ee4` | **13**, then 0 |
 | A | Plain `pull` (default bump, build on) | Advice block, no DEV write | `! Connection references in DEV: 1 duplicate group on one connection, 2 unused.` plus the `--tidy-connrefs` line. All 14 DEV row versions identical before and after. Build then fails with NU5017 | **13** |
 | A2 | `pull --force all --no-build --bump none` | `--force all` does not turn the cleanup on | Same advice, 14 row versions identical | 0 |
 | B | Dirty `Solution/src/` plus `--tidy-connrefs` | Dirty gate stops before any cleanup | `Uncommitted changes in 'Solution/src/'`; 14 row versions identical | 12 |

@@ -157,7 +157,7 @@ exists, so a new-publisher test must pick a *fresh* prefix or it silently exerci
   SDK 10, and a workspace with no `global.json` gets the newest SDK installed (11 on the Linux
   machine). Run a hand `dotnet build` with the workspace as the working directory, or it runs on a
   different SDK than Flowline's own build and can pass where Flowline fails. That hid the NU5017
-  finding ([`test-findings/build-validation-nu5017-on-scaffolded-plugins-project.md`](test-findings/build-validation-nu5017-on-scaffolded-plugins-project.md)).
+  finding, fixed in `8bf4ee4`.
 - **Run the CLI from a Release build.** A Debug build propagates exceptions past the handler, so
   correct error handling prints a raw stack trace and reads as broken.
 
@@ -454,11 +454,9 @@ a one-line summary, never duplicates the writeup.
 Before a run, skim `docs/test-findings/` for issues that may now be fixed (re-verify, then update or
 delete the file) and decide whether any still-open finding should be promoted to a fix.
 
-**Carry into every run:** `agent-ux-output-hard-wrapped-at-80-columns.md`. Non-TTY output hard-wraps
-at 80 columns with no escape hatch, splitting log paths and `--help` URLs mid-token, and `COLUMNS` has
-no effect. There is also no machine-readable mode (`--json` or porcelain) anywhere, so parsing
-reflowed prose is an agent's only option. Same finding. It shapes how every run reads output, so
-expect broken tokens rather than re-reporting them.
+**Carry into every run:** there is no machine-readable mode (`--json` or porcelain) anywhere, so an
+agent parses prose. Non-TTY output no longer hard-wraps at 80 columns (seen on Linux, 2026-11-28);
+re-check on Windows before relying on that there.
 
 ## Deliverable
 
