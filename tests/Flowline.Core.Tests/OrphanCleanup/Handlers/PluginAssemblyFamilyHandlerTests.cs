@@ -1031,6 +1031,93 @@ public class PluginAssemblyFamilyHandlerTests
         }
     }
 
+    // Every live assembly per package, matched on the packageid filter so it can't collide with the
+    // candidate-scoped name and packageid lookups above.
+    void SetupLiveAssembliesByPackage(params (Guid AssemblyId, Guid PackageId, string Name)[] rows)
+    {
+        var entities = rows.Select(r => new Entity("pluginassembly", r.AssemblyId)
+        {
+            ["name"] = r.Name,
+            ["packageid"] = new EntityReference("pluginpackage", r.PackageId),
+        }).ToList();
+        _serviceMock.RetrieveMultipleAsync(
+                Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly"
+                    && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid"))),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EntityCollection(entities)));
+    }
+
+    // The shape a real deploy hit: the assembly the package still carries is in the manifest, so it is
+    // never a candidate, and only the stale sibling reaches the handler. The package must survive anyway.
+    [Fact]
+    public async Task DetectAsync_CarriedAssemblyNotACandidate_StaleSiblingNeverDeletesThePackageAndWarns()
+    {
+        var carriedAssemblyId = Guid.NewGuid();
+        var staleAssemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        var staleStepId = Guid.NewGuid();
+        const string uniqueName = "abc_TestPackage";
+
+        var buildDir = Directory.CreateTempSubdirectory("flowline-pkgcontent-build-").FullName;
+        var dll = BuildPluginDll(buildDir, "Alpha", "Alpha.MyPlugin");
+        var srcRoot = BuildPackageSrcTree(uniqueName, BuildNupkg(buildDir, dll));
+
+        try
+        {
+            SetupPackageIds((staleAssemblyId, packageId));
+            SetupName("pluginassembly", "name", staleAssemblyId, "Beta");
+            SetupPackageUniqueName(packageId, uniqueName);
+            SetupLiveAssembliesByPackage((carriedAssemblyId, packageId, "Alpha"), (staleAssemblyId, packageId, "Beta"));
+
+            var findings = (await _handler.DetectAsync(Ctx(srcRoot),
+                [(staleAssemblyId, 91), (staleStepId, 92)], default)).Findings;
+
+            Assert.DoesNotContain(findings, f => f.EntityName == "pluginpackage");
+            Assert.DoesNotContain(findings, f => f.ObjectId == staleAssemblyId);
+            Assert.Contains(findings, f => f.ObjectId == staleStepId);
+            Assert.Contains("Beta.dll is still in plugin package abc_TestPackage", _console.Output);
+            Assert.Contains("Plug-in Registration Tool", _console.Output);
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DetectAsync_LiveAssemblyLookupFails_PackageDeleteSkippedThisRun()
+    {
+        var staleAssemblyId = Guid.NewGuid();
+        var packageId = Guid.NewGuid();
+        const string uniqueName = "abc_TestPackage";
+
+        var buildDir = Directory.CreateTempSubdirectory("flowline-pkgcontent-build-").FullName;
+        var dll = BuildPluginDll(buildDir, "Alpha", "Alpha.MyPlugin");
+        var srcRoot = BuildPackageSrcTree(uniqueName, BuildNupkg(buildDir, dll));
+
+        try
+        {
+            SetupPackageIds((staleAssemblyId, packageId));
+            SetupName("pluginassembly", "name", staleAssemblyId, "Beta");
+            SetupPackageUniqueName(packageId, uniqueName);
+            _serviceMock.RetrieveMultipleAsync(
+                    Arg.Is(Matching<QueryExpression>(q => q.EntityName == "pluginassembly"
+                        && q.Criteria.Conditions.Any(c => c.AttributeName == "packageid"))),
+                    Arg.Any<CancellationToken>())
+                .Returns<Task<EntityCollection>>(_ => throw new InvalidOperationException("boom"));
+
+            var findings = (await _handler.DetectAsync(Ctx(srcRoot), [(staleAssemblyId, 91)], default)).Findings;
+
+            Assert.DoesNotContain(findings, f => f.EntityName == "pluginpackage");
+        }
+        finally
+        {
+            Directory.Delete(buildDir, recursive: true);
+            Directory.Delete(srcRoot, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task DetectAsync_ProtectedPackageAlongsideFullyGonePackage_OnlyTheGoneOneIsDeleted()
     {

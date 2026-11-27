@@ -597,7 +597,7 @@ public class DeployCommand(CommandServices services, DataverseConnector datavers
                     .Task);
 
         if (result.ExitCode != 0)
-            throw new FlowlineException(ExitCode.BuildFailed, "Deploy failed — check the environment and your PAC login.");
+            throw new FlowlineException(ExitCode.BuildFailed, $"Import of {slnName} into {targetEnv.DisplayName} failed. Pac's error is above.");
     }
 
     // FIX A: resolves the exit code from every post-import outcome without sniffing which concrete

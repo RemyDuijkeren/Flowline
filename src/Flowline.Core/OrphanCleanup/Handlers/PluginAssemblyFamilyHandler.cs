@@ -87,7 +87,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         // registered (the exact bug this plan exists to detect). Reusing the packageid resolution above,
         // check each package-owned candidate's live name against its package's locally reflected content
         // instead: present in both, it's not an orphan at all, regardless of the manifest.
-        var (excludedAssemblyIds, protectedObjectIds, exclusionDegraded) =
+        var (excludedAssemblyIds, protectedObjectIds, livePackages, exclusionDegraded) =
             await ResolvePackageContentExclusionsAsync(context, packageIds, names, claimed, console, ct).ConfigureAwait(false);
 
         // Fix 2: BuildAllFindings collapses every orphaned assembly under one package into a single
@@ -98,10 +98,26 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         // plugin types are ordinary candidates in this batch, and its Custom APIs fall to
         // CustomApiFamilyHandler's own Auto pass, since dropping B from redirectAssemblyIds also drops
         // the reordering cascade that only existed to beat the package delete.
+        //
+        // The same holds when A is no candidate at all, the normal case: A is in the manifest, so only B
+        // reaches this handler. livePackages covers that, from every live assembly in the package.
         var protectedPackageIds = packageIds
             .Where(kv => excludedAssemblyIds.Contains(kv.Key))
             .Select(kv => kv.Value.Id)
             .ToHashSet();
+        protectedPackageIds.UnionWith(livePackages.Keys);
+
+        // A solution import can't drop an assembly from an existing package, even one with no steps or
+        // plugin types left (verified on a real import, 2026-11-27): it fails with "Unable to delete
+        // plug-in assembly as it is part of plugin package". Only a direct package update drops it.
+        // Report it rather than work around it, since the case needs two plugin assemblies in one
+        // package and Microsoft may fix the import.
+        foreach (var (assemblyId, packageRef) in packageIds)
+        {
+            if (excludedAssemblyIds.Contains(assemblyId) || !livePackages.TryGetValue(packageRef.Id, out var packageName)) continue;
+            var assemblyName = names.TryGetValue(assemblyId, out var n) ? n : assemblyId.ToString();
+            console.Warning($"[bold]{Markup.Escape(assemblyName)}.dll[/] is still in plugin package [bold]{Markup.Escape(packageName)}[/] in the target, but the package you deploy no longer has it. Dataverse rejects the import while it's there. Update the package in the Plug-in Registration Tool first, then deploy again.");
+        }
 
         // Protected candidates are dropped before any finding is built below — not reported, not deleted,
         // not redirected — but stay in claimedIds above (recognized-but-clean), so
@@ -279,7 +295,11 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
     // to stay as inert registered storage, and deleting the types would strip the only thing that makes
     // it runnable. Steps are deliberately NOT protected: a step absent from source was removed on
     // purpose, and inert-but-registered is the intended end state.
-    static async Task<(HashSet<Guid> ExcludedAssemblyIds, HashSet<Guid> ProtectedObjectIds, bool Degraded)>
+    //
+    // LivePackages: each package the imported solution carries that still holds at least one live
+    // assembly its content accounts for, by id with its uniquename. Never deleted, whichever of its
+    // assemblies are candidates.
+    static async Task<(HashSet<Guid> ExcludedAssemblyIds, HashSet<Guid> ProtectedObjectIds, Dictionary<Guid, string> LivePackages, bool Degraded)>
         ResolvePackageContentExclusionsAsync(
             DetectionContext context,
             Dictionary<Guid, EntityReference> packageIds,
@@ -289,7 +309,8 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
             CancellationToken ct)
     {
         var excluded = new HashSet<Guid>();
-        if (packageIds.Count == 0) return (excluded, excluded, false);
+        var livePackages = new Dictionary<Guid, string>();
+        if (packageIds.Count == 0) return (excluded, excluded, livePackages, false);
 
         // Local scan first: it costs no round trip, and when the imported solution carries no package
         // content at all nothing can be excluded whatever the live lookups say — so R12's package-gone
@@ -301,7 +322,7 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
         foreach (var (packageDir, error) in scanFailures)
             console.Warning($"Package '{Markup.Escape(packageDir)}' in the imported solution couldn't be read ({Markup.Escape(error.Message)}) — its package-content orphan check is skipped this run.");
 
-        if (reflectedByPackage.Count == 0 && !degraded) return (excluded, excluded, false);
+        if (reflectedByPackage.Count == 0 && !degraded) return (excluded, excluded, livePackages, false);
 
         var packageUniqueNames = await ResolvePackageUniqueNamesAsync(
             context.Service, packageIds.Values.Select(p => p.Id).Distinct().ToList(), console, ct,
@@ -322,7 +343,19 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
                 excluded.Add(assemblyId);
         }
 
-        if (excluded.Count == 0) return (excluded, excluded, degraded);
+        var carriedPackages = packageUniqueNames
+            .Where(kv => reflectedByPackage.ContainsKey(kv.Value))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+        if (carriedPackages.Count > 0)
+        {
+            var liveNames = await ResolveLiveAssemblyNamesByPackageAsync(context.Service, carriedPackages.Keys, console, ct,
+                onFault: () => degraded = true).ConfigureAwait(false);
+            foreach (var (packageId, uniqueName) in carriedPackages)
+                if (liveNames.TryGetValue(packageId, out var live) && live.Overlaps(reflectedByPackage[uniqueName]))
+                    livePackages[packageId] = uniqueName;
+        }
+
+        if (excluded.Count == 0) return (excluded, excluded, livePackages, degraded);
 
         var (protectedTypeIds, typeLookupDegraded) =
             await ResolveProtectedPluginTypeIdsAsync(context.Service, excluded, console, ct).ConfigureAwait(false);
@@ -337,8 +370,39 @@ public sealed class PluginAssemblyFamilyHandler(IAnsiConsole console) : IOrphanH
 
         var protectedObjectIds = new HashSet<Guid>(excluded);
         protectedObjectIds.UnionWith(protectedTypeIds);
-        return (excluded, protectedObjectIds, degraded);
+        return (excluded, protectedObjectIds, livePackages, degraded);
     }
+
+    // Every live assembly name per package, not only this batch's candidates: the assembly a package
+    // still carries is in the manifest and never becomes a candidate. A fault is fail-closed through
+    // onFault, like the uniquename lookup below.
+    static Task<Dictionary<Guid, HashSet<string>>> ResolveLiveAssemblyNamesByPackageAsync(
+        IOrganizationServiceAsync2 service,
+        IReadOnlyCollection<Guid> packageIds,
+        IAnsiConsole console,
+        CancellationToken ct,
+        Action onFault) =>
+        DataverseFaultTolerance.TryQueryAsync(async () =>
+        {
+            var query = new QueryExpression("pluginassembly")
+            {
+                ColumnSet = new ColumnSet("name", "packageid"),
+                Criteria = { Conditions = { new ConditionExpression("packageid", ConditionOperator.In, packageIds.Select(id => (object)id).ToArray()) } }
+            };
+            var entities = await service.RetrieveAllAsync(query, ct).ConfigureAwait(false);
+
+            var result = new Dictionary<Guid, HashSet<string>>();
+            foreach (var entity in entities)
+            {
+                var packageRef = entity.GetAttributeValue<EntityReference>("packageid");
+                var name = entity.GetAttributeValue<string>("name");
+                if (packageRef == null || name == null) continue;
+                if (!result.TryGetValue(packageRef.Id, out var set))
+                    result[packageRef.Id] = set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                set.Add(name);
+            }
+            return result;
+        }, [], console, msg => $"pluginassembly lookup by package failed ({msg}). Package deletes are skipped this run.", onFault);
 
     // Fix 3: the live plugin types belonging to assemblies the package content still accounts for.
     // Mirrors ResolvePackageIdsAsync's degrade shape, but the caller treats a fault as fail-closed

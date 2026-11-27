@@ -1,7 +1,8 @@
 # Deploy's orphan cleanup targets a plugin package the solution still carries
 
-- **Status:** open, not fixed inline. The guard hole is reproduced; the import failure next to it has
-  no established cause, and the remedy is a product decision (below).
+- **Status:** fixed 2026-11-28. The package-scope delete no longer runs for a package that still holds
+  a live assembly its imported content accounts for, and deploy warns about the stale assembly before
+  the import. The import failure is Dataverse behaviour and is reported, not worked around (below).
 - **Severity:** high. The cleanup plans to delete the live plugin package that the deploy is about to
   import. In this run Dataverse refused the delete on a dependency, so nothing was lost.
 - **Found:** 2026-11-27, round "changes since 0.18.0" in
@@ -44,35 +45,38 @@ live assemblies A (in the manifest) and B (`FlowlineDeployTest.Probe`, not in co
 same package. `RunPreImportAsync` printed `PluginPackage … (owns PluginAssembly
 'FlowlineDeployTest.Probe') — delete` and called `DeleteAsync("pluginpackage", <id>)`.
 
-## The import failure (cause not established)
+## The import failure: Dataverse behaviour
 
-The package was still in place when the import failed, so the guard hole did not cause it. The
-hypothesis: Dataverse cannot drop an assembly from a package's content while that assembly still
-has plugin types. Both leftovers still have one (`Probe.ProbePlugin`, `Probe2.Probe2Plugin`, queried
-in TEST after the run). `push` handles the same shape in DEV by clearing the dropped assembly's
-registrations first (`… no longer in the package — clearing its registrations so the update can
-remove it`); deploy has no such step. Not confirmed.
+Tested in TEST on 2026-11-27 with `pac solution import` of the 1.1.0 zip, outside Flowline:
 
-## Decision needed
+| State of `Probe` and `Probe2` before the import | Result |
+|---|---|
+| No steps (the deploy had deleted `Probe`'s; `Probe2` had none) | Same error |
+| No steps and no plugin types (both deleted through the Web API) | Same error |
+| Package content updated directly with the 1.1.0 nupkg first (Dataverse removed both assemblies) | Import succeeded, 1.1.0.0 |
 
-What deploy should do with a stale assembly inside a package it still carries:
+So a solution import cannot drop an assembly from an existing plugin package, whatever is attached to
+it. A direct package update can, once no step uses the assembly, as
+[Microsoft documents](https://learn.microsoft.com/power-platform/developer/howto/cli-create-package#plug-in-package-management).
+Not tested: whether the direct update also works with the plugin types still in place.
 
-- leave it registered but inert and only delete its steps, which is what the guard's Fix 2 comment
-  describes;
-- clear its plugin types before the import, as `push` does, so the import can drop it;
-- stop the deploy and name it.
+## Decision
 
-Whatever the choice, the package-scope delete must not run for a package the imported solution
-carries.
+Report, don't work around it: the case needs two plugin assemblies in one package, which Flowline never
+scaffolds, and Microsoft may fix the import. Deploy keeps the package, deletes the stale assembly's
+steps, and warns before the import with the fix: update the package in the Plug-in Registration Tool,
+then deploy again. Uploading the package from deploy (option 3) was rejected as a second write path to
+TEST and PROD for a rare case. Managed deploys are unaffected: they use stage-and-upgrade and orphan
+cleanup only reports.
 
-## Repro state kept
+## Repro state
 
-TEST still has `Probe` and `Probe2` with their plugin types, and `FlowlineDeployTest` at 1.0.6.0.
-`flowline drift test` shows the planned package delete without writing anything; use it as the
-before-and-after check for a fix.
+Consumed. The manual package update removed `Probe` and `Probe2` from TEST, which is now on 1.1.0.0.
+The handler tests cover the shape offline (`PluginAssemblyFamilyHandlerTests`, the carried assembly that
+is never a candidate).
 
 ## Related, pre-existing
 
-A failed import exits 13 (`BuildFailed`) with "check the environment and your PAC login", which
-points an agent at auth rather than at the import error pac printed
-(`src/Flowline/Commands/DeployCommand.cs:600`).
+A failed import exits 13 (`BuildFailed`). Its message used to say "check the environment and your PAC
+login", pointing at auth rather than at the import error pac printed. It now names the import and
+points at pac's error (`src/Flowline/Commands/DeployCommand.cs:600`). The exit code is unchanged.
