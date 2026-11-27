@@ -83,7 +83,10 @@ Flowline project per solution, each with its own `.flowline` and `.git` (co-loca
 `docs/folder-structure.md` §4). Run commands from inside the specific solution's folder; Flowline
 resolves by walking up to the nearest `.flowline`. The `Cr07982` and `FlowlineDeployTest` workspaces
 below exist on the Windows machine only; on Linux, clone a fixture into a fresh folder first
-(`git init`, one commit, then `clone`).
+(`git init`, one commit, then `clone`). A clone brings only the template plugin and web resources,
+not the fixture's source: add a `[Step]` class matching the live step and delete the template's
+`// flowline:onload account "Account"` lines, or the first `push` fails on a form outside the
+solution. Linux has a `FlowlineDeployTest/` workspace built this way (2026-11-27).
 
 - `Cr07982\`: the project-structure-flexibility fixture. **Keep it, don't rebuild it, and don't
   assume the scaffolded default layout when reading output:**
@@ -132,7 +135,7 @@ exists, so a new-publisher test must pick a *fresh* prefix or it silently exerci
 ## Bug-fix policy
 
 - **Capture the unit-suite baseline before the first fix**, and compare against it after every fix.
-  Last known good: Core 2128 passed / 4 skipped, CLI 1573 passed / 7 skipped (2026-11-26). Treat that number as dated, not
+  Last known good: Core 2128 passed / 4 skipped, CLI 1576 passed / 7 skipped (2026-11-27). Treat that number as dated, not
   authoritative. The Core skips are the live-MSAL `ConnectViaPacAsync_*` tests and the CLI skips need
   `pac` on PATH; each carries an explicit `Skip` reason. Anything red beyond those is a real regression.
 - Fix inline when the root cause is clear and small (parsing slip, null ref, wrong exit code,
@@ -150,6 +153,11 @@ exists, so a new-publisher test must pick a *fresh* prefix or it silently exerci
   (`<worktree>/src/Flowline/bin/Release/net10.0/Flowline`) instead of reinstalling the global tool,
   so the installed `flowline` is not swapped for a branch build. Use absolute paths throughout: the
   agent shell resets its working directory after each command.
+- **Hand builds pick their SDK from the working directory.** The Flowline repo's `global.json` pins
+  SDK 10, and a workspace with no `global.json` gets the newest SDK installed (11 on the Linux
+  machine). Run a hand `dotnet build` with the workspace as the working directory, or it runs on a
+  different SDK than Flowline's own build and can pass where Flowline fails. That hid the NU5017
+  finding ([`test-findings/build-validation-nu5017-on-scaffolded-plugins-project.md`](test-findings/build-validation-nu5017-on-scaffolded-plugins-project.md)).
 - **Run the CLI from a Release build.** A Debug build propagates exceptions past the handler, so
   correct error handling prints a raw stack trace and reads as broken.
 
@@ -411,6 +419,14 @@ State these explicitly in the round writeup rather than quietly skipping them.
   longer in source, and there's no cheap way to construct it on this fixture.
 
 ## Lessons worth carrying into the next run
+
+- **Parse-level checks can go to a sub-agent in a sealed copy.** Copy the workspace and point every
+  role in its `.flowline` at `https://flowline-sealed.invalid`, give it an exact command list, and
+  forbid `--env` and real hostnames. Nothing it runs can reach Dataverse.
+- **A deploy dry-run does not predict the import.** It said "would deploy cleanly" for content whose
+  real import had just failed. Only a real `deploy test` proves an import.
+- **`generate` on a solution with no tables generates every entity** (empty `-enf`), which runs for
+  many minutes. Use a fixture with tables or skip it.
 
 - **A passing test that bypasses a layer proves nothing about that layer.** Interactive `clone`
   shipped dead because a required positional made Spectre reject the bare command before the code

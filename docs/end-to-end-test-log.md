@@ -6,6 +6,121 @@ suite. Newest round first. The matrix, fixtures and constraints these rounds run
 
 ---
 
+## Round 2026-11-27: changes since 0.18.0, and the NU5017 root cause
+
+Sweep of what 0.19.0, 0.20.0, 0.21.0 and Unreleased added or changed, run after #26 landed on
+`master`. It starts with the NU5017 build failure from the previous round, which blocked every case
+that builds.
+
+- **Date:** 2026-11-27
+- **Build:** `src/Flowline/Flowline.csproj`, Release, at `4a90c24` plus the uncommitted NU5017
+  scaffold fix (`0.21.1-alpha.0.32`), run by absolute path from the main checkout.
+- **SDK:** every Flowline run picked 11.0.100 (workspaces have no `global.json`).
+- **Targets:** DEV (writes), TEST (one real deploy, dry-runs), PROD (dry-runs and reads only).
+- **Writes:**
+  - DEV, solution `FlowlineDeployTest`: package update, step upsert, Custom API `av_KeepMe` deleted,
+    3 web resources created or updated, versions 1.0.5, 1.0.6 and 1.1.0.
+  - DEV, solution `FlowlineConnRefE2E`: flow `E2E A1` off then on; `settings apply` changed nothing.
+  - TEST: the failed `deploy test` deleted step `FlowlineDeployTest.Probe.ProbePlugin: Create of
+    contact` and Custom API `av_KeepMe` before the import failed. Backups
+    `flowline-deploy-FlowlineDeployTest-20261127T015323Z` and four `flowline-dryrun-…` labels.
+  - PROD: no import. One backup (`flowline-dryrun-FlowlineDeployTest-20261127T020746Z`) from the
+    one dry-run that got past the DTAP gate.
+- **Workspaces:** `~/Projects/AutomateValue-Dev/solutions/FlowlineDeployTest/` (fresh clone, plus an
+  `AccountPostCreatePlugin` with `[Step("account")]` and the template form annotations removed) and
+  `~/Projects/AutomateValue-Dev/solutions/Nu5017Check/` (fresh clone of `FlowlineConnRefE2E`).
+- **Parse-level checks:** 35 commands run by a sub-agent in a copy of the workspace whose roles all
+  pointed at `https://flowline-sealed.invalid`, so nothing could reach Dataverse.
+
+### NU5017
+
+Root cause found and fixed in the scaffolder; details in
+[`test-findings/build-validation-nu5017-on-scaffolded-plugins-project.md`](test-findings/build-validation-nu5017-on-scaffolded-plugins-project.md).
+SDK 11 only: a clean Plugins build fails 6 of 6 on 11.0.100 and 0 of 6 on 10.0.403, and
+`Microsoft.PowerApps.MSBuild.Plugin` 2.16.1 fails the same way. Clean or rebuild does not help; the
+earlier passes were a skipped pack reusing a package from an SDK 10 hand build. With the fix, two
+fresh clones built first time on SDK 11.
+
+### Results
+
+| Area (release) | Case | Observed | Exit |
+|---|---|---|---|
+| clone (fix) | Fresh clone, SDK 11 | Built first time, csproj has `<TargetFrameworks>net462</TargetFrameworks>` | 0 |
+| pull (fix) | `--bump none`, `bin/` and `obj/` wiped | Repacked, package holds the dll | 0 |
+| parse (0.19, 0.21) | Unknown option, mistyped command, missing argument, option without value | Caret line, `Did you mean 'push'?`, help pointer, value list | 15 |
+| parse (0.21) | `sync`, `settings state`, `settings value`, `-f` on `status`/`diff`/`scaffold`, `--scope`, target-only flags on the wrong command, `push Contoso` | All rejected; `push Contoso` names `--solution-name` | 15 |
+| parse (0.21) | Non-role target; role whose `.flowline` value is not a URL | Rejected up front naming the key | 15 |
+| push (0.21) | Bare `push` or `push plugins` outside a project | Names the stand-alone form | 11 |
+| diff (0.19) | `diff A B`, `diff A..B` offline | Component tree, identical for both forms | 0 |
+| status (0.20) | Linux, three environments | All three checked over their own connections in 10 s | 0 |
+| drift (0.19) | dev, test, prod; `--exit-code` | 0 with orphans; 22 with `--exit-code`; prod reports solution not found | 0 / 22 / 3 |
+| push (0.21) | `--dry-run`, real, re-run | Tree plan; package updated, step upserted, Custom API deleted; then `Nothing to push` | 0 |
+| push wr (Unreleased) | LF to CRLF + BOM, then a real edit | `no changes`, then `1 update(s)` | 0 |
+| pull (0.21) | Second pull with nothing new | Says only the version moved and there is nothing to deploy, names `--bump none` | 0 |
+| pack (Unreleased) | Clean; dirty `Solution/src`; untracked root file | Versioned zip; exit 12 naming the file; root file ignored (scope is the pack inputs) | 0 / 12 / 0 |
+| pack (Unreleased) | `--binaries-from-build`: untracked root file; clean; `--no-build` alone | Exit 12; zip carries the fresh build's package (md5 differs from the committed one); exit 15 | 12 / 0 / 15 |
+| deploy (0.21) | `prod` pointing at a Sandbox, `test` pointing at Production | Refused before any work, naming the key | 15 |
+| deploy | `dev` as target | Rejected | 15 |
+| deploy | `prod --dry-run` with 1.1.0 not in TEST | DTAP gate refuses | 15 |
+| deploy | **real `deploy test`, 1.1.0 over 1.0.6** | **Import failed**: `Unable to delete plug-in assembly as it is part of plugin package`. Finding below | 13 |
+| deploy | `test --dry-run`, `--no-delete`, `--path <zip>`, `--binaries-from-build` | `flowline-dryrun-…` backup, no import, no CI signals, `(--dry-run preview)` | 0 |
+| deploy | `prod --dry-run --skip-dtap-check` (first import) | Names the first-import confirmation the real run will ask for | 0 |
+| settings (0.21) | `toggle dev` list, read one, `--on` without a name | List, state, `Name the component to turn on: …` | 0 / 0 / 15 |
+| settings (0.21) | `toggle --off --dry-run`, `--off`, `--off` again, `--on` | Verified with `pac env fetch`: unchanged, Draft, Draft, Activated | 0 |
+| settings (0.21) | `capture dev`, `set dev <ref>` read, `apply dev --dry-run`, `apply dev` | File written; binding read; `1 unchanged` twice | 0 |
+| Ctrl+C (0.21) | One press, two presses during the export | `Cancelling. Press Ctrl+C again to force quit.`; tree clean | 130 |
+| --env (0.19) | Unconfigured URL, unattended; TEST URL on `push` | Used without saving; push refuses a non-DEV URL | 3 / 15 |
+
+### New finding
+
+[`test-findings/deploy-orphan-cleanup-deletes-carried-package-over-stale-sibling.md`](test-findings/deploy-orphan-cleanup-deletes-carried-package-over-stale-sibling.md):
+deploy's orphan cleanup marks the plugin package the solution still carries for deletion when the
+target holds a stale sibling assembly in it. Dataverse refused the delete on a dependency, then the
+import failed on the same leftovers. Reproduced offline. Predates 0.18.0. Every `deploy test`
+dry-run since still plans the delete and still says "would deploy cleanly".
+
+### Observations, not written up (pre-existing, outside the slice)
+
+- The change summary in `pull` and `CHANGES.md` has no handling for `customapis/` or
+  `pluginpackages/`: a deleted Custom API and a changed package produce no entry.
+- The template web resources carry `// flowline:onload account "Account"`. In a solution without the
+  account form, the first `push` fails with exit 15.
+- `generate` on a solution with no tables passes an empty `-enf`, which pac reads as no filter: it
+  generated all 2052 DEV entities and was killed by the 500 s timeout.
+- A failed import exits 13 with "check the environment and your PAC login".
+- `settings toggle … --off` on a flow already off prints the same `Done` as a change.
+- `sync` suggests `sln`, not `pull`.
+- `capture` lists only components that are off, by design (R12), so a solution with every flow on
+  captures no flow section.
+
+### Not covered
+
+- A successful real `deploy test`, and with it: the printed `git tag` commands (0.21), post-import
+  orphan cleanup, the post-import package-assembly check. Blocked by the finding above.
+- The staged-upgrade early stop (needs a `_Upgrade` holding solution) and managed deploys.
+- `deploy --force first-import` for real, and the declined first-import exit 17.
+- `init`, `provision` (including `--force overwrite`), `scaffold plugins`, `sln add`.
+- `generate` on a solution with tables, and the `xrmcontext` generators.
+- The interactive role offer for an unconfigured `--env` URL: needs a second DEV-typed environment.
+- Interactive prompts generally, other than Ctrl+C.
+- Forms and views in settings files, business rules and BPFs, environment variables (the fixtures
+  have none).
+- `push plugins` with a service-endpoint step (#21), and Custom API paging past 5000.
+- Telemetry content.
+- Windows.
+
+### State left behind
+
+- TEST: `FlowlineDeployTest` still 1.0.6.0; package `av_FlowlineDeployTest.Plugins` still holds
+  `Probe` and `Probe2` with their plugin types (the finding's repro, kept on purpose); the Probe step
+  and `av_KeepMe` are gone.
+- DEV: `FlowlineDeployTest` at 1.1.0.0 with the template-based plugin; fixture `FlowlineConnRefE2E`
+  unchanged by this round's net effect.
+- Workspaces `FlowlineDeployTest/` and `Nu5017Check/` under `~/Projects/AutomateValue-Dev/solutions/`.
+  `Nu5017Check/` has an uncommitted `Solution/deploymentSettings.dev.json` from `capture`.
+
+---
+
 ## Round 2026-11-26: pull connection reference cleanup (`--tidy-connrefs`)
 
 This round exercises the connection reference review that branch `feat/pull-tidy-connrefs` (#26) adds
