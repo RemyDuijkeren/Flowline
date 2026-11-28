@@ -7,26 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-28
+
 ### Added
 
-- `pull --tidy-connrefs` untangles a solution's connection references in DEV before the export. At a terminal it asks once for all same-connection merges, once per different-account group (merge or keep separate), once for unused references, and offers display-name renames for default names and kept-separate members. Unattended it merges same-connection groups that have a settings file for every environment role and removes unused references; different-account groups and renames are only reported. Flows are re-pointed in place with their state unchanged, entries of removed references leave every role settings file and `deploymentSettings.json`, references nothing depends on are deleted and the others are only removed from the solution. A stop exits 18 before the export and names what is done and not done. `--force all` does not turn it on. Copies of removed references stay in TEST, UAT and PROD, where `deploy` flags them as orphans for manual handling, as before.
-- `flowline pack` packs the committed solution into a zip without a target environment, so CI can build the artifact once, attach it to a release or hand it to a customer, and import that same file later with `deploy --path`. The zip is `<Solution>_<version>_managed.zip` (or `_unmanaged.zip`), with the version from `Solution.xml`, written to `artifacts/` or `--output <dir>`. It needs a clean git working tree, runs the solution checker (which needs a PAC login but no target; `--skip-solution-check` skips it), and surfaces the zip on Azure Pipelines and GitHub Actions the way `deploy` does. ([#24](https://github.com/RemyDuijkeren/Flowline/issues/24))
-- `pack` and `deploy` take `--binaries-from-build`: they build the plugin and WebResources projects the way `push` does and pack that output in place of the committed plugin assemblies, plugin packages and web resource files, leaving the rest of the solution as committed and the working tree untouched. It replaces gitignoring the binaries and copying build output into `Solution/src`, or a `pac solution pack --map` mapping file. A build output with no matching component in the solution, a component with no build output, or two outputs for one component fail the run. Because the build reads more than the solution, the flag needs the whole repository committed, not just `Solution/` and the project files. `--no-build` uses existing Release output.
+- `flowline pack` packs the committed solution into a versioned zip without a target environment, so CI can build it once and import that same file later with `deploy --path`. ([#24](https://github.com/RemyDuijkeren/Flowline/issues/24))
+- `pack` and `deploy` take `--binaries-from-build` to build the plugin and WebResources projects and pack that output in place of the committed binaries. It replaces gitignoring the binaries and copying build output into `Solution/src`, and needs the whole repository committed.
+- `pull --tidy-connrefs` untangles a solution's connection references in DEV before the export: it merges duplicates, removes unused references, re-points flows and updates the settings files. At a terminal it asks before each kind of change; unattended it only applies the safe ones and reports the rest.
 
 ### Changed
 
-- `pull` now reads the solution's connection references in DEV, with the PAC profile it already uses, before the version bump and export. When it finds duplicates on one connection, groups on different accounts, unused references or default names, it prints a warning with the counts and `Run 'flowline pull --tidy-connrefs' to untangle them.` Nothing changes in DEV and the exit code stays the same. If the review cannot run, `pull` warns once and exports as before.
-- **Breaking:** `deploy` packs fresh on every run. The cached zip it reused while the source was unchanged, and its `.manifest.json` next to the zip, are gone; to import one build into several environments, run `pack` and pass its zip to `deploy --path`. `--no-cache` still re-runs the pre-flight checks.
-- **Breaking:** the zip `deploy` writes to `artifacts/` carries the solution version in its name, `<Solution>_<version>_managed.zip` (or `_unmanaged.zip`), instead of `<Solution>_managed.zip`. Scripts that pick up the old fixed name need updating; on GitHub Actions, read the path from the `artifact-path-<Solution>` step output instead.
-- **Breaking:** `deploy` packs only the files committed in `Solution/src`, not every file on disk. An ignored or stray file no longer ends up in the zip, and the same commit packs the same files and contents on any machine. A plugin assembly, plugin package or web resource whose binary isn't committed now fails the pack, instead of the solution being packed without it; build output copied into gitignored slots is not packed any more, so pass `--binaries-from-build` instead.
+- **Breaking:** `deploy` packs fresh on every run, and the cached zip with its `.manifest.json` is gone. To import one build into several environments, run `pack` and pass its zip to `deploy --path`.
+- **Breaking:** the zip `deploy` writes is named `<Solution>_<version>_managed.zip` (or `_unmanaged.zip`) instead of `<Solution>_managed.zip`. On GitHub Actions, read the path from the `artifact-path-<Solution>` step output.
+- **Breaking:** `deploy` packs only the files committed in `Solution/src`, so a plugin assembly, plugin package or web resource whose binary isn't committed now fails the pack. Use `--binaries-from-build` instead of copying build output into gitignored folders.
+- `pull` warns when the solution's connection references in DEV have duplicates, unused references or default names, and suggests `--tidy-connrefs`. It changes nothing in DEV and the exit code stays the same.
 
 ### Fixed
 
-- `deploy` no longer deletes a plugin package that the solution you deploy still carries. When the target's package still holds a plugin assembly your new package dropped, deploy's orphan cleanup used to plan a delete of the whole package, and with it every assembly, plugin type and step in it. It now keeps the package, deletes only the dropped assembly's steps, and warns before the import, also in `drift` and `--dry-run`. Dataverse rejects a solution import that would drop an assembly from a package (`Unable to delete plug-in assembly as it is part of plugin package`), so update the package in the Plug-in Registration Tool first, then deploy again.
-- A failed solution import in `deploy` now says the import failed and points at pac's error, instead of telling you to check your PAC login.
-- The Plugins project that `clone`, `init` and `scaffold plugins` create now builds on .NET SDK 11. `pac plugin init` writes a single `<TargetFramework>`, and on SDK 11 the Power Apps plugin build targets then pack an empty package and fail with NU5017, which stopped `clone` before it finished and `pull` after the export. Flowline now writes `<TargetFrameworks>net462</TargetFrameworks>` instead; the build output and package are unchanged. For a project created earlier, make the same one-line change in `Plugins/<Name>.Plugins.csproj`.
-- `push webresources` no longer republishes a text web resource whose only difference is line endings or a UTF-8 byte order mark. A checkout on Windows and one on Linux of the same commit now push nothing new. The drift warnings from `pull` and `deploy` ignore the same differences. Images and other binary types still compare byte for byte, and what gets uploaded is unchanged.
-- `push plugins` no longer reports steps registered on a service endpoint (Azure Service Bus, webhook, Event Hub) as orphans under `Microsoft.Crm.ServiceBus.dll`. `--force delete-orphans` and `--force all` used to delete them, which cut off the integration the endpoint feeds. ([#21](https://github.com/RemyDuijkeren/Flowline/issues/21))
+- `deploy` no longer deletes a plugin package the deployed solution still carries when the target's package holds an assembly your new package dropped. It now keeps the package and warns before the import, since Dataverse rejects that import until you update the package in the Plug-in Registration Tool.
+- A failed solution import in `deploy` points at pac's error instead of telling you to check your PAC login.
+- The Plugins project that `clone`, `init` and `scaffold plugins` create now builds on .NET SDK 11 instead of failing with NU5017. For a project created earlier, change `<TargetFramework>net462</TargetFramework>` to `<TargetFrameworks>net462</TargetFrameworks>` in `Plugins/<Name>.Plugins.csproj`; a build that fails with NU5017 now names the project and this change.
+- `push webresources` no longer republishes a text web resource whose only difference is line endings or a UTF-8 byte order mark, and the drift warnings in `pull` and `deploy` ignore the same differences.
+- `push plugins` no longer reports steps on a service endpoint (Azure Service Bus, webhook, Event Hub) as orphans, so `--force delete-orphans` no longer deletes them. ([#21](https://github.com/RemyDuijkeren/Flowline/issues/21))
 
 ## [0.21.0] - 2026-11-09
 
@@ -642,7 +644,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI and release workflows.
 
 
-[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.21.0...HEAD
+[Unreleased]: https://github.com/RemyDuijkeren/Flowline/compare/0.22.0...HEAD
+[0.22.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.21.0...0.22.0
 [0.21.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.20.0...0.21.0
 [0.20.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.19.0...0.20.0
 [0.19.0]: https://github.com/RemyDuijkeren/Flowline/compare/0.18.0...0.19.0
