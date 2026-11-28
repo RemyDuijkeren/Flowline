@@ -77,4 +77,19 @@ public class DotNetUtilsTests : IDisposable
 
         args.Should().Equal("build", "--configuration", "Debug");
     }
+
+    [Fact]
+    public void SingularTargetFrameworkProjects_NamesOnlyProjectsStillOnTheSingularForm()
+    {
+        var singular = Path.Combine(_root, "Old.Plugins.csproj");
+        var plural = Path.Combine(_root, "New.Plugins.csproj");
+        File.WriteAllText(singular, "<Project><PropertyGroup><TargetFramework>net462</TargetFramework></PropertyGroup></Project>");
+        File.WriteAllText(plural, "<Project><PropertyGroup><TargetFrameworks>net462</TargetFrameworks></PropertyGroup></Project>");
+        string Line(string csproj) =>
+            $"/sdk/11.0.100/NuGet.Build.Tasks.Pack.targets(232,5): error NU5017: Cannot create a package that has no dependencies nor content. [{csproj}]";
+
+        var result = DotNetUtils.SingularTargetFrameworkProjects([Line(singular), Line(singular), Line(plural), "error NU5017: no project path"]);
+
+        result.Should().Equal(singular);
+    }
 }

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CliWrap;
 using CliWrap.Buffered;
 using Flowline.Core;
@@ -21,17 +22,25 @@ public static class DotNetUtils
         var buildTarget = Path.GetFileName(workingDirectory.TrimEnd('/', '\\'));
         var statusVerb = rebuild ? "Rebuilding" : "Building";
 
+        var nu5017Lines = new List<string>();
         var buildResult = await AnsiConsole.Status().FlowlineSpinner().StartAsync($"{statusVerb} [bold]{Markup.Escape(buildTarget)}[/] ({configuration})...", ctx =>
-            capture.Apply(
+        {
+            var cmd = capture.Apply(
                 Cli.Wrap("dotnet")
                    .WithArguments(BuildArguments(workingDirectory, configuration, rebuild))
                    .WithWorkingDirectory(workingDirectory)
-                   .WithValidation(CommandResultValidation.None))
-               .ExecuteAsync(cancellationToken).Task);
+                   .WithValidation(CommandResultValidation.None));
+            return cmd.WithStandardOutputPipe(PipeTarget.Merge(cmd.StandardOutputPipe,
+                          PipeTarget.ToDelegate(line => { if (line.Contains("NU5017")) nu5017Lines.Add(line); })))
+                      .ExecuteAsync(cancellationToken).Task;
+        });
 
         if (!buildResult.IsSuccess)
         {
             AnsiConsole.Console.Error("Build failed — check the output above. Use --verbose for details.");
+            foreach (var csproj in SingularTargetFrameworkProjects(nu5017Lines))
+                AnsiConsole.Console.Info($"NU5017 comes from .NET SDK 11 and a single <TargetFramework>. In {ConsolePath.FormatRelativePath(csproj)}, " +
+                                         "change [bold]<TargetFramework>[/] to [bold]<TargetFrameworks>[/] (same value), then run the command again.");
             return 1;
         }
         else
@@ -42,6 +51,20 @@ public static class DotNetUtils
             return 0;
         }
     }
+
+    /// <summary>The projects named by NU5017 build errors that still declare a single <c>&lt;TargetFramework&gt;</c>.</summary>
+    /// <remarks>
+    /// Plugins projects created before the scaffolder wrote the plural form hit NU5017 on SDK 11; see
+    /// <c>ProjectScaffolder.UsePluralTargetFrameworks</c> for the cause. MSBuild ends each error line with
+    /// the project path in brackets. Flowline only points at the fix; it never edits the user's project.
+    /// </remarks>
+    internal static IReadOnlyList<string> SingularTargetFrameworkProjects(IEnumerable<string> nu5017Lines) =>
+        nu5017Lines.Select(line => Regex.Match(line, @"\[([^\[\]]+\.csproj)\]\s*$"))
+                   .Where(m => m.Success)
+                   .Select(m => m.Groups[1].Value)
+                   .Distinct(StringComparer.OrdinalIgnoreCase)
+                   .Where(path => File.Exists(path) && File.ReadAllText(path).Contains("<TargetFramework>"))
+                   .ToList();
 
     /// <summary>Builds the <c>dotnet build</c> argument list, naming the solution file when the folder holds one.</summary>
     /// <remarks>
