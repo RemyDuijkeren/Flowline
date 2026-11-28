@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Every command returns to the prompt about two seconds sooner when telemetry is on. The exporter's own SDK usage reporting was waiting on an Azure host check that only times out off Azure, and it is now switched off.
-
 ## [0.22.0] - 2026-11-28
 
 ### Added
@@ -33,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Plugins project that `clone`, `init` and `scaffold plugins` create now builds on .NET SDK 11 instead of failing with NU5017. For a project created earlier, change `<TargetFramework>net462</TargetFramework>` to `<TargetFrameworks>net462</TargetFrameworks>` in `Plugins/<Name>.Plugins.csproj`; a build that fails with NU5017 now names the project and this change.
 - `push webresources` no longer republishes a text web resource whose only difference is line endings or a UTF-8 byte order mark, and the drift warnings in `pull` and `deploy` ignore the same differences.
 - `push plugins` no longer reports steps on a service endpoint (Azure Service Bus, webhook, Event Hub) as orphans, so `--force delete-orphans` no longer deletes them. ([#21](https://github.com/RemyDuijkeren/Flowline/issues/21))
+- Every command returns to the prompt about two seconds sooner when telemetry is on. The exporter's own SDK usage reporting was waiting on an Azure host check that only times out off Azure, and it is now switched off.
 
 ## [0.21.0] - 2026-11-09
 
