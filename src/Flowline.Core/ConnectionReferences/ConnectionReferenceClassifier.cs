@@ -71,14 +71,19 @@ public static class ConnectionReferenceClassifier
 {
     const int SuspendedState = 2;
 
-    // ponytail: the logical name alone is the signal. The platform writes <prefix>_shared<connector>_<5 hex>
-    // for every reference it generates, whatever the display name ended up as, and hand-made references
-    // have no such name. A hand-made name that happens to fit would be flagged; offering a rename is harmless.
+    // The logical name never changes (a rename touches only the display name), so it only gates: the display
+    // name must still end in "-<the same 5 hex>". Once someone renames the reference, it stops being flagged.
+    // ponytail: misses generated display names with no suffix (the bare connector name, or connector plus
+    // solution name); catching those needs the connector's display name, add it with the rename suggestion.
     static readonly Regex GeneratedLogicalName =
-        new(@"^[^_]+_shared[a-z0-9]+_[0-9a-f]{5}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        new(@"^[^_]+_shared[a-z0-9]+_(?<suffix>[0-9a-f]{5})$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    public static bool HasGeneratedName(ConnectionReference reference) =>
-        GeneratedLogicalName.IsMatch(reference.LogicalName);
+    public static bool HasGeneratedName(ConnectionReference reference)
+    {
+        var match = GeneratedLogicalName.Match(reference.LogicalName);
+        return match.Success &&
+               reference.DisplayName.EndsWith("-" + match.Groups["suffix"].Value, StringComparison.OrdinalIgnoreCase);
+    }
 
     public static Classification Classify(IReadOnlyList<ConnectionReference> references, IReadOnlyList<CloudFlow> flows)
     {

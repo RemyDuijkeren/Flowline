@@ -1,11 +1,11 @@
 {
-  "_comment": "Display and logical names of connection references as the platform generates them, sampled from a real DEV on 2026-11-26 (Microsoft-shipped references, no tenant data). Hand-made names are the negative cases.",
+  "_comment": "Display and logical names of connection references as the platform generates them, sampled from a real DEV on 2026-11-26 (Microsoft-shipped references, no tenant data). Hand-made names are the negative cases. 'flagged' is what Flowline detects today: only a display name that still ends in the logical name's 5-hex suffix; the suffix-less generated shapes need the connector's display name and are a known gap.",
   "generated": [
-    { "logical": "msdyn_sharedcommondataserviceforapps_2869b", "display": "Microsoft Dataverse EmailSentiment-2869b" },
-    { "logical": "msdyn_sharedmicrosoftcopilotstudio_aec03", "display": "Microsoft Copilot Studio EmailSentiment-aec03" },
-    { "logical": "msdyn_sharedcommondataserviceforapps_56268", "display": "Microsoft Dataverse CustomerServiceKnowledgeHarvest" },
-    { "logical": "new_sharedcommondataserviceforapps_12864", "display": "Microsoft Dataverse" },
-    { "logical": "flsp_sharedwebcontents_a5030", "display": "HTTP with Entra ID" }
+    { "logical": "msdyn_sharedcommondataserviceforapps_2869b", "display": "Microsoft Dataverse EmailSentiment-2869b", "flagged": true },
+    { "logical": "msdyn_sharedmicrosoftcopilotstudio_aec03", "display": "Microsoft Copilot Studio EmailSentiment-aec03", "flagged": true },
+    { "logical": "msdyn_sharedcommondataserviceforapps_56268", "display": "Microsoft Dataverse CustomerServiceKnowledgeHarvest", "flagged": false },
+    { "logical": "new_sharedcommondataserviceforapps_12864", "display": "Microsoft Dataverse", "flagged": false },
+    { "logical": "flsp_sharedwebcontents_a5030", "display": "HTTP with Entra ID", "flagged": false }
   ],
   "handmade": [
     { "logical": "msdyn_DataverseConnectionforSwarming", "display": "Dataverse Connection for Swarming" },

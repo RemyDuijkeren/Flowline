@@ -224,9 +224,9 @@ public class ConnectionReferenceClassifierTests
         Classify([Ref("app", canvasApps: 1)]).Unused.Should().BeEmpty();
     }
 
-    // Names fixture: every generated sample is flagged, every hand-made one is not.
+    // Names fixture: generated samples are flagged as the fixture records, every hand-made one is not.
     [Fact]
-    public void GeneratedNamesFromFixture_AreFlagged_HandmadeAreNot()
+    public void GeneratedNamesFromFixture_AreFlaggedAsRecorded_HandmadeAreNot()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "ConnectionReferences", "Fixtures", "connection-reference-names.json");
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
@@ -234,17 +234,34 @@ public class ConnectionReferenceClassifierTests
         ConnectionReference Make(JsonElement e) => Ref(e.GetProperty("logical").GetString()!) with { DisplayName = e.GetProperty("display").GetString()! };
 
         foreach (var e in doc.RootElement.GetProperty("generated").EnumerateArray())
-            ConnectionReferenceClassifier.HasGeneratedName(Make(e)).Should().BeTrue(e.GetProperty("logical").GetString());
+            ConnectionReferenceClassifier.HasGeneratedName(Make(e)).Should().Be(e.GetProperty("flagged").GetBoolean(), e.GetProperty("logical").GetString());
         foreach (var e in doc.RootElement.GetProperty("handmade").EnumerateArray())
             ConnectionReferenceClassifier.HasGeneratedName(Make(e)).Should().BeFalse(e.GetProperty("logical").GetString());
+    }
+
+    // The logical name survives a rename, so a renamed generated reference must stop being flagged.
+    [Fact]
+    public void GeneratedLogicalName_WithRenamedDisplayName_IsNotFlagged()
+    {
+        var renamed = Ref("new_sharedcommondataserviceforapps_2869b") with { DisplayName = "Dataverse (svc-integration)" };
+
+        ConnectionReferenceClassifier.HasGeneratedName(renamed).Should().BeFalse();
+    }
+
+    [Fact]
+    public void DisplaySuffix_NotMatchingLogicalSuffix_IsNotFlagged()
+    {
+        var other = Ref("new_sharedcommondataserviceforapps_2869b") with { DisplayName = "Microsoft Dataverse Sales-aec03" };
+
+        ConnectionReferenceClassifier.HasGeneratedName(other).Should().BeFalse();
     }
 
     [Fact]
     public void GeneratedNames_ListsOnlySurvivors()
     {
-        var keeper = Ref("msdyn_sharedcommondataserviceforapps_aaaaa", flows: [F1, F2]);
-        var moved = Ref("msdyn_sharedcommondataserviceforapps_bbbbb", flows: [F3]);
-        var idle = Ref("msdyn_sharedcommondataserviceforapps_ccccc", dev: "other");
+        var keeper = Ref("msdyn_sharedcommondataserviceforapps_aaaaa", flows: [F1, F2]) with { DisplayName = "Microsoft Dataverse Sales-aaaaa" };
+        var moved = Ref("msdyn_sharedcommondataserviceforapps_bbbbb", flows: [F3]) with { DisplayName = "Microsoft Dataverse Sales-bbbbb" };
+        var idle = Ref("msdyn_sharedcommondataserviceforapps_ccccc", dev: "other") with { DisplayName = "Microsoft Dataverse Sales-ccccc" };
 
         var result = Classify([keeper, moved, idle], Flow(F1), Flow(F2), Flow(F3));
 

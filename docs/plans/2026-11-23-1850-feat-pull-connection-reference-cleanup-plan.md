@@ -81,7 +81,7 @@ Flowline already touches connection references in three places, and none of them
 
 **Renaming**
 
-- R12. A reference is flagged as having a generated display name when its name matches the platform's default naming shape, as confirmed against real exports in U1.
+- R12. A reference is flagged as having a generated display name when its logical name matches the platform's generated shape **and** its display name still ends in `-` plus the same 5-hex suffix. The logical name alone cannot decide it: a rename (R14) leaves the logical name as it was, so a renamed reference would be flagged forever. Generated display names without the suffix (the bare connector name, or connector plus solution name) are not flagged yet; catching them needs the connector's display name, which KTD12's rename suggestion needs too, and lands with it. (session-settled: user-directed on 2026-11-28, chosen over the logical name alone, which U2 first shipped.)
 - R13. The review offers a display-name rename for each reference in a different-account group the user keeps separate, and for each flagged reference that survives the merges. Flowline suggests a name built from the connector and the bound account, which the user can accept or edit.
 - R14. A rename never changes a reference's logical name and never changes a binding.
 
@@ -237,7 +237,7 @@ stateDiagram-v2
 - Confirmed by U1 (2026-11-26): the workflow table honors a row-version-conditional update; a stale row version is refused with "The version of the existing record doesn't match the RowVersion property provided."
 - Not verified (U1 step 6): a rewrite and turn-on by a second identity. No second account was available. U4's stop path, which names a flow whose rewrite is refused, covers the failure.
 - Found by U1 (2026-11-26): the unpacked solution's flow JSON carries `properties.connectionReferences` with each entry's `connection.connectionReferenceLogicalName`, so a source-only check could read it. Map keys vary (`shared_x`, `shared_x_1`, `shared_x-1`), so only entry values are rewritten.
-- Found by U1 (2026-11-26): generated logical names follow `<prefix>_shared<connector>_<5 hex>`, and generated display names follow `<connector display name> <solution name>-<5 hex>` or the bare connector display name (`tests/Flowline.Core.Tests/ConnectionReferences/Fixtures/connection-reference-names.json`).
+- Found by U1 (2026-11-26): generated logical names follow `<prefix>_shared<connector>_<5 hex>`, and generated display names follow `<connector display name> <solution name>-<5 hex>` or the bare connector display name, sometimes with the solution name but no suffix (`tests/Flowline.Core.Tests/ConnectionReferences/Fixtures/connection-reference-names.json`). R12 detects only the suffixed shape.
 - The Dataverse client's built-in retry handles throttling during the review; a write that still fails is a failure under R18.
 
 ### System-Wide Impact
@@ -310,7 +310,7 @@ stateDiagram-v2
   - A flow with an empty or unparsable definition: no reference it might name is unused.
   - A dependency check that faults: the reference is not unused and not deletable.
   - A reference no component uses, all checks succeeded: unused.
-  - Display names matching U1's generated patterns are flagged; a hand-made name is not.
+  - A generated logical name with a display name ending in its own 5-hex suffix is flagged; a hand-made name is not; a generated logical name with a renamed display name, or a display suffix that differs from the logical one, is not.
   - Settings files compare ids case-insensitively; the shared template gives no evidence; a malformed role file raises the config error.
 - **Verification:** Classifier tests cover every row of the HTD decision table.
 
