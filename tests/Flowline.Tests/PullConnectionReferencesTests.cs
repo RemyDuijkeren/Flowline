@@ -182,7 +182,7 @@ public class PullConnectionReferencesTests
     public void BindingLines_NumberConnectionsPerEnvironment_AndNeverShowTheIds()
     {
         RoleBinding Bound(string id) => new(true, id);
-        var a = Ref("new_a", conn: "shared-commondataser-aaaa") with
+        var a = Ref("new_a", display: "Dataverse Sales", conn: "shared-commondataser-aaaa") with
         {
             Bindings = new Dictionary<EnvironmentRole, RoleBinding> { [EnvironmentRole.Prod] = Bound("prod-svc-1") },
         };
@@ -195,7 +195,7 @@ public class PullConnectionReferencesTests
         var lines = PullConnectionReferences.BindingLines([a, b, c]);
 
         lines.Should().Equal(
-            "new_a  DEV: connection 1, Prod: connection 1",
+            "Dataverse Sales (new_a)  DEV: connection 1, Prod: connection 1",
             "new_b  DEV: connection 1, Prod: connection 2",
             "new_c  DEV: unbound, Prod: unbound");
         string.Join("\n", lines).Should().NotContain("shared-commondataser").And.NotContain("prod-svc");

@@ -204,7 +204,7 @@ internal static class PullConnectionReferences
             {
                 var missing = g.MissingEvidence.Count == 0 ? "" :
                     $" [dim](no settings file for {string.Join(", ", g.MissingEvidence)}, so not checked there)[/]";
-                console.MarkupLine($"  {Names(g.Move)} into [bold]{Markup.Escape(g.Keeper.LogicalName)}[/], " +
+                console.MarkupLine($"  {Markup.Escape(ConnectorNames.Display(g.ConnectorId))}: {Names(g.Move)} into {Names([g.Keeper])}, " +
                                    $"{Count(g.FlowsToMove.Count, "flow", "flows")} move{missing}");
             }
 
@@ -215,7 +215,7 @@ internal static class PullConnectionReferences
 
         foreach (var g in c.DifferentAccount)
         {
-            console.Info("Same connector, different accounts:");
+            console.Info($"Same connector, different accounts ({Markup.Escape(ConnectorNames.Display(g.ConnectorId))}):");
             foreach (var line in BindingLines(g.Members))
                 console.MarkupLine($"  {Markup.Escape(line)}");
 
@@ -227,7 +227,7 @@ internal static class PullConnectionReferences
             }
 
             var keeper = ConnectionReferenceClassifier.PickKeeper(g.Members);
-            var merge = $"Merge into {keeper.LogicalName}";
+            var merge = $"Merge into {RefName(keeper)}";
             const string Keep = "Keep them separate";
             var answer = await console.PromptAsync(new SelectionPrompt<string>()
                 .Title(FlowlineConsoleExtensions.Question("Merge them?"))
@@ -239,7 +239,9 @@ internal static class PullConnectionReferences
         var removeUnused = new List<ConnectionReference>();
         if (c.Unused.Count > 0)
         {
-            console.Info($"Nothing uses {Names(c.Unused)}.");
+            console.Warning($"Nothing in this solution uses {Count(c.Unused.Count, "connection reference", "connection references")}:");
+            foreach (var r in c.Unused)
+                console.MarkupLine($"    {Names([r])}, {Markup.Escape(ConnectorNames.Display(r.ConnectorId))}");
             if (await console.PromptAsync(new ConfirmationPrompt(FlowlineConsoleExtensions.Question(
                     $"Remove {(c.Unused.Count == 1 ? "it" : "them")}?")), ct))
                 removeUnused.AddRange(c.Unused);
@@ -265,7 +267,7 @@ internal static class PullConnectionReferences
                 var keep = $"Keep '{r.DisplayName}'";
                 var choices = suggestion == r.DisplayName || taken.Contains(suggestion) ? new[] { Type, keep } : [use, Type, keep];
                 var answer = await console.PromptAsync(new SelectionPrompt<string>()
-                    .Title(FlowlineConsoleExtensions.Question($"Rename {Markup.Escape(r.LogicalName)}?"))
+                    .Title(FlowlineConsoleExtensions.Question($"Rename {Markup.Escape(RefName(r))}, {Markup.Escape(ConnectorNames.Display(r.ConnectorId))}?"))
                     .AddChoices(choices.Select(Markup.Escape)), ct);
 
                 if (answer == Markup.Escape(keep)) continue;
@@ -306,12 +308,21 @@ internal static class PullConnectionReferences
                 var ids = members.Select(x => x.Bindings.TryGetValue(role, out var b) ? b.ConnectionId : null);
                 parts.Add($"{role}: {Tag(ids, m.Bindings.TryGetValue(role, out var own) ? own.ConnectionId : null)}");
             }
-            return $"{m.LogicalName}  {string.Join(", ", parts)}";
+            return $"{RefName(m)}  {string.Join(", ", parts)}";
         }).ToList();
     }
 
     static string Names(IEnumerable<ConnectionReference> refs) =>
-        string.Join(", ", refs.Select(r => $"[bold]{Markup.Escape(r.LogicalName)}[/]"));
+        string.Join(", ", refs.Select(r => HasOwnDisplayName(r)
+            ? $"[bold]{Markup.Escape(r.DisplayName)}[/] ({Markup.Escape(r.LogicalName)})"
+            : $"[bold]{Markup.Escape(r.LogicalName)}[/]"));
+
+    /// <summary>Plain text: the display name a maker recognizes, with the logical name that identifies it.</summary>
+    internal static string RefName(ConnectionReference r) =>
+        HasOwnDisplayName(r) ? $"{r.DisplayName} ({r.LogicalName})" : r.LogicalName;
+
+    static bool HasOwnDisplayName(ConnectionReference r) =>
+        !string.IsNullOrWhiteSpace(r.DisplayName) && !string.Equals(r.DisplayName, r.LogicalName, StringComparison.OrdinalIgnoreCase);
 
     static string Count(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
 }
