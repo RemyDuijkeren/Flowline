@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Every command returns to the prompt about two seconds sooner when telemetry is on. The exporter's own SDK usage reporting was waiting on an Azure host check that only times out off Azure, and it is now switched off.
+
 ## [0.22.0] - 2026-11-28
 
 ### Added

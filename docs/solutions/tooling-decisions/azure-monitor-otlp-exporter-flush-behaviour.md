@@ -82,8 +82,17 @@ plan does not send; performance counters were observed arriving. Separately, the
 accounted for roughly two of the four seconds a teardown took, and is disabled through
 `APPLICATIONINSIGHTS_STATSBEAT_DISABLED`, set in-process.
 
+**6b. SDK stats is a second self-report, and statsbeat's switch does not cover it.** Measured on
+exporter 1.10.0 (2026-11-28) with OpenTelemetry self-diagnostics (`OTEL_DIAGNOSTICS.json` in the
+working directory): while a run's export was being stored, the trace and log exporters each probed
+the Azure VM metadata endpoint to tag the host type, and off Azure each probe gave up only after about
+two seconds ("Failed to get Azure VM Metadata ... task canceled"). `flowline --version` went from
+3.3 s to 1.3 s with `APPLICATIONINSIGHTS_SDKSTATS_DISABLED=true`, now also set in-process. The
+remaining second is mostly one stored blob uploaded during dispose, about the real round trip. Not
+measured on Azure-hosted CI runners, where the probe answers.
+
 **7. How long the bound actually has to be.** With statsbeat and the metric signals off, teardown still
-runs about three seconds regardless of the endpoint, so the bound is what every command pays, not just
+runs about three seconds regardless of the endpoint (most of it SDK stats on 1.10.0, see 6b), so the bound is what every command pays, not just
 a blocked one. Measured against the live resource, sending one span per process and then exiting:
 
 | Bound | Span arrived in App Insights |

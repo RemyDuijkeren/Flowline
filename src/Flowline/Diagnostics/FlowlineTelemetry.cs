@@ -150,6 +150,11 @@ public static class FlowlineTelemetry
         // anywhere, though any pac/git/dotnet subprocess started after this inherits it, which at
         // worst disables their statsbeat too.
         Environment.SetEnvironmentVariable("APPLICATIONINSIGHTS_STATSBEAT_DISABLED", "true");
+        // SDK stats is a separate self-report that the statsbeat switch does not cover. While a run's
+        // export is stored it probes the Azure VM metadata endpoint, which off Azure only gives up after
+        // about two seconds: measured at 3.3 s to 1.3 s of exit cost on `--version`. Same inheritance
+        // caveat as above.
+        Environment.SetEnvironmentVariable("APPLICATIONINSIGHTS_SDKSTATS_DISABLED", "true");
 
         o.ConnectionString = connectionString;
         // The exporter rate-limits to five traces a second by default, which arrived stamped as a 25%

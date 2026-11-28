@@ -54,6 +54,20 @@ public class FlowlineTelemetryTests : IDisposable
     public void TheSpanSourceCarriesThePackageVersion() =>
         FlowlineActivitySource.Source.Version.Should().Be(FlowlineVersion.Display);
 
+    // Each of these costs a short-lived run seconds on exit; SDK stats alone was two of them.
+    [Theory]
+    [InlineData("APPLICATIONINSIGHTS_STATSBEAT_DISABLED")]
+    [InlineData("APPLICATIONINSIGHTS_SDKSTATS_DISABLED")]
+    public void ExporterOptions_DisableTheSdkSelfReports(string variable)
+    {
+        Environment.SetEnvironmentVariable(variable, null);
+
+        FlowlineTelemetry.ApplyExporterOptions(
+            new Azure.Monitor.OpenTelemetry.Exporter.AzureMonitorExporterOptions(), "InstrumentationKey=irrelevant");
+
+        Environment.GetEnvironmentVariable(variable).Should().Be("true");
+    }
+
     [Fact]
     public void WithNoConnectionString_NoProviderIsBuilt_AndNothingThrows()
     {
