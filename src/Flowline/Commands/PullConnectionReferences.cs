@@ -199,7 +199,7 @@ internal static class PullConnectionReferences
 
         if (c.SameConnection.Count > 0)
         {
-            console.Info("Same connection everywhere:");
+            console.Warning("Same connection everywhere:");
             foreach (var g in c.SameConnection)
             {
                 var missing = g.MissingEvidence.Count == 0 ? "" :
